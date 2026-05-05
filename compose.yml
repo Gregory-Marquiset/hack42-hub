@@ -1,0 +1,198 @@
+name: hub
+
+services:
+  postgresql:
+    image: postgres:16
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 1s
+      timeout: 2s
+      retries: 300
+    env_file:
+      - env.d/development/postgresql
+      - env.d/development/postgresql.local
+    ports:
+      - "9812:5432"
+
+  redis:
+    image: redis:5
+    ports:
+      - "9813:6379"
+
+  mailcatcher:
+    image: sj26/mailcatcher:latest
+    ports:
+      - "9804:1080"
+
+  minio:
+    user: ${DOCKER_USER:-1000}
+    image: minio/minio
+    environment:
+      - MINIO_ROOT_USER=hub
+      - MINIO_ROOT_PASSWORD=password
+    ports:
+      - '9805:9000'
+      - '9806:9001'
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 20s
+      retries: 300
+    entrypoint: ""
+    command: minio server --console-address :9001 /data
+    volumes:
+      - ./data/media:/data
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+        restart: true
+    entrypoint: >
+      sh -c "
+      /usr/bin/mc alias set hub http://minio:9000 hub password && \
+      /usr/bin/mc mb hub/hub-media-storage && \
+      /usr/bin/mc version enable hub/hub-media-storage && \
+      exit 0;"
+
+  app-dev:
+    build:
+      context: .
+      target: backend-development
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    image: hub:backend-development
+    environment:
+      - PYLINTHOME=/app/.pylint.d
+      - DJANGO_CONFIGURATION=Development
+    env_file:
+      - env.d/development/common
+      - env.d/development/common.local
+      - env.d/development/postgresql
+      - env.d/development/postgresql.local
+    ports:
+      - "9801:8000"
+    networks:
+      default: {}
+      lasuite:
+        aliases:
+          - hub
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+      - /app/.venv
+    depends_on:
+        postgresql:
+            condition: service_healthy
+            restart: true
+        mailcatcher:
+          condition: service_started
+        redis:
+          condition: service_started
+        createbuckets:
+          condition: service_started
+
+  frontend-development:
+    user: "${DOCKER_USER:-1000}"
+    build:
+      context: .
+      dockerfile: ./src/frontend/Dockerfile
+      target: hub-dev
+      args:
+        API_ORIGIN: "http://localhost:9801"
+    image: hub:frontend-development
+    volumes:
+      - ./src/frontend:/home/frontend
+      - /home/frontend/node_modules
+      - /home/frontend/apps/hub/node_modules
+    ports:
+      - "9800:3000"
+
+  nginx:
+    image: nginx:1.25
+    ports:
+      - "9803:9803"
+    networks:
+      default: {}
+      lasuite:
+        aliases:
+          - nginx
+    volumes:
+      - ./docker/files/etc/nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      app-dev:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+        restart: true
+
+  crowdin:
+    image: crowdin/cli:3.16.0
+    volumes:
+      - ".:/app"
+    env_file:
+      - env.d/development/crowdin
+      - env.d/development/crowdin.local
+    user: "${DOCKER_USER:-1000}"
+    working_dir: /app
+
+  node:
+    image: node:22
+    user: "${DOCKER_USER:-1000}"
+    environment:
+      HOME: /tmp 
+    volumes:
+      - ".:/app"
+
+  kc_postgresql:
+    image: postgres:14.3
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 1s
+      timeout: 2s
+      retries: 300
+    env_file:
+      - env.d/development/kc_postgresql
+      - env.d/development/kc_postgresql.local
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    volumes:
+      - ./docker/auth/realm.json:/opt/keycloak/data/import/realm.json
+    command:
+      - start-dev
+      - --features=preview
+      - --import-realm
+      - --hostname=http://localhost:9803
+      - --hostname-strict=false
+      - --health-enabled=true
+      - --metrics-enabled=true
+    healthcheck:
+      test: ['CMD-SHELL', 'exec 3<>/dev/tcp/localhost/9000; echo -e "GET /health/live HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; grep "HTTP/1.1 200 OK" <&3']
+      start_period: 5s
+      interval: 1s
+      timeout: 2s
+      retries: 300
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: kc_postgresql
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_PASSWORD: pass
+      KC_DB_USERNAME: hub
+      KC_DB_SCHEMA: public
+      PROXY_ADDRESS_FORWARDING: 'true'
+    ports:
+      - "9802:8080"
+    depends_on:
+      kc_postgresql:
+        condition: service_healthy
+        restart: true
+
+networks:
+  lasuite:
+    name: lasuite-network
+    driver: bridge

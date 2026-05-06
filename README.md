@@ -111,16 +111,16 @@ $ make superuser
 
 When running the project, the following services are available:
 
-| Service         | URL / Port                                     | Description                 | Credentials                     |
-|-----------------|------------------------------------------------|-----------------------------|---------------------------------|
-| **Frontend**    | [http://localhost:9800](http://localhost:9800) | Main Messages frontend      | `user1@example.local` / `user1` |
-| **Backend API** | [http://localhost:9801](http://localhost:9801) | Django                      | `admin@admin.local` / `admin`   |
-| **Keycloak**    | [http://localhost:9802](http://localhost:9802) | Identity provider admin     | `admin` / `admin`               |
-| **Nginx**       | [http://localhost:9803](http://localhost:9803) | Nginx                       | No auth required                |
-| **Mailcatcher** | [http://localhost:9804](http://localhost:9804) | Email testing interface     | No auth required                |
-| **PostgreSQL**  | 9812                                           | Database server             | `user` / `pass`                 |
-| **Redis**       | 9813                                           | Cache and message broker    | No auth required                |
-| **MinIO**       | 9805 and [http://localhost:9806](http://localhost:9806) | Local S3 storage            | No auth required                |
+| Service         | URL / Port                                              | Description              | Credentials                   |
+|-----------------|---------------------------------------------------------|--------------------------|-------------------------------|
+| **Frontend**    | [http://localhost:9800](http://localhost:9800)          | Main Hub frontend        | `hub@hub.world` / `hub`       |
+| **Backend API** | [http://localhost:9801](http://localhost:9801)          | Django                   | `admin@admin.local` / `admin` |
+| **Keycloak**    | [http://localhost:9802](http://localhost:9802)          | Identity provider admin  | `admin` / `admin`             |
+| **Nginx**       | [http://localhost:9803](http://localhost:9803)          | Nginx                    | No auth required              |
+| **Mailcatcher** | [http://localhost:9804](http://localhost:9804)          | Email testing interface  | No auth required              |
+| **PostgreSQL**  | 9812                                                    | Database server          | `user` / `pass`               |
+| **Redis**       | 9813                                                    | Cache and message broker | No auth required              |
+| **MinIO**       | 9805 and [http://localhost:9806](http://localhost:9806) | Local S3 storage         | No auth required              |
 
 ## License 📝
 

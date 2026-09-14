@@ -36,13 +36,16 @@ DB_PORT            = 5432
 # -- Docker
 # Get the current user ID to use for docker run and docker exec commands
 ifeq ($(OS),Windows_NT)
+DOCKER_UID          := 0
+DOCKER_GID          := 0
 DOCKER_USER         := 0:0     # run containers as root on Windows
 else
 DOCKER_UID          := $(shell id -u)
 DOCKER_GID          := $(shell id -g)
 DOCKER_USER         := $(DOCKER_UID):$(DOCKER_GID)
 endif
-COMPOSE             = DOCKER_USER=$(DOCKER_USER) docker compose
+# Synapse needs the numeric uid and gid, not the uid:gid pair of DOCKER_USER.
+COMPOSE             = DOCKER_USER=$(DOCKER_USER) DOCKER_UID=$(DOCKER_UID) DOCKER_GID=$(DOCKER_GID) docker compose
 # Overlay file set for the local, dev-only Matrix stack (Synapse + MAS +
 # Element). Only the *-matrix targets use it, so the normal stack ignores it.
 COMPOSE_MATRIX      = $(COMPOSE) -f compose.yml -f compose.matrix.yml

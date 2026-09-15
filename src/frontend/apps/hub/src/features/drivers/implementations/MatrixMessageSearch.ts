@@ -13,13 +13,19 @@ import {
   type MessageSearchPage,
   type MessageSearchRequest,
   type MessageSearchStatus,
-  type SearchFilters,
 } from "@/features/chat/search/types";
-import { SearchStorage } from "@/features/chat/search/storage";
 import { matrixJoinedRoomToLocalChat } from "./matrixRoomMapping";
 
 const EXTRACT_URL_REGEX = /https?:\/\/\S+/i;
 const LEGACY_PILL_REGEX = /https:\/\/matrix\.to\/#\/@([^:]+):([^/]+)|@([^:]+):([^/]+)/g;
+
+type MatrixMessageContent = {
+  body?: string;
+  formatted_body?: string;
+  msgtype?: string;
+  "m.mentions"?: { user_ids?: string[] };
+  "m.relates_to"?: { "m.in_reply_to"?: { event_id?: string } };
+};
 
 export class MatrixMessageSearch {
   private readonly messages = new Map<string, Map<string, MessageSearchDocument>>();
@@ -47,7 +53,7 @@ export class MatrixMessageSearch {
     this.emit();
   }
 
-  private onTimeline = (event: MatrixEvent, room?: Room, _toStartOfTimeline?: boolean) => {
+  private onTimeline = (event: MatrixEvent, room?: Room) => {
     if (this.disposed || !room) return;
     // Read membership synchronously off the room's own state, not the
     // asynchronously-populated joinedRoomIds set: that set is filled by
@@ -160,7 +166,7 @@ export class MatrixMessageSearch {
 
   private buildMessageDocument(roomId: string, event: MatrixEvent): MessageSearchDocument | null {
     try {
-      const content = event.getContent();
+      const content = event.getContent<MatrixMessageContent>();
       if (!content.body || typeof content.body !== "string") return null;
 
       const senderId = event.getSender();
@@ -219,12 +225,12 @@ export class MatrixMessageSearch {
     }
   }
 
-  private extractMentionedUsers(content: Record<string, any>): string[] {
+  private extractMentionedUsers(content: MatrixMessageContent): string[] {
     const mentioned: Set<string> = new Set();
 
     // Try m.mentions (MSC3952)
-    if (content["m.mentions"]?.user_ids && Array.isArray(content["m.mentions"].user_ids)) {
-      content["m.mentions"].user_ids.forEach((id: string) => mentioned.add(id));
+    if (Array.isArray(content["m.mentions"]?.user_ids)) {
+      content["m.mentions"]!.user_ids!.forEach((id: string) => mentioned.add(id));
     }
 
     // Fallback: legacy pill regex in body/formatted_body
@@ -242,7 +248,7 @@ export class MatrixMessageSearch {
     return Array.from(mentioned);
   }
 
-  private extractReplyInfo(content: Record<string, any>): {
+  private extractReplyInfo(content: MatrixMessageContent): {
     replyToEventId?: string;
     replyToSenderId?: string;
   } {

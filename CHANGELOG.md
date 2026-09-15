@@ -74,5 +74,7 @@ and this project adheres to
 - 🐛(frontend) Reset the composer draft when switching conversation
 - 🐛(frontend) Reuse pending direct invitations when starting a conversation
 - 🌐(frontend) Translate the current user's optimistic thread author
+- 🐛(search) Fix lint errors in the message search engine (unused imports,
+  unused parameter, `any` types)
 
 [unreleased]: https://github.com/suitenumerique/docs/compare/main

@@ -38,7 +38,7 @@ import {
   searchDatabaseName,
   SearchStorage,
 } from "@/features/chat/search/storage";
-import type { ConversationSearchRequest } from "@/features/chat/search/types";
+import type { ConversationSearchRequest, MessageSearchRequest } from "@/features/chat/search/types";
 import {
   MATRIX_LOCAL_SETTINGS,
   type MatrixDriverSettings,
@@ -119,6 +119,7 @@ import {
 import { matrixDirectoryUserToChatUser } from "./matrixIdentity";
 import { subscribeToIncomingMatrixEvents } from "./matrixIncomingEvents";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
+import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
   clearStoredConversationSearch,
   MATRIX_USER_STORAGE_KEY,
@@ -224,6 +225,12 @@ export class MatrixDriver extends Driver {
   private conversationSearch: MatrixConversationSearch | null = null;
   private conversationSearchStart: Promise<void> | null = null;
   private conversationSearchDatabase: string | null = null;
+
+  override readonly supportsMessageSearch = true;
+  private messageSearch: MatrixMessageSearch | null = null;
+  private messageSearchStart: Promise<void> | null = null;
+  private messageSearchDatabase: string | null = null;
+
   private clientGeneration = 0;
 
   override searchConversations(request: ConversationSearchRequest) {
@@ -255,6 +262,34 @@ export class MatrixDriver extends Driver {
     if (search) await search.remove();
     else await clearStoredConversationSearch(this.accountId, this.storageOwner);
   }
+
+  override searchMessages(request: MessageSearchRequest) {
+    return (
+      this.messageSearch?.search(request) ??
+      super.searchMessages(request)
+    );
+  }
+
+  override getMessageSearchStatus() {
+    return (
+      this.messageSearch?.getStatus() ??
+      super.getMessageSearchStatus()
+    );
+  }
+
+  override retryMessageSearch(): void {
+    const mx = this.mx;
+    if (!mx) return;
+    void this.startMessageSearch(mx);
+  }
+
+  override async clearMessageSearch(): Promise<void> {
+    const search = this.messageSearch;
+    this.messageSearch = null;
+    this.messageSearchDatabase = null;
+    if (search) await search.remove?.();
+  }
+
   override readonly supportsComposition: boolean = true;
   override readonly supportsThreadComposition: boolean = true;
   override readonly supportsConversationHistoryRemoval: boolean = true;
@@ -1902,9 +1937,41 @@ export class MatrixDriver extends Driver {
     }
   }
 
+  private async startMessageSearch(mx: MatrixClient): Promise<void> {
+    if (this.messageSearchStart) return this.messageSearchStart;
+    const database = this.messageSearchDatabase;
+    if (this.mx !== mx || !database || this.messageSearch) return;
+    const work = Promise.resolve().then(async () => {
+      if (this.mx !== mx || this.messageSearchDatabase !== database)
+        return;
+      let search: MatrixMessageSearch | undefined;
+      try {
+        search = new MatrixMessageSearch(
+          mx,
+          this.accountId,
+          database,
+          () => this.emit({ type: "search:changed" }),
+        );
+        this.messageSearch = search;
+        await search.start();
+      } catch {
+        if (this.messageSearch === search) this.messageSearch = null;
+        search?.close();
+      }
+    });
+    this.messageSearchStart = work;
+    try {
+      await work;
+    } finally {
+      if (this.messageSearchStart === work)
+        this.messageSearchStart = null;
+    }
+  }
+
   private async bootstrapClient(user: MatrixUserInterface): Promise<void> {
     if (this.mx && this.mx.getUserId() === user.mxId) {
       await this.startConversationSearch(this.mx);
+      await this.startMessageSearch(this.mx);
       return;
     }
     this.teardownClient();
@@ -1917,7 +1984,9 @@ export class MatrixDriver extends Driver {
         if (generation !== this.clientGeneration) return;
         this.mx = client;
         this.conversationSearchDatabase = this.searchStoreDbName(user);
+        this.messageSearchDatabase = this.searchStoreDbName(user);
         await this.startConversationSearch(client);
+        await this.startMessageSearch(client);
       },
     });
     if (generation !== this.clientGeneration) {
@@ -2382,6 +2451,7 @@ export class MatrixDriver extends Driver {
       }
       this.joinedRoomIds = null;
       if (!this.conversationSearch) this.retryConversationSearch();
+      if (!this.messageSearch) this.retryMessageSearch();
       for (const room of mx.getVisibleRooms()) {
         this.emit({ type: "chat:changed", chatId: room.roomId });
         emitUnread(room);
@@ -2512,6 +2582,10 @@ export class MatrixDriver extends Driver {
     this.conversationSearch = null;
     this.conversationSearchStart = null;
     this.conversationSearchDatabase = null;
+    this.messageSearch?.close();
+    this.messageSearch = null;
+    this.messageSearchStart = null;
+    this.messageSearchDatabase = null;
     this.detachSync();
     this.detachSync = () => {};
     this.typingListeners.forEach((listeners) => {
@@ -2728,6 +2802,7 @@ export class MatrixDriver extends Driver {
         const ids = new Set(joinedRooms);
         this.joinedRoomIds = ids;
         this.conversationSearch?.setJoinedRooms(ids);
+        this.messageSearch?.setJoinedRooms(ids);
         return ids;
       } catch (error) {
         // A superseded caller awaits the latest roster, including its failure.

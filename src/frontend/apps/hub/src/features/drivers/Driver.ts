@@ -1,8 +1,12 @@
 import {
   EMPTY_SEARCH_STATUS,
+  EMPTY_MESSAGE_SEARCH_STATUS,
   type ConversationSearchRequest,
   type ConversationSearchPage,
   type ConversationSearchStatus,
+  type MessageSearchRequest,
+  type MessageSearchPage,
+  type MessageSearchStatus,
 } from "@/features/chat/search/types";
 
 import {
@@ -229,6 +233,29 @@ export abstract class Driver {
 
   /** Explicit Hub logout erases search; an ordinary destroy preserves it. */
   async clearConversationSearch(): Promise<void> {}
+
+  readonly supportsMessageSearch: boolean = false;
+
+  /** Search message content with optional filters. */
+  async searchMessages(
+    _request: MessageSearchRequest,
+  ): Promise<MessageSearchPage> {
+    void _request;
+    return {
+      results: [],
+      total: 0,
+    };
+  }
+
+  getMessageSearchStatus(): MessageSearchStatus {
+    return EMPTY_MESSAGE_SEARCH_STATUS;
+  }
+
+  retryMessageSearch(): void {}
+
+  /** Plaintext-at-rest: erased at explicit Hub logout, same as clearConversationSearch. */
+  async clearMessageSearch(): Promise<void> {}
+
   readonly supportsComposition: boolean = false;
   readonly supportsThreadComposition: boolean = false;
   /** Whether the driver can leave and forget a conversation for this account. */

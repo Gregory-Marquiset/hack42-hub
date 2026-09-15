@@ -13,7 +13,8 @@ import type { Chat } from "@/features/drivers/types";
 import { chatHref } from "../chatRefs";
 
 import { ConversationSearchResultRow } from "./ConversationSearchResultRow";
-import type { ConversationSearchStatus } from "./types";
+import { MessageSearchResultRow } from "./MessageSearchResultRow";
+import type { ConversationSearchStatus, MessageSearchStatus } from "./types";
 import { useConversationSearch } from "./useConversationSearch";
 
 export const ConversationSearchModal = ({
@@ -35,8 +36,18 @@ export const ConversationSearchModal = ({
     total,
     loading,
     failed,
+
+    messageAccounts,
+    messageStatuses,
+    messagePartial,
+    messageResults,
+    messageTotal,
+    messageLoading,
+    messageFailed,
+    loadMoreMessages,
   } = useConversationSearch();
   const heading = useId();
+  const messageHeading = useId();
 
   const open = (chat: Chat) => {
     onClose();
@@ -116,6 +127,73 @@ export const ConversationSearchModal = ({
                     onRetry={() => entry.driver.retryConversationSearch()}
                   />
                 ))}
+              </div>
+
+              {/* --- Messages section: new for ISSUE42, scaffold-styled --- */}
+              <div className="hub__message-search-scaffold">
+                {messageResults.length > 0 && (
+                  <div role="group" aria-labelledby={messageHeading}>
+                    <h2
+                      id={messageHeading}
+                      className="hub__message-search-scaffold__heading"
+                    >
+                      {t("Messages")}
+                    </h2>
+                    {messageResults.map((result) => {
+                      const key = JSON.stringify([
+                        result.chat.accountId,
+                        result.chat.id,
+                        result.eventId,
+                      ]);
+                      return (
+                        <MessageSearchResultRow
+                          key={key}
+                          id={key}
+                          result={result}
+                          accountLabel={
+                            messageAccounts.length > 1
+                              ? result.accountLabel
+                              : undefined
+                          }
+                          onSelect={() => open(result.chat)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                {messageResults.length < messageTotal && (
+                  <QuickSearchItem
+                    id="hub-search-more-messages"
+                    onSelect={loadMoreMessages}
+                  >
+                    {t("Show more messages ({{shown}} of {{total}})", {
+                      shown: messageResults.length,
+                      total: messageTotal,
+                    })}
+                  </QuickSearchItem>
+                )}
+                <div
+                  className="hub__message-search-scaffold__status"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <MessageSearchResultsMessage
+                    hasResults={messageResults.length > 0}
+                    failed={messageFailed}
+                    loading={messageLoading}
+                    partial={messagePartial}
+                  />
+                  {messageAccounts.map((entry, index) => (
+                    <MessageSearchStatusHint
+                      key={entry.accountId}
+                      status={messageStatuses[index]}
+                      label={
+                        messageAccounts.length > 1 ? entry.label : undefined
+                      }
+                      onRetry={() => entry.driver.retryMessageSearch()}
+                    />
+                  ))}
+                </div>
               </div>
             </>
           ) : null}
@@ -202,6 +280,78 @@ const SearchStatus = ({
           onClick={onRetry}
         >
           {t("Retry preparation")}
+        </button>
+      )}
+    </>
+  );
+};
+
+// --- Message search UI helpers (new for ISSUE42, scaffold-styled) ---------
+
+const MessageSearchResultsMessage = ({
+  hasResults,
+  failed,
+  loading,
+  partial,
+}: {
+  hasResults: boolean;
+  failed: boolean;
+  loading: boolean;
+  partial: boolean;
+}) => {
+  const { t } = useTranslation();
+  if (hasResults) return null;
+  if (failed) return t("Message search is unavailable. Please try again.");
+  if (loading) return t("Searching messages…");
+  if (partial) {
+    return t("No matches yet. Message indexing is incomplete.");
+  }
+  return t("No messages found.");
+};
+
+const MessageSearchStatusHint = ({
+  status,
+  label,
+  onRetry,
+}: {
+  status: MessageSearchStatus;
+  label?: string;
+  onRetry: () => void;
+}) => {
+  const { t } = useTranslation();
+  const incomplete = status.roomsPending > 0;
+  const paused = status.freshness !== "current";
+  const retryable = paused || status.hasFailures;
+  return (
+    <>
+      {(incomplete || paused) && (
+        <p>
+          {label && `${label} · `}
+          {paused
+            ? t("Message indexing paused. Results may be incomplete.")
+            : t("Rooms indexed: {{backfilled}} / {{eligible}}", {
+                backfilled: status.roomsBackfilled,
+                eligible: status.roomsEligible,
+              })}
+          {status.hasFailures && (
+            <> {t("Some rooms could not be indexed.")}</>
+          )}
+        </p>
+      )}
+      {!status.storageAvailable && (
+        <p>
+          {t(
+            "Message search storage is unavailable. Indexing will restart when this page is reopened.",
+          )}
+        </p>
+      )}
+      {retryable && (
+        <button
+          type="button"
+          className="hub__message-search-scaffold__retry"
+          onClick={onRetry}
+        >
+          {t("Retry indexing")}
         </button>
       )}
     </>

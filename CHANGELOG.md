@@ -12,6 +12,10 @@ and this project adheres to
   Persist the search index separately and prepare small rooms progressively.
   Add a QuickSearch modal with local results across connected accounts.
   Open search from any page with Cmd+K or Ctrl+K.
+- ✨(search) Search message content alongside conversations, with
+  Discord-style filters (`from:`, `mentions:`, `has:`, `before:`/`during:`/
+  `after:`). Show matches in a "Messages" section of the search modal with
+  highlighted excerpts.
 - ✨(frontend) Notify incoming messages, thread replies and invitations.
   Play sound on receipt and show browser notifications when Hub is unfocused.
   Request permission on incoming activity with a user-gesture fallback.

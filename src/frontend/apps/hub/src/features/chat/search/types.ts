@@ -47,3 +47,68 @@ export type ConversationSearchPage = {
   results: ConversationSearchResult[];
   total: number;
 };
+
+export type SearchHasValue = "image" | "video" | "link";
+
+export type SearchFilters = {
+  from: string[];
+  mentions: string[];
+  has: SearchHasValue[];
+  before?: string;
+  during?: string;
+  after?: string;
+};
+
+export const emptySearchFilters = (): SearchFilters => ({
+  from: [],
+  mentions: [],
+  has: [],
+});
+
+export const hasActiveFilters = (f: SearchFilters): boolean =>
+  f.from.length > 0 ||
+  f.mentions.length > 0 ||
+  f.has.length > 0 ||
+  !!f.before ||
+  !!f.during ||
+  !!f.after;
+
+export type MessageSearchRequest = {
+  freeText: string;
+  filters: SearchFilters;
+  limit?: number;
+  signal?: AbortSignal;
+};
+
+export type MessageSearchResult = {
+  chat: LocalChat;
+  eventId: string;
+  senderId: string;
+  senderName: string;
+  excerpt: string;
+  matchRanges: [number, number][];
+  timestamp: string;
+};
+
+export type MessageSearchPage = {
+  results: MessageSearchResult[];
+  total: number;
+};
+
+export type MessageSearchStatus = {
+  freshness: SearchFreshness;
+  storageAvailable: boolean;
+  roomsEligible: number;
+  roomsBackfilled: number;
+  roomsPending: number;
+  hasFailures: boolean;
+};
+
+export const EMPTY_MESSAGE_SEARCH_STATUS: MessageSearchStatus = {
+  freshness: "awaiting-sync",
+  storageAvailable: true,
+  roomsEligible: 0,
+  roomsBackfilled: 0,
+  roomsPending: 0,
+  hasFailures: false,
+};

@@ -11,6 +11,7 @@ import {
 
 import {
   AccountId,
+  ChatDocument,
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMessage,
@@ -78,6 +79,12 @@ export type MarkChatThreadReadParams = {
 export type SendChatMessageParams = {
   chatId: string;
   content: string;
+};
+
+export type AddChatDocumentParams = {
+  chatId: string;
+  address: string;
+  title: string;
 };
 
 export type EditChatMessageParams = {
@@ -205,6 +212,7 @@ export type ChatEvent =
       invalidateDetails?: boolean;
     }
   | { type: "members:changed"; chatId: string }
+  | { type: "documents:changed"; chatId: string }
   | { type: "tags:changed"; chatId: string }
   | { type: "chats:changed" };
 
@@ -280,6 +288,22 @@ export abstract class Driver {
   abstract getChatForUsers(userIds: string[]): Promise<LocalChat | null>;
   /** Single conversation, fetched by id. */
   abstract getChat(chatId: string): Promise<LocalChat>;
+  /** Documents linked to one conversation. */
+  async getChatDocuments(_chatId: string): Promise<ChatDocument[]> {
+    void _chatId;
+    throw new Error(
+      `${this.constructor.name}.getChatDocuments: documents are not supported by this driver.`,
+    );
+  }
+
+  /** Adds a document linked to one conversation. */
+  async addChatDocument(_params: AddChatDocumentParams): Promise<ChatDocument> {
+    void _params;
+    throw new Error(
+      `${this.constructor.name}.addChatDocument: documents are not supported by this driver.`,
+    );
+  }
+
   abstract getChatMessages(
     params: GetChatMessagesParams,
   ): Promise<ChatMessagesPage>;

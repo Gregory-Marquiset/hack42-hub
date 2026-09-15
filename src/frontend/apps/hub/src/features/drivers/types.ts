@@ -106,6 +106,13 @@ export type Chat = LocalChat & {
   ref: ChatRef;
 };
 
+/** Metadata for a document linked to a conversation. */
+export type ChatDocument = {
+  address: string;
+  title: string;
+  addedBy: string;
+};
+
 export type LocalChatSections = {
   favourites: LocalChat[];
   all: LocalChat[];

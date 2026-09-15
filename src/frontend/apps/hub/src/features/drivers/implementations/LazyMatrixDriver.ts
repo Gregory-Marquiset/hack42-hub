@@ -5,6 +5,7 @@ import type {
 
 import {
   Driver as BaseDriver,
+  type AddChatDocumentParams,
   type ChatConnectionState,
   type ChatEventListener,
   type ChatTypingListener,
@@ -26,6 +27,7 @@ import {
 import type {
   AccountId,
   ChatMainTimelineUnread,
+  ChatDocument,
   ChatMessage,
   ChatMessagesPage,
   ChatMembers,
@@ -194,6 +196,14 @@ export class LazyMatrixDriver extends BaseDriver {
 
   async getChat(chatId: string): Promise<LocalChat> {
     return this.withTarget((driver) => driver.getChat(chatId));
+  }
+
+  async getChatDocuments(chatId: string): Promise<ChatDocument[]> {
+    return this.withTarget((driver) => driver.getChatDocuments(chatId));
+  }
+
+  async addChatDocument(params: AddChatDocumentParams): Promise<ChatDocument> {
+    return this.withTarget((driver) => driver.addChatDocument(params));
   }
 
   async getChatMessages(

@@ -301,6 +301,108 @@ describe("timelineEventToChatEvent (real-time sync mapping)", () => {
   });
 });
 
+describe("MatrixDriver chat documents", () => {
+  const existingDocument = {
+    address: "https://docs.example/doc1",
+    title: "First document",
+    addedBy: OTHER_ID,
+  };
+
+  const clientWithDocuments = (content?: unknown, sendStateEvent = vi.fn()) => {
+    const room = {
+      roomId: ROOM_ID,
+      currentState: {
+        getStateEvents: vi.fn(() =>
+          content === undefined
+            ? undefined
+            : ({ getContent: () => content } as MatrixEvent),
+        ),
+      },
+    } as unknown as Room;
+    const mx = {
+      getRoom: (id: string) => (id === ROOM_ID ? room : null),
+      getUserId: () => SELF_ID,
+      sendStateEvent,
+    } as unknown as MatrixClient;
+    return { driver: driverWithClient(mx), room, sendStateEvent };
+  };
+
+  it("reads room documents with the empty state key", async () => {
+    const { driver, room } = clientWithDocuments({
+      documents: [existingDocument],
+    });
+    await expect(driver.getChatDocuments(ROOM_ID)).resolves.toEqual([
+      existingDocument,
+    ]);
+    expect(room.currentState.getStateEvents).toHaveBeenCalledWith(
+      "fr.gouv.hub.documents",
+      "",
+    );
+  });
+
+  it("returns an empty list only when the state event is absent", async () => {
+    const { driver } = clientWithDocuments();
+    await expect(driver.getChatDocuments(ROOM_ID)).resolves.toEqual([]);
+  });
+
+  it("rejects malformed state instead of overwriting it", async () => {
+    const { driver, sendStateEvent } = clientWithDocuments({
+      documents: [
+        { address: "https://docs.example/doc1", title: "Missing author" },
+      ],
+    });
+    await expect(driver.getChatDocuments(ROOM_ID)).rejects.toThrow(
+      /invalid documents room state content/,
+    );
+    await expect(
+      driver.addChatDocument({
+        chatId: ROOM_ID,
+        address: "https://docs.example/doc2",
+        title: "Second document",
+      }),
+    ).rejects.toThrow(/invalid documents room state content/);
+    expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+
+  it("writes the complete list and derives addedBy from the client", async () => {
+    const sendStateEvent = vi.fn(async () => ({}));
+    const { driver } = clientWithDocuments(
+      { documents: [existingDocument] },
+      sendStateEvent,
+    );
+    const added = await driver.addChatDocument({
+      chatId: ROOM_ID,
+      address: "https://docs.example/doc2",
+      title: "Second document",
+    });
+    expect(added).toEqual({
+      address: "https://docs.example/doc2",
+      title: "Second document",
+      addedBy: SELF_ID,
+    });
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      "fr.gouv.hub.documents",
+      { documents: [existingDocument, added] },
+      "",
+    );
+  });
+
+  it("propagates a failed Matrix write", async () => {
+    const sendStateEvent = vi.fn(async () => {
+      throw new Error("forbidden");
+    });
+    const { driver } = clientWithDocuments(undefined, sendStateEvent);
+    await expect(
+      driver.addChatDocument({
+        chatId: ROOM_ID,
+        address: "https://docs.example/doc2",
+        title: "Second document",
+      }),
+    ).rejects.toThrow("forbidden");
+  });
+});
+
 describe("MatrixDriver.sendChatMessage", () => {
   it("sends the text and returns the message under the real server id", async () => {
     const room = makeRoom();

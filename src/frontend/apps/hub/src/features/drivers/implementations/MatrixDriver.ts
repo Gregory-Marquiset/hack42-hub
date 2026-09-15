@@ -56,6 +56,7 @@ import {
   getUserIdFromAccessToken,
 } from "@/features/matrix/utils/auth";
 import {
+  AddChatDocumentParams,
   ChatConnectionState,
   ChatEvent,
   ChatEventListener,
@@ -77,6 +78,7 @@ import {
 } from "../Driver";
 import {
   AccountId,
+  ChatDocument,
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMessage,
@@ -137,11 +139,41 @@ import {
   participantSetKey,
   roomOtherMembers,
 } from "./matrixRoomMapping";
+
+declare module "matrix-js-sdk/lib/@types/event" {
+  interface StateEvents {
+    "fr.gouv.hub.documents": { documents: ChatDocument[] };
+  }
+}
+
 /** Matches `getChatMessages`'s default; the homeserver may clamp it lower. */
 const DEFAULT_CHAT_PAGE_SIZE = 50;
 const MAX_TIMELINE_PAGINATION_STEPS = 200;
 const TIMELINE_WINDOW_LIMIT = Number.MAX_SAFE_INTEGER;
 const MATRIX_TYPING_TIMEOUT_MS = 30_000;
+const MATRIX_DOCUMENTS_EVENT_TYPE = "fr.gouv.hub.documents";
+
+/** Matrix state content is untrusted, including state restored from sync cache. */
+const documentsFromStateContent = (content: unknown): ChatDocument[] => {
+  if (typeof content !== "object" || content === null) {
+    throw new Error("MatrixDriver: invalid documents room state content.");
+  }
+  const documents = (content as Record<string, unknown>).documents;
+  if (
+    !Array.isArray(documents) ||
+    !documents.every(
+      (document: unknown) =>
+        typeof document === "object" &&
+        document !== null &&
+        typeof (document as Record<string, unknown>).address === "string" &&
+        typeof (document as Record<string, unknown>).title === "string" &&
+        typeof (document as Record<string, unknown>).addedBy === "string",
+    )
+  ) {
+    throw new Error("MatrixDriver: invalid documents room state content.");
+  }
+  return documents as ChatDocument[];
+};
 
 // A generous fetch limit is requested from the user directory and the filtered
 // list sliced to a small display count, so removing self/excluded never starves
@@ -421,6 +453,38 @@ export class MatrixDriver extends Driver {
     return joinedRoomIds.has(chatId)
       ? matrixJoinedRoomToLocalChat(room, currentUserId)
       : matrixRoomToLocalChat(room, currentUserId);
+  }
+
+  async getChatDocuments(chatId: string): Promise<ChatDocument[]> {
+    const { room } = this.requireRoom("getChatDocuments", chatId);
+    const event = room.currentState.getStateEvents(
+      MATRIX_DOCUMENTS_EVENT_TYPE,
+      "",
+    );
+    return event ? documentsFromStateContent(event.getContent()) : [];
+  }
+
+  async addChatDocument({
+    chatId,
+    address,
+    title,
+  }: AddChatDocumentParams): Promise<ChatDocument> {
+    const { mx } = this.requireRoom("addChatDocument", chatId);
+    const addedBy = mx.getUserId();
+    if (!addedBy) {
+      throw new Error(
+        "MatrixDriver.addChatDocument: user is not authenticated.",
+      );
+    }
+    const document = { address, title, addedBy };
+    const documents = await this.getChatDocuments(chatId);
+    await mx.sendStateEvent(
+      chatId,
+      MATRIX_DOCUMENTS_EVENT_TYPE,
+      { documents: [...documents, document] },
+      "",
+    );
+    return document;
   }
 
   async getChatMembers(chatId: string): Promise<ChatMembers> {
@@ -2351,6 +2415,18 @@ export class MatrixDriver extends Driver {
       this.emit({ type: "chat:changed", chatId: member.roomId });
       this.emit({ type: "threads:changed", chatId: member.roomId });
     };
+    const onDocuments = (event: MatrixEvent) => {
+      if (
+        event.getType() !== MATRIX_DOCUMENTS_EVENT_TYPE ||
+        event.getStateKey() !== ""
+      ) {
+        return;
+      }
+      const chatId = event.getRoomId();
+      if (chatId && mx.getRoom(chatId)) {
+        this.emit({ type: "documents:changed", chatId });
+      }
+    };
     const onMembers = (
       _event: MatrixEvent,
       _state: unknown,
@@ -2473,6 +2549,7 @@ export class MatrixDriver extends Driver {
     mx.on(RoomMemberEvent.Typing, onTyping);
     mx.on(RoomMemberEvent.PowerLevel, onPowerLevel);
     mx.on(RoomStateEvent.Members, onMembers);
+    mx.on(RoomStateEvent.Events, onDocuments);
     mx.on(RoomEvent.Name, onName);
     mx.on(RoomEvent.Tags, onTags);
     mx.on(RoomEvent.AccountData, onAccountData);
@@ -2495,6 +2572,7 @@ export class MatrixDriver extends Driver {
       mx.off(RoomMemberEvent.Typing, onTyping);
       mx.off(RoomMemberEvent.PowerLevel, onPowerLevel);
       mx.off(RoomStateEvent.Members, onMembers);
+      mx.off(RoomStateEvent.Events, onDocuments);
       mx.off(RoomEvent.Name, onName);
       mx.off(RoomEvent.Tags, onTags);
       mx.off(RoomEvent.AccountData, onAccountData);

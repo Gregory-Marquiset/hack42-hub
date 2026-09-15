@@ -1,0 +1,9 @@
+@use "./scaffoldTokens" as *;
+
+.hub__message-search__highlight {
+  background-color: var(--hub-scaffold-highlight-bg);
+  color: var(--hub-scaffold-text-title);
+  padding: 0 2px;
+  border-radius: 2px;
+  font-weight: 500;
+}

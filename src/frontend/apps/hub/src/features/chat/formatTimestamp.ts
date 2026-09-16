@@ -25,7 +25,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const capitalizeLocalizedLabel = (label: string, locale?: string): string =>
   label.charAt(0).toLocaleUpperCase(locale) + label.slice(1);
 
-const getCalendarDay = (date: Date, timeZone?: string): number => {
+export const getCalendarDay = (date: Date, timeZone?: string): number => {
   const parts = new Intl.DateTimeFormat("en", {
     year: "numeric",
     month: "2-digit",
@@ -102,4 +102,51 @@ export const formatChatGroupTimestamp = (
     timeZone,
   }).format(date);
   return `${fullDate} · ${time}`;
+};
+
+/**
+ * Compact single-value timestamp for a conversation list row: time only
+ * today, a localized short "Yesterday" for the previous day, a short weekday
+ * from two to six days ago, and a short numeric date beyond that.
+ */
+export const formatChatListTimestamp = (
+  iso: string,
+  locale?: string,
+  timeZone?: string,
+  now = new Date(),
+): string => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+
+  const dayDifference =
+    (getCalendarDay(now, timeZone) - getCalendarDay(date, timeZone)) /
+    DAY_IN_MS;
+
+  if (dayDifference === 0) {
+    return formatChatTime(iso, locale, timeZone);
+  }
+
+  if (dayDifference === 1) {
+    const yesterday = new Intl.RelativeTimeFormat(locale, {
+      numeric: "auto",
+      style: "short",
+    }).format(-1, "day");
+    return capitalizeLocalizedLabel(yesterday, locale);
+  }
+
+  if (dayDifference >= 2 && dayDifference <= 6) {
+    const weekday = new Intl.DateTimeFormat(locale, {
+      weekday: "short",
+      timeZone,
+    }).format(date);
+    return capitalizeLocalizedLabel(weekday, locale);
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+  }).format(date);
 };

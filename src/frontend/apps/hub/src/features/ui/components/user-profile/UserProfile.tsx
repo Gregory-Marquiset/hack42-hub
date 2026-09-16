@@ -1,24 +1,57 @@
 import { UserMenu } from "@gouvfr-lasuite/ui-components";
 
-import { logout, useAuth } from "@/features/auth/Auth";
+import { useAuth } from "@/features/auth/Auth";
 import { LoginButton } from "@/features/auth/components/LoginButton";
+import { useMyAvatarSrc } from "@/features/chat/hooks/useMyAvatarSrc";
+import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 
-import { LanguagePickerUserMenu } from "./LanguagePickerUserMenu";
-
-const TERMS_OF_SERVICE_URL =
-  "https://docs.numerique.gouv.fr/docs/8e298e03-c95f-44c7-be4a-ffb618af1854/";
+import { useAvatarPortalOverlay } from "../avatar/useAvatarPortalOverlay";
+import { ChangeProfilePhotoAction } from "./ChangeProfilePhotoAction";
+import { LogoutAction } from "./LogoutAction";
 
 export const UserProfile = () => {
   const { user } = useAuth();
+  // `UserMenu`'s own avatar only ever renders initials — there's no prop to
+  // give it a photo — so the real photo is layered on top as a plain `<img>`
+  // absolutely positioned over its trigger button (see UserProfile.scss).
+  const entries = useDriverEntries();
+  const avatarAccount = entries.find(
+    (entry) => entry.driver.supportsAvatarUpload,
+  );
+  const avatarSrc = useMyAvatarSrc(avatarAccount?.accountId ?? "");
+  // The popover header (name + email, opened from the trigger) is portaled
+  // straight to `document.body` by the library — outside this component's
+  // DOM — so it needs the portal-patching variant instead of a plain overlay.
+  useAvatarPortalOverlay(
+    ".user-menu__content__body__user-info .c__avatar",
+    avatarSrc,
+  );
+
   if (!user) {
     return <LoginButton />;
   }
   return (
-    <UserMenu
-      user={user}
-      logout={logout}
-      termOfServiceUrl={TERMS_OF_SERVICE_URL}
-      actions={<LanguagePickerUserMenu />}
-    />
+    <div className="hub__user-profile">
+      <UserMenu
+        user={user}
+        // Not using `UserMenu`'s own `logout` prop: it always renders in a
+        // fixed slot above `actions`, and the change-photo action needs to
+        // come first — so logout moves into `actions` too, after it.
+        actions={
+          <>
+            <ChangeProfilePhotoAction />
+            <LogoutAction />
+          </>
+        }
+      />
+      {avatarSrc && (
+        <img
+          src={avatarSrc}
+          alt=""
+          aria-hidden="true"
+          className="hub__user-profile__avatar"
+        />
+      )}
+    </div>
   );
 };

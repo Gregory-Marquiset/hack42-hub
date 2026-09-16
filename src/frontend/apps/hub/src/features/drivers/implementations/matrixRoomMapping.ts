@@ -12,7 +12,9 @@ import {
   type RoomMember,
 } from "matrix-js-sdk/lib/matrix";
 
-import { ChatInvitation, LocalChat } from "../types";
+import { ChatInvitation, ChatVisual, LocalChat, LocalSpace } from "../types";
+
+import { lastMainTimelinePreview } from "./matrixEventMapping";
 
 export const MATRIX_FAVOURITE_TAG = "m.favourite";
 
@@ -74,6 +76,27 @@ const explicitRoomName = (room: Room): string | undefined => {
   return typeof name === "string" && name.trim() ? name.trim() : undefined;
 };
 
+/**
+ * The chat's photo: the room's own `m.room.avatar` when set (the normal case
+ * for a group), else — for a direct chat only — the counterpart's personal
+ * avatar. `visual.url` is the raw `mxc://` URI — this local homeserver
+ * requires authenticated media requests, which a plain `<img src>` can't
+ * make, so resolving it to a fetchable blob URL happens at render time (see
+ * `useMatrixAvatarSrc`), not here. Falls back to the generated icon/initials
+ * `visual` when neither avatar is set.
+ */
+const resolveChatVisual = (
+  room: Room,
+  isDirect: boolean,
+  otherMember: RoomMember | undefined,
+  fallback: ChatVisual,
+): ChatVisual => {
+  const mxcUrl =
+    room.getMxcAvatarUrl() ??
+    (isDirect ? otherMember?.getMxcAvatarUrl() : undefined);
+  return mxcUrl ? { kind: "image", url: mxcUrl } : fallback;
+};
+
 /** Maps a joined room to a normal conversation row. */
 export const matrixJoinedRoomToLocalChat = (
   room: Room,
@@ -93,6 +116,13 @@ export const matrixJoinedRoomToLocalChat = (
   );
   const isEmptyDirect = isDirect && activeOthers.length === 0;
   const timestamp = room.getLastActiveTimestamp();
+  const preview = lastMainTimelinePreview(room, currentUserId);
+  // A direct chat's row already names the counterpart, so the sender name
+  // would be redundant on the received side; a group keeps it.
+  const rowPreview =
+    preview && isDirect && !preview.isOwnMessage
+      ? { text: preview.text, isOwnMessage: false }
+      : preview;
 
   // A 1:1 is identified by the other person and ignores any room name (DMs
   // aren't renameable). Once its counterpart leaves, reuse the client's
@@ -114,8 +144,14 @@ export const matrixJoinedRoomToLocalChat = (
     section: isFavouriteRoom(room) ? "favourites" : "all",
     kind: isDirect ? "direct" : "group",
     participantIds,
-    visual: isDirect ? { kind: "initials" } : { kind: "icon", icon: "groups" },
+    visual: resolveChatVisual(
+      room,
+      isDirect,
+      displayedOthers[0],
+      isDirect ? { kind: "initials" } : { kind: "icon", icon: "groups" },
+    ),
     membership: "join",
+    ...(rowPreview ? { preview: rowPreview } : {}),
   };
 };
 
@@ -201,3 +237,28 @@ export const matrixRoomToLocalChat = (
   room.getMyMembership() === KnownMembership.Invite
     ? matrixInviteRoomToLocalChat(room, currentUserId)
     : matrixJoinedRoomToLocalChat(room, currentUserId);
+
+/** Maps a joined `m.space` room to an Espace row. */
+export const matrixRoomToLocalSpace = (room: Room): LocalSpace => ({
+  id: room.roomId,
+  name: explicitRoomName(room) || room.roomId,
+  visual: { kind: "icon", icon: "workspaces" },
+  memberCount: room.getJoinedMemberCount(),
+});
+
+/**
+ * Room ids listed as children of `spaceRoom` via `m.space.child` state
+ * events. A child event with empty content marks a removed relation and is
+ * skipped — only events that still carry a `via` list are live members.
+ */
+export const spaceChildRoomIds = (spaceRoom: Room): Set<string> =>
+  new Set(
+    spaceRoom.currentState
+      .getStateEvents(EventType.SpaceChild)
+      .filter((event) => {
+        const via = event.getContent<{ via?: string[] }>().via;
+        return Array.isArray(via) && via.length > 0;
+      })
+      .map((event) => event.getStateKey())
+      .filter((stateKey): stateKey is string => Boolean(stateKey)),
+  );

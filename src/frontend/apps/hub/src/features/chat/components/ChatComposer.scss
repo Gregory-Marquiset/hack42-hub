@@ -307,9 +307,9 @@
   // never disagree about which row is selected.
   //
   // The grey fill alone is 1.29:1 against the list background - far under the
-  // 3:1 that RGAA 3.3 asks of a colour carrying a component state. Since no
-  // grey light enough to stay discreet can reach 3:1, the outline carries the
-  // state and the fill only reinforces it.
+  // 3:1 that RGAA 3.3 asks of a colour carrying a component state. No grey pale
+  // enough to stay unobtrusive can reach 3:1, so the outline carries the state
+  // and the fill only reinforces it.
   &--active {
     background: var(
       --c--contextuals--background--semantic--neutral--secondary,

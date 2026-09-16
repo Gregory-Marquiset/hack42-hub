@@ -71,3 +71,10 @@ user_directory:
   enabled: true
   search_all_users: true
   prefer_local_users: true
+
+# Application Services. Each file declares a service Synapse trusts on its
+# token alone, with no login - the only way to drive Matrix from a backend
+# here, since MAS sends every human login through Keycloak. Read at startup
+# only: editing a registration needs a Synapse restart.
+app_service_config_files:
+  - /config/appservices/hub.yaml

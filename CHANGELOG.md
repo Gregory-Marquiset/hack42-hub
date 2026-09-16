@@ -21,8 +21,9 @@ and this project adheres to
 - ✨(frontend) Show real profile/group photos in the account menu, chat
   header and members list. Reorder the account menu, add Direct messages
   filter tabs, and fix the language picker only applying French.
-- ✨(frontend) Start a temporary meeting from a conversation. Record the call in
-  the Matrix room so every member can rejoin it.
+- ✨(frontend) Start a temporary meeting from a conversation, shown in a Meet
+  window inside the Hub. Record the call in the Matrix room so every member
+  can rejoin it.
 - ✨(backend) Create Meet rooms through the Meet external API. Add the
   `/meetings/` endpoint, enabled once the Meet application credentials are set.
   Rooms are public by default so they can be joined from an embedded frame.

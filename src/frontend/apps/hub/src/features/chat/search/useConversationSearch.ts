@@ -178,7 +178,14 @@ export const useConversationSearch = () => {
         setMessageLoading(false);
       });
     return () => controller.abort();
-  }, [entries, parsed.freeText, parsed.filters, hasQuery, messageLimit, revision]);
+  }, [
+    entries,
+    parsed.freeText,
+    parsed.filters,
+    hasQuery,
+    messageLimit,
+    revision,
+  ]);
 
   const changeQuery = (value: string) => {
     setQuery(value);

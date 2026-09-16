@@ -6,7 +6,14 @@ export type ParsedSearchQuery = {
   raw: string;
 };
 
-const KNOWN_TAGS = new Set(["from", "mentions", "has", "before", "during", "after"]);
+const KNOWN_TAGS = new Set([
+  "from",
+  "mentions",
+  "has",
+  "before",
+  "during",
+  "after",
+]);
 const VALID_HAS_VALUES = new Set(["image", "video", "link"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -52,7 +59,7 @@ const processTag = (
   tagName: string,
   value: string,
   filters: SearchFilters,
-  fallbackFreeText: string[]
+  fallbackFreeText: string[],
 ) => {
   if (!KNOWN_TAGS.has(tagName)) {
     // Unknown tag: fall through to free text (Discord's forgiving behavior)

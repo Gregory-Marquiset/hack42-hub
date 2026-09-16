@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  matchesMessageFilters,
-  MessageSearchDocument,
-} from "../model";
+import { matchesMessageFilters, MessageSearchDocument } from "../model";
 import { emptySearchFilters } from "../types";
 
-const createDoc = (overrides?: Partial<MessageSearchDocument>): MessageSearchDocument => ({
+const createDoc = (
+  overrides?: Partial<MessageSearchDocument>,
+): MessageSearchDocument => ({
   roomId: "!room:example.com",
   eventId: "$event1",
   senderId: "@alice:example.com",

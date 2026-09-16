@@ -79,15 +79,13 @@ export class LazyMatrixDriver extends BaseDriver {
 
   override searchMessages(request: MessageSearchRequest) {
     return (
-      this.target?.searchMessages(request) ??
-      super.searchMessages(request)
+      this.target?.searchMessages(request) ?? super.searchMessages(request)
     );
   }
 
   override getMessageSearchStatus() {
     return (
-      this.target?.getMessageSearchStatus() ??
-      super.getMessageSearchStatus()
+      this.target?.getMessageSearchStatus() ?? super.getMessageSearchStatus()
     );
   }
 

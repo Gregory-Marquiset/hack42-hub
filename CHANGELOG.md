@@ -76,5 +76,6 @@ and this project adheres to
 - 🌐(frontend) Translate the current user's optimistic thread author
 - 🐛(search) Fix lint errors in the message search engine (unused imports,
   unused parameter, `any` types)
+- 🎨(search) Run Prettier on the message search files
 
 [unreleased]: https://github.com/suitenumerique/docs/compare/main

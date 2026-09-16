@@ -7,7 +7,7 @@ export interface HighlightExcerptProps {
 
 export const renderHighlightedExcerpt = (
   excerpt: string,
-  matchRanges: [number, number][]
+  matchRanges: [number, number][],
 ): ReactNode[] => {
   if (!matchRanges.length) {
     return [excerpt];
@@ -27,9 +27,12 @@ export const renderHighlightedExcerpt = (
 
     // Add highlighted match
     parts.push(
-      <mark key={`mark-${start}-${end}`} className="hub__message-search__highlight">
+      <mark
+        key={`mark-${start}-${end}`}
+        className="hub__message-search__highlight"
+      >
         {excerpt.substring(start, end)}
-      </mark>
+      </mark>,
     );
 
     lastEnd = end;

@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 REQUIRED_SECRETS = (
     "MATRIX_AS_TOKEN",
     "MATRIX_HS_TOKEN",
-    "MATRIX_ADMIN_TOKEN",
     "ALBERT_API_KEY",
 )
 

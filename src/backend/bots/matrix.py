@@ -1,14 +1,12 @@
-"""The two ways Ariane touches Matrix, and why there are two.
+"""How Ariane touches Matrix.
 
-`AS_TOKEN` lets her act as any account in the Application Service namespace,
-through `?user_id=`. It cannot get her into a room nobody invited her to: the
-client API answers `M_FORBIDDEN` there, by design.
+One token: the Application Service token. It lets her act as any account in her
+namespace through `?user_id=`, and that is all the authority she has. It cannot
+get her into a room nobody invited her to - the client API answers
+`M_FORBIDDEN` there, by design, and that refusal is now the feature rather than
+an obstacle to route around.
 
-`ADMIN_TOKEN` is the door. `POST /_synapse/admin/v1/join/{room}` forces a local
-account into a room with no invitation. It is the price of being everywhere, and
-it is why the settings page has to say out loud what Ariane can read.
-
-Never hand either token to the frontend.
+Never hand the token to the frontend.
 """
 
 from __future__ import annotations
@@ -47,26 +45,27 @@ class MatrixError(Exception):
         self.errcode = errcode
 
 
-def _call(  # noqa: PLR0913
+def _as(
     method: str,
     path: str,
-    token: str,
     *,
-    as_user: str | None = None,
     json: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """One entry point, so masquerading is applied in exactly one place."""
+    """Call the Matrix client-server API as Ariane.
+
+    One entry point, so the masquerading is applied in exactly one place and
+    there is a single spot to audit who this service can act as.
+    """
     query = dict(params or {})
-    if as_user:
-        query["user_id"] = as_user
+    query["user_id"] = settings.MATRIX_BOT_USER_ID
 
     url = f"{settings.MATRIX_HOMESERVER_URL.rstrip('/'):s}{path:s}"
     try:
         response = requests.request(
             method,
             url,
-            headers={"Authorization": f"Bearer {token:s}"},
+            headers={"Authorization": f"Bearer {settings.MATRIX_AS_TOKEN:s}"},
             json=json,
             params=query,
             timeout=settings.MATRIX_REQUEST_TIMEOUT,
@@ -88,16 +87,6 @@ def _call(  # noqa: PLR0913
     return payload
 
 
-def _as(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
-    return _call(
-        method,
-        path,
-        settings.MATRIX_AS_TOKEN,
-        as_user=settings.MATRIX_BOT_USER_ID,
-        **kwargs,
-    )
-
-
 def is_member(room_id: str) -> bool:
     """Is Ariane already in this room?"""
     try:
@@ -107,30 +96,40 @@ def is_member(room_id: str) -> bool:
     return room_id in joined.get("joined_rooms", [])
 
 
-def ensure_in_room(room_id: str) -> None:
-    """Get Ariane into the room, inviting herself if that is what it takes.
+def ensure_in_room(room_id: str) -> bool:
+    """Accept an invitation to this room, and say whether Ariane is now in it.
 
-    Tries the ordinary join first: it works for public rooms and costs nothing.
-    Only a private room needs the admin token, and that call is the intrusive
-    one - so it stays the fallback, never the default.
+    She is never let in by force. The previous version fell back to the Synapse
+    admin API when the ordinary join was refused, which meant one member could
+    put an assistant into a room without asking anyone - including the people
+    already talking in it. An invitation is the whole consent mechanism Matrix
+    offers, and using it is the difference between a colleague and a wiretap.
+
+    Returns False when she has not been invited. The caller answers that in the
+    room, so a ping never produces silence.
     """
     if is_member(room_id):
-        return
+        return True
 
     try:
         _as("POST", f"{CLIENT_API:s}/join/{quote(room_id, safe=''):s}", json={})
-        return
+        return True
     except MatrixError as exc:
         if exc.errcode != "M_FORBIDDEN":
             raise
-        logger.info("Ariane not invited to %s, using the admin door", room_id)
+        logger.info("Ariane is not invited to %s", room_id)
+        return False
 
-    _call(
-        "POST",
-        f"/_synapse/admin/v1/join/{quote(room_id, safe=''):s}",
-        settings.MATRIX_ADMIN_TOKEN,
-        json={"user_id": settings.MATRIX_BOT_USER_ID},
-    )
+
+def joined_at(room_id: str) -> int | None:
+    """When Ariane's own membership of this room began, in milliseconds.
+
+    Her horizon, and it is hers alone. A room with `history_visibility: shared`
+    would happily hand her everything said before she arrived; reading it back
+    would make an invitation retroactive, which is not what inviting someone
+    into a conversation means.
+    """
+    return membership_since(room_id, settings.MATRIX_BOT_USER_ID)
 
 
 def history_visibility(room_id: str) -> str:

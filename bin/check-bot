@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
-"""Dev-only: prove the assistant can reach a private room it was never invited to.
+"""Dev-only: prove Ariane only enters a room she was invited to.
 
 Run with `make check-bot` after `make provision-bot`.
 
-This is the acceptance test of the omnipresence design. It creates a throwaway
-private room as a human, then checks three things in order:
+This is the acceptance test of the consent rule. It creates a throwaway private
+room as a human, then checks three things in order:
 
-  1. the bot CANNOT join on its own       -> M_FORBIDDEN, and that is correct;
-  2. the admin token lets it in           -> this is what "everywhere" costs;
-  3. it can then post as itself           -> masquerading through the AS token.
+  1. she cannot join on her own          -> M_FORBIDDEN, and that is the point;
+  2. an invitation lets her in           -> the only door there is;
+  3. she can then post as herself        -> masquerading through the AS token.
 
-Step 1 failing to fail would mean the room is not private, and the test proves
+Step 1 failing to fail would mean the room is not private, and the rest proves
 nothing. So it is asserted, not skipped.
+
+An earlier version proved the opposite: that a Synapse admin token could walk
+her into any room. That token is gone, and so is that test.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -56,7 +58,7 @@ def read_env() -> dict[str, str]:
 def call(method: str, path: str, token: str, body: dict | None = None) -> dict:
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(HOMESERVER + path, data=data, method=method)
-    request.add_header("Authorization", f"Bearer {token}")
+    request.add_header("Authorization", f"Bearer {token:s}")
     if data:
         request.add_header("Content-Type", "application/json")
     try:
@@ -91,7 +93,6 @@ def main() -> None:
     env = read_env()
     bot = env["MATRIX_BOT_USER_ID"]
     as_token = env["MATRIX_AS_TOKEN"]
-    admin_token = env["MATRIX_ADMIN_TOKEN"]
     failures = 0
 
     print("check-bot")
@@ -104,30 +105,31 @@ def main() -> None:
     room_id = room["room_id"]
     print(f"  salon prive {room_id}")
 
-    # 1. The bot must NOT be able to walk in. If it can, the room is not private
+    # 1. She must not be able to walk in. If she can, the room is not private
     #    and everything below proves nothing.
     walked_in = call("POST", f"/_matrix/client/v3/join/{quote(room_id)}?user_id={quote(bot)}", as_token, {})
     if walked_in.get("errcode") == "M_FORBIDDEN":
         print(f"{OK}sans invitation, l'entree est refusee (M_FORBIDDEN)")
     else:
-        print(f"{KO}le bot est entre sans jeton d'admin: {walked_in}")
+        print(f"{KO}elle est entree sans invitation: {walked_in}")
         failures += 1
 
-    # 2. The admin token is the door.
-    forced = call("POST", f"/_synapse/admin/v1/join/{quote(room_id)}", admin_token, {"user_id": bot})
-    if forced.get("room_id") == room_id:
-        print(f"{OK}le jeton d'admin le fait entrer")
+    # 2. The invitation is the only door.
+    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/invite", owner, {"user_id": bot})
+    joined = call("POST", f"/_matrix/client/v3/join/{quote(room_id)}?user_id={quote(bot)}", as_token, {})
+    if joined.get("room_id") == room_id:
+        print(f"{OK}l'invitation la fait entrer")
     else:
-        print(f"{KO}force-join refuse: {forced}")
+        print(f"{KO}invitee, elle n'a pas pu entrer: {joined}")
         failures += 1
 
-    # 3. And it speaks as itself, not as the service account.
+    # 3. And she speaks as herself, not as the service account.
     txn = f"checkbot{int(time.time() * 1000)}"
     sent = call("PUT",
                 f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{txn}?user_id={quote(bot)}",
-                as_token, {"msgtype": "m.text", "body": "Assistant present."})
+                as_token, {"msgtype": "m.text", "body": "Ariane presente."})
     if "event_id" in sent:
-        print(f"{OK}il poste dans le salon ({sent['event_id'][:24]}...)")
+        print(f"{OK}elle poste dans le salon ({sent['event_id'][:24]}...)")
     else:
         print(f"{KO}envoi refuse: {sent}")
         failures += 1

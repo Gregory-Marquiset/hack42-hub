@@ -113,7 +113,6 @@ def health(request):
         (
             settings.MATRIX_AS_TOKEN,
             settings.MATRIX_HS_TOKEN,
-            settings.MATRIX_ADMIN_TOKEN,
             settings.ALBERT_API_KEY,
         )
     )

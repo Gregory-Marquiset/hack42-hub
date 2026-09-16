@@ -1,4 +1,8 @@
-import { EventTimeline, MatrixClient, RoomEvent } from "matrix-js-sdk/lib/matrix";
+import {
+  EventTimeline,
+  MatrixClient,
+  RoomEvent,
+} from "matrix-js-sdk/lib/matrix";
 import type { MatrixEvent } from "matrix-js-sdk/lib/models/event";
 import type { Room } from "matrix-js-sdk/lib/models/room";
 
@@ -78,7 +82,9 @@ export class MatrixMessageSearch {
       // reload: let the room be requested again instead of showing it stuck.
       this.backfillStates.set(
         state.roomId,
-        state.status === "backfilling" ? { ...state, status: "pending" } : state,
+        state.status === "backfilling"
+          ? { ...state, status: "pending" }
+          : state,
       );
     }
 

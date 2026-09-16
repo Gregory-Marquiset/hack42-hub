@@ -995,15 +995,10 @@ export class MatrixDriver extends Driver {
         );
       }
 
-      await extendTimelineWindow(
-        window,
-        EventTimeline.BACKWARDS,
-        limit,
-        () => {
-          const events = mainTimelineEvents(window);
-          return cursor ? targetIndex() >= limit : events.length >= limit;
-        },
-      );
+      await extendTimelineWindow(window, EventTimeline.BACKWARDS, limit, () => {
+        const events = mainTimelineEvents(window);
+        return cursor ? targetIndex() >= limit : events.length >= limit;
+      });
       const events = mainTimelineEvents(window);
       const endIndex = cursor ? targetIndex() : events.length;
       const startIndex = Math.max(0, endIndex - limit);

@@ -16,6 +16,7 @@ import {
   type MessageSearchPage,
   type MessageSearchRequest,
   type MessageSearchStatus,
+  type RoomBackfillInfo,
 } from "@/features/chat/search/types";
 import {
   extendTimelineWindow,
@@ -85,6 +86,7 @@ export class MatrixMessageSearch {
     this.detach = () => this.mx.off(RoomEvent.Timeline, this.onTimeline);
     this.mx.on(RoomEvent.Timeline, this.onTimeline);
 
+    this.recomputeStatus();
     this.emit();
   }
 
@@ -109,6 +111,35 @@ export class MatrixMessageSearch {
 
   setJoinedRooms(roomIds: Set<string>): void {
     this.joinedRoomIds = new Set(roomIds);
+    this.recomputeStatus();
+    this.emit();
+  }
+
+  private recomputeStatus(): void {
+    let roomsBackfilled = 0;
+    let hasFailures = false;
+    const pendingRooms: RoomBackfillInfo[] = [];
+    for (const roomId of this.joinedRoomIds) {
+      const state = this.backfillStates.get(roomId);
+      if (state?.status === "done") {
+        roomsBackfilled++;
+        continue;
+      }
+      if (state?.status === "error") hasFailures = true;
+      pendingRooms.push({
+        roomId,
+        roomName: this.mx.getRoom(roomId)?.name || roomId,
+        status: state?.status ?? "pending",
+      });
+    }
+    this.status = {
+      ...this.status,
+      roomsEligible: this.joinedRoomIds.size,
+      roomsBackfilled,
+      roomsPending: this.joinedRoomIds.size - roomsBackfilled,
+      hasFailures,
+      pendingRooms,
+    };
   }
 
   /** Fetches up to BACKFILL_MAX_MESSAGES or BACKFILL_MAX_AGE_MS of history for one room, whichever bound is hit first. */
@@ -209,6 +240,7 @@ export class MatrixMessageSearch {
   private setBackfillState(state: MessageBackfillState): void {
     this.backfillStates.set(state.roomId, state);
     void this.storage.putBackfillState(state);
+    this.recomputeStatus();
     this.emit();
   }
 

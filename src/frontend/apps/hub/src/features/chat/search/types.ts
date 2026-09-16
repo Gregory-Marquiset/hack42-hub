@@ -95,24 +95,6 @@ export type MessageSearchPage = {
   total: number;
 };
 
-export type MessageSearchStatus = {
-  freshness: SearchFreshness;
-  storageAvailable: boolean;
-  roomsEligible: number;
-  roomsBackfilled: number;
-  roomsPending: number;
-  hasFailures: boolean;
-};
-
-export const EMPTY_MESSAGE_SEARCH_STATUS: MessageSearchStatus = {
-  freshness: "awaiting-sync",
-  storageAvailable: true,
-  roomsEligible: 0,
-  roomsBackfilled: 0,
-  roomsPending: 0,
-  hasFailures: false,
-};
-
 export type MessageBackfillStatus =
   | "pending"
   | "backfilling"
@@ -130,4 +112,24 @@ export type RoomBackfillInfo = {
   roomId: string;
   roomName: string;
   status: MessageBackfillStatus;
+};
+
+export type MessageSearchStatus = {
+  freshness: SearchFreshness;
+  storageAvailable: boolean;
+  roomsEligible: number;
+  roomsBackfilled: number;
+  roomsPending: number;
+  hasFailures: boolean;
+  pendingRooms: RoomBackfillInfo[];
+};
+
+export const EMPTY_MESSAGE_SEARCH_STATUS: MessageSearchStatus = {
+  freshness: "awaiting-sync",
+  storageAvailable: true,
+  roomsEligible: 0,
+  roomsBackfilled: 0,
+  roomsPending: 0,
+  hasFailures: false,
+  pendingRooms: [],
 };

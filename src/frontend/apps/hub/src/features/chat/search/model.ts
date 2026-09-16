@@ -110,7 +110,7 @@ export const matchesMessageFilters = (
   // from: filter — match sender ID or name (case-insensitive substring)
   if (filters.from.length > 0) {
     const matchesFrom = filters.from.some((token) =>
-      userTokenMatches(token, doc.senderId, doc.senderName)
+      userTokenMatches(token, doc.senderId, doc.senderName),
     );
     if (!matchesFrom) return false;
   }
@@ -120,7 +120,7 @@ export const matchesMessageFilters = (
     const matchesMentions = filters.mentions.some((token) => {
       // Check direct mentions
       const isMentioned = doc.mentionedUserIds.some((userId) =>
-        userTokenMatches(token, userId, doc.senderName)
+        userTokenMatches(token, userId, doc.senderName),
       );
       // Check reply-to (mentions: also matches replies-to-that-user)
       const isReplyTo =
@@ -168,7 +168,7 @@ export const matchesMessageFilters = (
 const userTokenMatches = (
   token: string,
   userId: string,
-  displayName: string
+  displayName: string,
 ): boolean => {
   const normalizedToken = normalizeSearch(token);
   const normalizedId = normalizeSearch(userId);

@@ -38,7 +38,10 @@ import {
   searchDatabaseName,
   SearchStorage,
 } from "@/features/chat/search/storage";
-import type { ConversationSearchRequest, MessageSearchRequest } from "@/features/chat/search/types";
+import type {
+  ConversationSearchRequest,
+  MessageSearchRequest,
+} from "@/features/chat/search/types";
 import {
   MATRIX_LOCAL_SETTINGS,
   type MatrixDriverSettings,
@@ -264,17 +267,11 @@ export class MatrixDriver extends Driver {
   }
 
   override searchMessages(request: MessageSearchRequest) {
-    return (
-      this.messageSearch?.search(request) ??
-      super.searchMessages(request)
-    );
+    return this.messageSearch?.search(request) ?? super.searchMessages(request);
   }
 
   override getMessageSearchStatus() {
-    return (
-      this.messageSearch?.getStatus() ??
-      super.getMessageSearchStatus()
-    );
+    return this.messageSearch?.getStatus() ?? super.getMessageSearchStatus();
   }
 
   override retryMessageSearch(): void {
@@ -1942,15 +1939,11 @@ export class MatrixDriver extends Driver {
     const database = this.messageSearchDatabase;
     if (this.mx !== mx || !database || this.messageSearch) return;
     const work = Promise.resolve().then(async () => {
-      if (this.mx !== mx || this.messageSearchDatabase !== database)
-        return;
+      if (this.mx !== mx || this.messageSearchDatabase !== database) return;
       let search: MatrixMessageSearch | undefined;
       try {
-        search = new MatrixMessageSearch(
-          mx,
-          this.accountId,
-          database,
-          () => this.emit({ type: "search:changed" }),
+        search = new MatrixMessageSearch(mx, this.accountId, database, () =>
+          this.emit({ type: "search:changed" }),
         );
         this.messageSearch = search;
         await search.start();
@@ -1963,8 +1956,7 @@ export class MatrixDriver extends Driver {
     try {
       await work;
     } finally {
-      if (this.messageSearchStart === work)
-        this.messageSearchStart = null;
+      if (this.messageSearchStart === work) this.messageSearchStart = null;
     }
   }
 

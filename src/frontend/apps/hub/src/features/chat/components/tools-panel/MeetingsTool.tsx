@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import { useStartChatMeeting } from "@/features/chat/hooks/useStartChatMeeting";
+import { useActiveMeeting } from "@/features/chat/meetings/ActiveMeeting";
 import type { ChatRef } from "@/features/drivers/types";
-
-import { MeetingModal } from "../header/MeetingModal";
 
 import { MeetingHistory } from "./MeetingHistory";
 import { MeetingsList } from "./MeetingsList";
@@ -24,7 +23,8 @@ type MeetingsToolProps = {
  * and documents tools.
  *
  * The camera button of the header only opens this panel; the call itself is
- * started from "Start now" in the creation form and shown in `MeetingModal`.
+ * started from "Start now" in the creation form and shown in the app-wide
+ * meeting window (`ActiveMeetingProvider`), which outlives this panel.
  */
 export const MeetingsTool = ({
   chatRef,
@@ -32,7 +32,7 @@ export const MeetingsTool = ({
   onClose,
 }: MeetingsToolProps) => {
   const [view, setView] = useState<MeetingsView>("list");
-  const [meetingUrl, setMeetingUrl] = useState<string | null>(null);
+  const { openMeeting } = useActiveMeeting();
   const { meetings, isInitialLoading } = useChatMeetings(chatRef, isOpen);
   const { startMeeting, isPending } = useStartChatMeeting(chatRef);
 
@@ -62,7 +62,7 @@ export const MeetingsTool = ({
     }
     void startMeeting()
       .then((meeting) => {
-        setMeetingUrl(meeting.url);
+        openMeeting(meeting.url);
       })
       .catch(() => {
         // useStartChatMeeting already surfaces a toast on failure.
@@ -79,7 +79,7 @@ export const MeetingsTool = ({
           onClose={onClose}
           onNewMeeting={() => setView("new")}
           onOpenHistory={() => setView("history")}
-          onJoin={(meeting) => setMeetingUrl(meeting.url)}
+          onJoin={(meeting) => openMeeting(meeting.url)}
         />
       )}
       {view === "new" && (
@@ -100,7 +100,6 @@ export const MeetingsTool = ({
           onBack={() => setView("list")}
         />
       )}
-      <MeetingModal url={meetingUrl} onClose={() => setMeetingUrl(null)} />
     </>
   );
 };

@@ -25,8 +25,8 @@ and this project adheres to
   meetings list, a creation form and the history of past meetings and their
   documents. The call is now started from "Start now" in that form.
 - ✨(frontend) Start a temporary meeting from a conversation, shown in a Meet
-  window inside the Hub. Record the call in the Matrix room so every member
-  can rejoin it.
+  window inside the Hub that can be minimized to keep using the Hub during the
+  call. Record the call in the Matrix room so every member can rejoin it.
 - ✨(frontend) Attach .txt or .md files to the agenda and the documents of a
   new meeting. Add documents by link from the Docs button.
 - ✨(backend) Create Meet rooms through the Meet external API. Add the

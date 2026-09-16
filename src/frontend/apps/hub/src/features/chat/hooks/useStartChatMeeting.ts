@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getRegistry } from "@/features/drivers/DriverRegistry";
+import { MeetingNotAllowedError } from "@/features/drivers/meetingErrors";
 import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
@@ -45,8 +46,12 @@ export const useStartChatMeeting = (
         });
       }
     },
-    onError: () => {
-      notify.error(t("The meeting could not be started. Please try again."));
+    onError: (error) => {
+      notify.error(
+        error instanceof MeetingNotAllowedError
+          ? t("Only the moderators of this conversation can start a meeting.")
+          : t("The meeting could not be started. Please try again."),
+      );
     },
     meta: { noGlobalError: true },
   });

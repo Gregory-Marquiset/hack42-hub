@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { timelineEventToChatEvent } from "../matrixEventMapping";
 import { MatrixDriver } from "../MatrixDriver";
 import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
+import { MeetingNotAllowedError } from "../../meetingErrors";
 import {
   matrixJoinedRoomToLocalChat,
   MATRIX_FAVOURITE_TAG,
@@ -553,10 +554,17 @@ describe("MatrixDriver.startChatMeeting", () => {
     url: "https://meet.example.com/abc-defg-hij",
   };
 
-  const makeMeetingRoom = (stateEvents: MatrixEvent[] = []): Room =>
+  const makeMeetingRoom = (
+    stateEvents: MatrixEvent[] = [],
+    mayRecordMeeting = true,
+  ): Room =>
     ({
       roomId: ROOM_ID,
-      currentState: { getStateEvents: () => stateEvents },
+      currentState: {
+        getStateEvents: () => stateEvents,
+        maySendStateEvent: (type: string, userId: string) =>
+          type === MEETING_EVENT_TYPE && userId === SELF_ID && mayRecordMeeting,
+      },
     }) as unknown as Room;
 
   const makeClient = (room: Room) => {
@@ -628,5 +636,67 @@ describe("MatrixDriver.startChatMeeting", () => {
       driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom),
     ).rejects.toThrow("Meet unavailable");
     expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("MatrixDriver.startChatMeeting permissions", () => {
+  it("refuses before creating a Meet room when the user may not record it", async () => {
+    const sendStateEvent = vi.fn();
+    const room = {
+      roomId: ROOM_ID,
+      currentState: {
+        getStateEvents: () => [],
+        maySendStateEvent: () => false,
+      },
+    } as unknown as Room;
+    const mx = {
+      getRoom: () => room,
+      getUserId: () => SELF_ID,
+      getJoinedRooms: async () => ({ joined_rooms: [ROOM_ID] }),
+      sendStateEvent,
+    } as unknown as MatrixClient;
+    const createRoom = vi.fn();
+
+    await expect(
+      driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom),
+    ).rejects.toBeInstanceOf(MeetingNotAllowedError);
+    expect(createRoom).not.toHaveBeenCalled();
+    expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+
+  it("lets every member of a new conversation start a meeting", async () => {
+    const createRoomMock = vi.fn(async () => ({ room_id: ROOM_ID }));
+    const room = {
+      roomId: ROOM_ID,
+      name: "Alice",
+      getMembers: () => [],
+      getMyMembership: () => KnownMembership.Join,
+      getLastActiveTimestamp: () => 0,
+      tags: {},
+      currentState: { getStateEvents: () => undefined },
+    } as unknown as Room;
+    const mx = {
+      getRoom: () => room,
+      getUserId: () => SELF_ID,
+      getJoinedRooms: async () => ({ joined_rooms: [] }),
+      getRooms: () => [],
+      createRoom: createRoomMock,
+    } as unknown as MatrixClient;
+
+    const driver = driverWithClient(mx);
+    // No existing conversation with these members: a room is created.
+    vi.spyOn(driver, "getChatForUsers").mockResolvedValue(null);
+
+    await driver
+      .createChatForUsers([OTHER_ID, "@bob:localhost"])
+      .catch(() => undefined);
+
+    expect(createRoomMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        power_level_content_override: {
+          events: { [MEETING_EVENT_TYPE]: 0 },
+        },
+      }),
+    );
   });
 });

@@ -87,6 +87,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Let every member start a meeting in conversations created by
+  the Hub, and explain the refusal before creating a Meet room elsewhere.
 - 🐛(frontend) Restore unread navigation in conversations without a read marker
 - 🐛(frontend) Keep the thread root message toolbar fully accessible
 - 🐛(frontend) Follow Matrix timeline and count updates for deleted thread

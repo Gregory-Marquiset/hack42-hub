@@ -95,6 +95,7 @@ import {
   MeetRoom,
   User,
 } from "../types";
+import { MeetingNotAllowedError } from "../meetingErrors";
 import {
   authorForSender,
   buildAuthors,
@@ -528,6 +529,11 @@ export class MatrixDriver extends Driver {
     if (!selfUserId) {
       throw new Error("MatrixDriver.startChatMeeting: no authenticated user.");
     }
+    // Checked before creating the Meet room, which would otherwise be left
+    // unused when the homeserver refuses the state event.
+    if (!room.currentState.maySendStateEvent(MEETING_EVENT_TYPE, selfUserId)) {
+      throw new MeetingNotAllowedError(chatId);
+    }
     // The Meet slug is unique per room: it doubles as the state key.
     const { slug: meetingId, url } = await createRoom();
     const startedAt = Date.now();
@@ -747,6 +753,9 @@ export class MatrixDriver extends Driver {
       preset: Preset.PrivateChat,
       is_direct: isDirect,
       invite: participantIds,
+      // Every member may start a meeting, which is recorded as room state
+      // (moderator-only by default).
+      power_level_content_override: { events: { [MEETING_EVENT_TYPE]: 0 } },
     });
 
     const room = await this.waitForRoom(mx, roomId);

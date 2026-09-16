@@ -9,6 +9,7 @@ import {
   Bell,
   Edit,
   File,
+  ImageAdd,
   Leave,
   Meet,
   Shared,
@@ -17,13 +18,16 @@ import {
   Thread,
 } from "@gouvfr-lasuite/ui-components/icons";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { isInvitationChat } from "@/features/chat/chatMembership";
 import type { ChatTool } from "@/features/chat/components/tools-panel/ChatToolsPanel";
+import { useAvatarSrc } from "@/features/chat/hooks/useAvatarSrc";
 import { useChatFavourite } from "@/features/chat/hooks/useChatFavourite";
 import { useRemoveChatFromHistory } from "@/features/chat/hooks/useRemoveChatFromHistory";
+import { useSetChatAvatar } from "@/features/chat/hooks/useSetChatAvatar";
+import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import type { Chat } from "@/features/drivers/types";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
 
@@ -135,8 +139,28 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
     isPending: isLeaving,
     isSupported: canLeave,
   } = useRemoveChatFromHistory(chat.ref);
+  const { setChatAvatar } = useSetChatAvatar(chat.ref);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const entries = useDriverEntries();
+  const canChangeAvatar =
+    chat.kind !== "direct" &&
+    entries.some(
+      (entry) =>
+        entry.accountId === chat.accountId && entry.driver.supportsAvatarUpload,
+    );
   const isFavourite = chat.section === "favourites";
   const isInvitation = isInvitationChat(chat);
+
+  const onAvatarFileChosen = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (file) {
+        setChatAvatar(file);
+      }
+    },
+    [setChatAvatar],
+  );
 
   useEffect(() => {
     menu.setIsOpen(false);
@@ -182,6 +206,16 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
         icon: <Edit />,
         isDisabled: true,
       },
+      ...(canChangeAvatar
+        ? [
+            {
+              id: "avatar",
+              label: t("Change group photo"),
+              icon: <ImageAdd />,
+              callback: () => avatarInputRef.current?.click(),
+            },
+          ]
+        : []),
       {
         id: "notifications",
         label: t("Notifications"),
@@ -197,7 +231,15 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
         callback: () => setIsLeaveOpen(true),
       },
     ],
-    [canLeave, isFavourite, isLeaving, isPending, setFavourite, t],
+    [
+      canChangeAvatar,
+      canLeave,
+      isFavourite,
+      isLeaving,
+      isPending,
+      setFavourite,
+      t,
+    ],
   );
 
   const trigger = (
@@ -228,6 +270,17 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
       <DropdownMenu options={options} {...menu} onOpenChange={menu.setIsOpen}>
         {trigger}
       </DropdownMenu>
+      {canChangeAvatar && (
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          className="hub__visually-hidden"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={onAvatarFileChosen}
+        />
+      )}
       <ChatMembersModal
         chat={chat}
         isOpen={isMembersOpen}
@@ -244,6 +297,10 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
 };
 
 const ChatAvatar = ({ chat }: { chat: Chat }) => {
+  const src = useAvatarSrc(chat.accountId, chat.visual);
+  if (chat.visual.kind === "image") {
+    return <Avatar label={chat.name} src={src} decorative />;
+  }
   if (chat.visual.kind === "emoji") {
     return (
       <Avatar label={chat.name} variant="soft" decorative>

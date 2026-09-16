@@ -22,7 +22,6 @@ import {
   type SyncStateData,
   type Thread,
   ThreadEvent,
-  TimelineWindow,
 } from "matrix-js-sdk/lib/matrix";
 import { HttpApiEvent } from "matrix-js-sdk/lib/http-api";
 import {
@@ -140,10 +139,13 @@ import {
   roomOtherMembers,
   spaceChildRoomIds,
 } from "./matrixRoomMapping";
+import {
+  extendTimelineWindow,
+  mainTimelineEvents,
+  scopedTimelineWindow,
+} from "./matrixTimelineWindow";
 /** Matches `getChatMessages`'s default; the homeserver may clamp it lower. */
 const DEFAULT_CHAT_PAGE_SIZE = 50;
-const MAX_TIMELINE_PAGINATION_STEPS = 200;
-const TIMELINE_WINDOW_LIMIT = Number.MAX_SAFE_INTEGER;
 const MATRIX_TYPING_TIMEOUT_MS = 30_000;
 
 // A generous fetch limit is requested from the user directory and the filtered
@@ -209,14 +211,6 @@ const sortChatMembers = (
     }
     return left.name.localeCompare(right.name);
   });
-
-type RoomTimelineListener = (
-  event: MatrixEvent,
-  room: Room | undefined,
-  toStartOfTimeline: boolean | undefined,
-  removed: boolean,
-  data: IRoomTimelineData,
-) => void;
 
 /**
  * Matrix-backed chat driver. All Matrix specifics — the OIDC handshake, client
@@ -848,79 +842,6 @@ export class MatrixDriver extends Driver {
     }
   }
 
-  private mainTimelineEvents(window: TimelineWindow) {
-    return window.getEvents().filter(isMainTimelineMessage);
-  }
-
-  /**
-   * Matrix TimelineWindow installs a Room.timeline listener but exposes no
-   * disposal API. These windows are request-scoped, so retain and remove only
-   * the listener added by this constructor once the page or scan is complete.
-   */
-  private scopedTimelineWindow(mx: MatrixClient, room: Room) {
-    const existingListeners = new Set(room.listeners(RoomEvent.Timeline));
-    const window = new TimelineWindow(mx, room.getUnfilteredTimelineSet(), {
-      windowLimit: TIMELINE_WINDOW_LIMIT,
-    });
-    const windowListeners = room
-      .listeners(RoomEvent.Timeline)
-      .filter((listener) => !existingListeners.has(listener));
-
-    return {
-      window,
-      dispose: () => {
-        windowListeners.forEach((listener) =>
-          room.off(
-            RoomEvent.Timeline,
-            listener as unknown as RoomTimelineListener,
-          ),
-        );
-      },
-    };
-  }
-
-  private timelineWindowSignature(
-    window: TimelineWindow,
-    direction: typeof EventTimeline.BACKWARDS | typeof EventTimeline.FORWARDS,
-  ): string {
-    const events = window.getEvents();
-    const index = window.getTimelineIndex(direction);
-    return [
-      events.length,
-      events[0]?.getId() ?? "",
-      events[events.length - 1]?.getId() ?? "",
-      index?.index ?? "",
-      index?.timeline.getPaginationToken(direction) ?? "",
-      index?.timeline.getNeighbouringTimeline(direction) ? "linked" : "",
-    ].join(":");
-  }
-
-  /**
-   * Extends a contextual SDK window until the caller has enough displayable
-   * messages or the requested Matrix direction is genuinely exhausted.
-   */
-  private async extendTimelineWindow(
-    window: TimelineWindow,
-    direction: typeof EventTimeline.BACKWARDS | typeof EventTimeline.FORWARDS,
-    limit: number,
-    hasEnough: () => boolean,
-  ): Promise<void> {
-    for (let step = 0; step < MAX_TIMELINE_PAGINATION_STEPS; step += 1) {
-      if (hasEnough() || !window.canPaginate(direction)) {
-        return;
-      }
-      const before = this.timelineWindowSignature(window, direction);
-      await window.paginate(direction, limit, true, 20);
-      const after = this.timelineWindowSignature(window, direction);
-      if (before === after) {
-        return;
-      }
-    }
-    throw new Error(
-      "MatrixDriver: timeline pagination exceeded the safety limit.",
-    );
-  }
-
   private async mapMainTimelinePage(
     room: Room,
     pageEvents: MatrixEvent[],
@@ -979,13 +900,13 @@ export class MatrixDriver extends Driver {
       );
     }
     const targetId = anchorId ?? cursor ?? undefined;
-    const { window, dispose } = this.scopedTimelineWindow(mx, room);
+    const { window, dispose } = scopedTimelineWindow(mx, room);
     try {
       await window.load(targetId, anchorId ? limit : 1);
 
       const targetIndex = () =>
         targetId
-          ? this.mainTimelineEvents(window).findIndex(
+          ? mainTimelineEvents(window).findIndex(
               (event) => event.getId() === targetId,
             )
           : -1;
@@ -1001,13 +922,13 @@ export class MatrixDriver extends Driver {
         // visible with enough history above it while reading can continue below.
         const olderTarget = Math.floor(limit / 3);
         const newerTarget = limit - olderTarget - 1;
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.BACKWARDS,
           limit,
           () => targetIndex() >= olderTarget,
         );
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.FORWARDS,
           limit,
@@ -1015,11 +936,11 @@ export class MatrixDriver extends Driver {
             const index = targetIndex();
             return (
               index >= 0 &&
-              this.mainTimelineEvents(window).length - index - 1 >= newerTarget
+              mainTimelineEvents(window).length - index - 1 >= newerTarget
             );
           },
         );
-        const events = this.mainTimelineEvents(window);
+        const events = mainTimelineEvents(window);
         const index = events.findIndex((event) => event.getId() === anchorId);
         const startIndex = Math.max(
           0,
@@ -1043,16 +964,16 @@ export class MatrixDriver extends Driver {
       }
 
       if (cursor && direction === "newer") {
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.FORWARDS,
           limit,
           () => {
-            const events = this.mainTimelineEvents(window);
+            const events = mainTimelineEvents(window);
             return events.length - targetIndex() - 1 >= limit;
           },
         );
-        const events = this.mainTimelineEvents(window);
+        const events = mainTimelineEvents(window);
         const startIndex = targetIndex() + 1;
         const available = events.slice(startIndex);
         const pageEvents = available.slice(0, limit);
@@ -1070,16 +991,16 @@ export class MatrixDriver extends Driver {
         );
       }
 
-      await this.extendTimelineWindow(
+      await extendTimelineWindow(
         window,
         EventTimeline.BACKWARDS,
         limit,
         () => {
-          const events = this.mainTimelineEvents(window);
+          const events = mainTimelineEvents(window);
           return cursor ? targetIndex() >= limit : events.length >= limit;
         },
       );
-      const events = this.mainTimelineEvents(window);
+      const events = mainTimelineEvents(window);
       const endIndex = cursor ? targetIndex() : events.length;
       const startIndex = Math.max(0, endIndex - limit);
       const pageEvents = events.slice(startIndex, endIndex);
@@ -1119,12 +1040,12 @@ export class MatrixDriver extends Driver {
     boundaryId: string | null,
     selfUserId: string,
   ): Promise<ChatMainTimelineUnread | null> {
-    const { window, dispose } = this.scopedTimelineWindow(mx, room);
+    const { window, dispose } = scopedTimelineWindow(mx, room);
     try {
       try {
         await window.load(boundaryId ?? undefined, 1);
         if (boundaryId === null) {
-          await this.extendTimelineWindow(
+          await extendTimelineWindow(
             window,
             EventTimeline.BACKWARDS,
             DEFAULT_CHAT_PAGE_SIZE,
@@ -1134,7 +1055,7 @@ export class MatrixDriver extends Driver {
             return null;
           }
         }
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.FORWARDS,
           DEFAULT_CHAT_PAGE_SIZE,

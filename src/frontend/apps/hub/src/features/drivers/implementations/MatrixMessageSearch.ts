@@ -8,6 +8,7 @@ import {
   type MessageContentKind,
   matchesMessageFilters,
 } from "@/features/chat/search/model";
+import { MessageSearchStorage } from "@/features/chat/search/messageStorage";
 import {
   EMPTY_MESSAGE_SEARCH_STATUS,
   type MessageSearchPage,
@@ -15,6 +16,8 @@ import {
   type MessageSearchStatus,
 } from "@/features/chat/search/types";
 import { matrixJoinedRoomToLocalChat } from "./matrixRoomMapping";
+
+const PERSIST_DEBOUNCE_MS = 250;
 
 const EXTRACT_URL_REGEX = /https?:\/\/\S+/i;
 const LEGACY_PILL_REGEX =
@@ -39,16 +42,25 @@ export class MatrixMessageSearch {
   private detach = () => {};
   private readonly poolKey = crypto.randomUUID();
   private joinedRoomIds = new Set<string>();
+  private readonly storage: MessageSearchStorage;
+  private readonly pendingMessages: MessageSearchDocument[] = [];
+  private persistTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly mx: MatrixClient,
     private readonly accountId: string,
-    private readonly databaseName: string,
+    databaseName: string,
     private readonly changed: () => void,
-  ) {}
+  ) {
+    this.storage = new MessageSearchStorage(databaseName, () => this.close());
+  }
 
   async start(): Promise<void> {
     this.status = { ...EMPTY_MESSAGE_SEARCH_STATUS, freshness: "current" };
+
+    const restored = await this.storage.open();
+    if (this.disposed) return;
+    for (const doc of restored.messages) this.indexMessage(doc.roomId, doc);
 
     // Set up timeline observer for live messages
     this.detach = () => this.mx.off(RoomEvent.Timeline, this.onTimeline);
@@ -71,6 +83,8 @@ export class MatrixMessageSearch {
     if (!doc) return;
 
     this.indexMessage(room.roomId, doc);
+    this.pendingMessages.push(doc);
+    this.schedulePersist();
     this.emit();
   };
 
@@ -153,11 +167,21 @@ export class MatrixMessageSearch {
   close(): void {
     this.disposed = true;
     this.detach();
+    clearTimeout(this.persistTimer);
+    this.storage.close();
   }
 
   async remove(): Promise<void> {
     this.close();
-    // TODO: Implement storage cleanup when storage is integrated
+  }
+
+  private schedulePersist(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = undefined;
+      const batch = this.pendingMessages.splice(0, this.pendingMessages.length);
+      void this.storage.putMessages(batch);
+    }, PERSIST_DEBOUNCE_MS);
   }
 
   private indexMessage(roomId: string, doc: MessageSearchDocument): void {

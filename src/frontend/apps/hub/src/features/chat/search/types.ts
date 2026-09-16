@@ -112,3 +112,22 @@ export const EMPTY_MESSAGE_SEARCH_STATUS: MessageSearchStatus = {
   roomsPending: 0,
   hasFailures: false,
 };
+
+export type MessageBackfillStatus =
+  | "pending"
+  | "backfilling"
+  | "done"
+  | "error";
+
+export type MessageBackfillState = {
+  roomId: string;
+  status: MessageBackfillStatus;
+  messageCount: number;
+  oldestTimestamp?: number;
+};
+
+export type RoomBackfillInfo = {
+  roomId: string;
+  roomName: string;
+  status: MessageBackfillStatus;
+};

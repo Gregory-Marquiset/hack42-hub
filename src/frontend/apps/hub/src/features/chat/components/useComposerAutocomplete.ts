@@ -169,8 +169,7 @@ export const useComposerAutocomplete = (
         ? found.index + (found[0].length - found[1].length - 1)
         : caret;
       // A command inserts its own name (`/juriste`), a mention the display name.
-      const body =
-        token.trigger === "/" ? suggestion.id : suggestion.primary;
+      const body = token.trigger === "/" ? suggestion.id : suggestion.primary;
       // The trailing space is what lets you keep typing without reopening the
       // list on the very word that was just inserted.
       const inserted = `${token.trigger}${body} `;

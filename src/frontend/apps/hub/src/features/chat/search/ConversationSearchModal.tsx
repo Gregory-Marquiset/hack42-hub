@@ -333,9 +333,7 @@ const MessageSearchStatusHint = ({
                 backfilled: status.roomsBackfilled,
                 eligible: status.roomsEligible,
               })}
-          {status.hasFailures && (
-            <> {t("Some rooms could not be indexed.")}</>
-          )}
+          {status.hasFailures && <> {t("Some rooms could not be indexed.")}</>}
         </p>
       )}
       {!status.storageAvailable && (

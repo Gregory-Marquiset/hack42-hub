@@ -8,6 +8,10 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Encrypt conversations end to end. A private message is always
+  encrypted; a group room carries the choice, made once at creation because
+  Matrix offers no way back. Encrypted conversations are marked with a lock in
+  the conversation list and in the room header.
 - ✨(profile) Add optional global role labels (PO, PM, DEV or a custom title),
   editable or removable at any time from the account menu and displayed beside
   people in conversations. Verify chat identity when saving a role.

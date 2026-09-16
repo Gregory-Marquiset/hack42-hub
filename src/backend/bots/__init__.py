@@ -1,0 +1,1 @@
+"""Ariane, the Hub assistant."""

@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Dev-only: provision Ariane, the Hub assistant, and her Synapse admin token.
+
+Run with `make provision-bot` after `make run-matrix`.
+
+The assistant is an Application Service ghost, not a person: it exists in
+Synapse and in neither MAS nor Keycloak, it has no password, and nobody can log
+into it. `bin/seed-matrix` provisions humans; this provisions the robot.
+
+Two tokens, two jobs, and confusing them is the usual way to lose an hour:
+  - the AS token (committed in the registration file) lets the service act as
+    any account in its namespace, through `?user_id=`;
+  - the Synapse admin token lets it *enter* a room nobody invited it to. The
+    client API cannot do that: joining a private room returns M_FORBIDDEN.
+
+Idempotent: re-running registers nothing twice and reuses the existing token.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+HOMESERVER = "http://localhost:9808"
+SERVER_NAME = "localhost"
+
+# Must match docker/matrix/synapse/appservices/hub.yaml.
+AS_TOKEN = "ThisIsAnAppServiceTokenForDevOnly"
+HS_TOKEN = "ThisIsAHomeserverTokenForDevOnly"
+BOT_LOCALPART = "hub-as_ariane"
+BOT_DISPLAYNAME = "Ariane"
+
+# The account whose admin rights we borrow to issue the admin token. A human
+# account, because MAS only knows how to issue tokens for accounts it manages -
+# and the AS ghost is not one of them.
+ADMIN_ACCOUNT = "hub"
+
+MAS_CONTAINER = "hub-mas-1"
+MAS_CONFIG = "/config/config.yaml"
+
+ENV_FILE = pathlib.Path("env.d/development/bots.local")
+
+
+def fail(message: str) -> None:
+    print(f"provision-bot: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def http_json(method: str, path: str, token: str, body: dict | None = None) -> dict:
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(HOMESERVER + path, data=data, method=method)
+    request.add_header("Authorization", f"Bearer {token}")
+    if data:
+        request.add_header("Content-Type", "application/json")
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as error:
+        payload = json.loads(error.read() or b"{}")
+        payload["_status"] = error.code
+        return payload
+    except urllib.error.URLError as error:
+        fail(f"{HOMESERVER} unreachable ({error.reason}). Run `make run-matrix` first.")
+
+
+def mas_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["docker", "exec", MAS_CONTAINER, "mas-cli", "manage", "--config", MAS_CONFIG, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def register_ghost() -> str:
+    """Create the assistant account. M_USER_IN_USE means it is already there."""
+    user_id = f"@{BOT_LOCALPART}:{SERVER_NAME}"
+    answer = http_json(
+        "POST",
+        "/_matrix/client/v3/register",
+        AS_TOKEN,
+        {"type": "m.login.application_service", "username": BOT_LOCALPART},
+    )
+    errcode = answer.get("errcode")
+    if errcode == "M_USER_IN_USE":
+        print(f"  compte      {user_id} (deja present)")
+    elif errcode:
+        fail(f"register refused: {errcode} {answer.get('error', '')}")
+    else:
+        print(f"  compte      {user_id} (cree)")
+
+    profile = http_json(
+        "PUT",
+        f"/_matrix/client/v3/profile/{user_id}/displayname?user_id={user_id}",
+        AS_TOKEN,
+        {"displayname": BOT_DISPLAYNAME},
+    )
+    if profile.get("errcode"):
+        fail(f"displayname refused: {profile['errcode']}")
+    print(f"  nom affiche {BOT_DISPLAYNAME}")
+    return user_id
+
+
+def issue_admin_token() -> str:
+    """Issue a Synapse-admin token, the only way into a room without an invite."""
+    promoted = mas_cli("promote-admin", ADMIN_ACCOUNT)
+    if promoted.returncode != 0:
+        fail(f"promote-admin failed: {promoted.stderr.strip()}")
+
+    issued = mas_cli(
+        "issue-compatibility-token",
+        "--yes-i-want-to-grant-synapse-admin-privileges",
+        ADMIN_ACCOUNT,
+    )
+    if issued.returncode != 0:
+        fail(f"issue-compatibility-token failed: {issued.stderr.strip()}")
+
+    for line in (issued.stdout + issued.stderr).split():
+        if line.startswith("mct_"):
+            return line
+    fail("no token in mas-cli output")
+
+
+def existing_albert_key() -> str:
+    """Keep a key the developer already pasted in - re-provisioning must not wipe it."""
+    if not ENV_FILE.is_file():
+        return ""
+    for line in ENV_FILE.read_text().splitlines():
+        if line.startswith("ALBERT_API_KEY="):
+            return line.partition("=")[2]
+    return ""
+
+
+def write_env(admin_token: str, user_id: str) -> None:
+    """Write the tokens where only the backend can read them - never in git."""
+    albert_key = existing_albert_key()
+    ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ENV_FILE.write_text(
+        "# DEV ONLY - generated by bin/provision-bot, git-ignored.\n"
+        "#\n"
+        "# Three secrets, three jobs. Confusing them is the usual lost hour:\n"
+        "#   MATRIX_AS_TOKEN     Hub -> Synapse, lets Ariane act as herself;\n"
+        "#   MATRIX_HS_TOKEN     Synapse -> Hub, proves an incoming transaction\n"
+        "#                       really comes from Synapse;\n"
+        "#   MATRIX_ADMIN_TOKEN  Synapse admin rights - reads and joins every\n"
+        "#                       room on the server. The intrusive one.\n"
+        "#\n"
+        "# ALBERT_API_KEY is preserved across runs: paste it once, here.\n"
+        f"MATRIX_BOT_USER_ID={user_id}\n"
+        f"MATRIX_AS_TOKEN={AS_TOKEN}\n"
+        f"MATRIX_HS_TOKEN={HS_TOKEN}\n"
+        f"MATRIX_ADMIN_TOKEN={admin_token}\n"
+        f"ALBERT_API_KEY={albert_key}\n"
+    )
+    state = "conservee" if albert_key else "A RENSEIGNER"
+    print(f"  jetons      {ENV_FILE}")
+    print(f"  cle Albert  {state}")
+
+
+def main() -> None:
+    print("provision-bot")
+    user_id = register_ghost()
+    write_env(issue_admin_token(), user_id)
+    print("fait. Verifier avec `make check-bot`.")
+
+
+if __name__ == "__main__":
+    main()

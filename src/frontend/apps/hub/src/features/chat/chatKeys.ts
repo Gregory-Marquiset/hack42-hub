@@ -2,8 +2,21 @@ import type { AccountId, ChatRef } from "@/features/drivers/types";
 
 export const chatKeys = {
   chatsAll: () => ["chats"] as const,
-  chatsOf: (accountId: AccountId) => ["chats", accountId] as const,
+  /**
+   * Without `spaceId`, returns the ACCOUNT-LEVEL prefix (`["chats", accountId]`),
+   * on purpose: `useChats()` (no espace selected) queries with this bare key,
+   * and every existing `invalidateQueries({ queryKey: chatKeys.chatsOf(accountId) })`
+   * call (see `useChatEvents.ts`) relies on it matching every espace-scoped
+   * variant too (react-query's default `invalidateQueries` match is a prefix
+   * match) — do not pad the no-espace case with a sentinel value here.
+   */
+  chatsOf: (accountId: AccountId, spaceId?: string) =>
+    spaceId
+      ? (["chats", accountId, spaceId] as const)
+      : (["chats", accountId] as const),
   unreadOf: (accountId: AccountId) => ["chat-unread", accountId] as const,
+  spacesAll: () => ["spaces"] as const,
+  spacesOf: (accountId: AccountId) => ["spaces", accountId] as const,
   noChat: () => ["chat", "none"] as const,
 
   /** Existing conversation resolved from a participant set (New Chat search). */
@@ -34,4 +47,10 @@ export const chatKeys = {
     ["chat-members", ref.accountId, ref.chatId] as const,
   connection: (accountId: AccountId, userId: string | null) =>
     ["chat-connection", accountId, userId] as const,
+  /** A `ChatVisual` image's driver-specific `url` resolved to a fetchable src. */
+  avatarSrc: (accountId: AccountId, url: string) =>
+    ["avatar-src", accountId, url] as const,
+  /** The account's own avatar, as a driver-specific `ChatVisual.url` (not
+   * yet resolved to a fetchable src — see `avatarSrc` for that). */
+  myAvatarUrl: (accountId: AccountId) => ["my-avatar-url", accountId] as const,
 };

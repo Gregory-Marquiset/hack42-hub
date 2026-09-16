@@ -22,6 +22,7 @@ import { useChatThreadActions } from "../../hooks/useChatThreadActions";
 import { useEditChatMessage } from "../../hooks/useEditChatMessage";
 import { useSendChatThreadReply } from "../../hooks/useSendChatThreadReply";
 import { ChatBubble } from "../ChatBubble";
+import { useChatMembers } from "../../hooks/useChatMembers";
 import { ChatComposer } from "../ChatComposer";
 
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
@@ -55,6 +56,8 @@ export const ThreadDetail = ({
     threadId,
   );
   const { editMessage, isEditing } = useEditChatMessage(chatRef, threadId);
+  // Same candidates as the main composer: a thread is still the same room.
+  const { present: mentionCandidates } = useChatMembers(chatRef, true);
   const [editingMessage, setEditingMessage] =
     useState<EditingChatMessage | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -270,6 +273,7 @@ export const ThreadDetail = ({
         <div className="hub__thread-detail__composer">
           <ChatComposer
             conversationId={threadId}
+            mentionCandidates={mentionCandidates}
             placeholder={
               isSupported
                 ? t("Answer")

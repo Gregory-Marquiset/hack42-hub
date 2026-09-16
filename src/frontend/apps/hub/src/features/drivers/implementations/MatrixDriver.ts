@@ -96,6 +96,7 @@ import {
   ChatUser,
   LocalChat,
   LocalChatSections,
+  LocalSpace,
   User,
 } from "../types";
 import {
@@ -143,8 +144,10 @@ import {
   MATRIX_FAVOURITE_TAG,
   matrixJoinedRoomToLocalChat,
   matrixRoomToLocalChat,
+  matrixRoomToLocalSpace,
   participantSetKey,
   roomOtherMembers,
+  spaceChildRoomIds,
 } from "./matrixRoomMapping";
 
 declare module "matrix-js-sdk/lib/@types/event" {
@@ -337,6 +340,7 @@ export class MatrixDriver extends Driver {
   override readonly supportsThreadComposition: boolean = true;
   override readonly supportsConversationHistoryRemoval: boolean = true;
   override readonly supportsConversationCreation: boolean = true;
+  override readonly supportsSpaces: boolean = true;
 
   private mx: MatrixClient | null = null;
   /** Subscribers to the single global event stream. */
@@ -403,7 +407,7 @@ export class MatrixDriver extends Driver {
     return user?.email ?? "";
   }
 
-  async getChats(): Promise<LocalChatSections> {
+  async getChats(spaceId?: string): Promise<LocalChatSections> {
     const mx = this.mx;
     if (!mx) {
       return {
@@ -414,16 +418,22 @@ export class MatrixDriver extends Driver {
     // Joined conversations (server-confirmed, so stale rooms restored from
     // IndexedDB after a homeserver reset don't linger) plus pending incoming
     // invitations, which aren't in `/joined_rooms` and are surfaced by their
-    // membership instead.
+    // membership instead. Space rooms themselves are a separate hierarchy
+    // level (see `getSpaces`) and are never listed as conversations.
     const joinedRoomIds = await this.getJoinedRoomIds(mx);
     const currentUserId = mx.getUserId() ?? undefined;
+    const childRoomIds = spaceId
+      ? this.getSpaceChildRoomIds(mx, spaceId)
+      : null;
     const localChats = mx
       .getVisibleRooms()
+      .filter((room) => !room.isSpaceRoom())
       .filter(
         (room) =>
           joinedRoomIds.has(room.roomId) ||
           room.getMyMembership() === KnownMembership.Invite,
       )
+      .filter((room) => !childRoomIds || childRoomIds.has(room.roomId))
       .map((room) =>
         joinedRoomIds.has(room.roomId)
           ? matrixJoinedRoomToLocalChat(room, currentUserId)
@@ -434,6 +444,24 @@ export class MatrixDriver extends Driver {
       favourites: localChats.filter((chat) => chat.section === "favourites"),
       all: localChats.filter((chat) => chat.section === "all"),
     };
+  }
+
+  /** Joined `m.space` rooms — the Espace level above the conversation list. */
+  async getSpaces(): Promise<LocalSpace[]> {
+    const mx = this.mx;
+    if (!mx) return [];
+
+    const joinedRoomIds = await this.getJoinedRoomIds(mx);
+    return mx
+      .getVisibleRooms()
+      .filter((room) => room.isSpaceRoom() && joinedRoomIds.has(room.roomId))
+      .map((room) => matrixRoomToLocalSpace(room));
+  }
+
+  /** Room ids listed as children of `spaceId`'s `m.space.child` state, if joined. */
+  private getSpaceChildRoomIds(mx: MatrixClient, spaceId: string): Set<string> {
+    const spaceRoom = mx.getRoom(spaceId);
+    return spaceRoom ? spaceChildRoomIds(spaceRoom) : new Set<string>();
   }
 
   /** Initial read-state snapshot for server-confirmed joined rooms. */
@@ -772,6 +800,57 @@ export class MatrixDriver extends Driver {
       if (this.chatCreations.get(creationKey) === creation) {
         this.chatCreations.delete(creationKey);
       }
+    }
+  }
+
+  override readonly supportsAvatarUpload: boolean = true;
+
+  async setUserAvatar(file: File): Promise<string> {
+    const mx = this.requireClient("setUserAvatar");
+    const { content_uri: mxcUrl } = await mx.uploadContent(file);
+    await mx.setAvatarUrl(mxcUrl);
+    return mxcUrl;
+  }
+
+  async getUserAvatarUrl(): Promise<string | undefined> {
+    const mx = this.requireClient("getUserAvatarUrl");
+    const selfUserId = mx.getUserId();
+    if (!selfUserId) return undefined;
+    const profile = await mx.getProfileInfo(selfUserId);
+    return profile.avatar_url ?? undefined;
+  }
+
+  async setChatAvatar(chatId: string, file: File): Promise<string> {
+    const { mx } = this.requireRoom("setChatAvatar", chatId);
+    const { content_uri: mxcUrl } = await mx.uploadContent(file);
+    await mx.sendStateEvent(chatId, EventType.RoomAvatar, { url: mxcUrl }, "");
+    return mxcUrl;
+  }
+
+  /**
+   * This homeserver requires authenticated media requests (Synapse's
+   * `enable_authenticated_media`, on by default on recent versions) — a
+   * plain `<img src>` can't attach the bearer token, so an unauthenticated
+   * `mxcUrlToHttp()` link 404s. Fetches the thumbnail with the client's own
+   * access token instead and hands back a local `blob:` URL the `<img>` can
+   * load directly. Falls back to the raw `mxc://` URL (a guaranteed broken
+   * image, same as any other failure) rather than throwing, so a fetch
+   * hiccup degrades to initials instead of crashing the row.
+   */
+  async resolveAvatarUrl(mxcUrl: string): Promise<string> {
+    const mx = this.requireClient("resolveAvatarUrl");
+    const httpUrl = mx.mxcUrlToHttp(mxcUrl, 96, 96, "crop", false, false, true);
+    if (!httpUrl) return mxcUrl;
+    try {
+      const token = mx.getAccessToken();
+      const response = await fetch(httpUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) return mxcUrl;
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch {
+      return mxcUrl;
     }
   }
 

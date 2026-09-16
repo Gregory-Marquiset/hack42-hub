@@ -8,8 +8,10 @@ import { useTranslation } from "react-i18next";
 
 import { useChatMembers } from "@/features/chat/hooks/useChatMembers";
 import { useChatDocumentCapabilities } from "@/features/chat/hooks/useChatDocumentCapabilities";
+import { useMyAvatarSrc } from "@/features/chat/hooks/useMyAvatarSrc";
 import { useSetChatMemberDocumentAddPermission } from "@/features/chat/hooks/useSetChatMemberDocumentAddPermission";
 import type { Chat, ChatMember } from "@/features/drivers/types";
+import { useAvatarPortalOverlay } from "@/features/ui/components/avatar/useAvatarPortalOverlay";
 
 type ChatMembersModalProps = {
   chat: Chat;
@@ -44,6 +46,17 @@ export const ChatMembersModal = ({
   const { t } = useTranslation();
   const { present, pendingInvites, isInitialLoading, isError, refetch } =
     useChatMembers(chat.ref, isOpen);
+  const avatarSrc = useMyAvatarSrc(chat.accountId);
+  // `present` always sorts the current user first (see `sortChatMembers` in
+  // MatrixDriver), so the member list's own row is reliably the first
+  // `.c__share-member-item` in the (portaled) members section, in document
+  // order — the library gives its `UserRow` no `src` prop to reach it any
+  // other way. Not `:first-child`: the section's title div is the actual
+  // first child, so that pseudo-class never matches a member row at all.
+  useAvatarPortalOverlay(
+    ".c__share-modal__members .c__share-member-item .c__avatar",
+    isOpen ? avatarSrc : undefined,
+  );
   const { canManageAdders } = useChatDocumentCapabilities(chat.ref, isOpen);
   const { setDocumentAddPermission, isUpdating } =
     useSetChatMemberDocumentAddPermission(chat.ref);

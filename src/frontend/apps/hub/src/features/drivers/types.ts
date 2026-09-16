@@ -34,7 +34,8 @@ export type User = {
 export type ChatVisual =
   | { kind: "initials" }
   | { kind: "emoji"; emoji: string }
-  | { kind: "icon"; icon: string };
+  | { kind: "icon"; icon: string }
+  | { kind: "image"; url: string };
 
 /**
  * Read state lives outside the conversation and message payloads so a receipt
@@ -44,6 +45,8 @@ export type ChatVisual =
 export type ChatUnread = {
   unread: boolean;
   highlight: boolean;
+  /** Exact unread count when the backend can provide one; 0 when read. */
+  count: number;
 };
 
 /**
@@ -55,6 +58,21 @@ export type ChatUnread = {
  * `isInvitationChat`).
  */
 export type ChatMembership = "join" | "invite";
+
+/**
+ * A Matrix Space (or equivalent grouping on another backend): the top level
+ * of the Espaces → Salons hierarchy. Driver-neutral like `LocalChat`.
+ */
+export type LocalSpace = {
+  id: string;
+  name: string;
+  visual: ChatVisual;
+  memberCount?: number;
+};
+
+export type Space = LocalSpace & {
+  accountId: AccountId;
+};
 
 /**
  * Metadata of a pending incoming invitation, carried on an `invite` chat so the
@@ -99,6 +117,19 @@ export type LocalChat = {
   membership?: ChatMembership;
   /** Invitation metadata; present only when `membership === "invite"`. */
   invitation?: ChatInvitation;
+  /** Last main-timeline message, for the conversation list row's preview line. */
+  preview?: ChatPreview;
+};
+
+/**
+ * The conversation list row's second line: who last spoke and what they said.
+ * `senderName` is omitted for `isOwnMessage` (the row shows "You" instead) and
+ * for a direct chat's received side (the row already names the counterpart).
+ */
+export type ChatPreview = {
+  text: string;
+  isOwnMessage: boolean;
+  senderName?: string;
 };
 
 export type Chat = LocalChat & {

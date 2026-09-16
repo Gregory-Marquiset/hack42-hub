@@ -5,10 +5,13 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/features/auth/Auth";
 import { getHubApi } from "@/features/config/HubApi";
 
+// Values must match the backend's `LANGUAGES` choices (`hub/settings.py`),
+// which are lowercase (e.g. "en-us") — sending "en-US" fails Django's
+// case-sensitive choice validation with a 400, silently rolled back below.
 const LANGUAGES = [
-  { label: "Français", value: "fr-FR", shortLabel: "FR" },
-  { label: "English", value: "en-US", shortLabel: "EN" },
-  { label: "Deutsch", value: "de-DE", shortLabel: "DE" },
+  { label: "Français", value: "fr-fr", shortLabel: "FR" },
+  { label: "English", value: "en-us", shortLabel: "EN" },
+  { label: "Deutsch", value: "de-de", shortLabel: "DE" },
 ];
 
 export const LanguagePickerUserMenu = () => {

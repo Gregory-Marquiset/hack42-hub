@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Chat } from "@/features/drivers/types";
 
@@ -83,15 +85,32 @@ const chat = {
 const capturedProps = (): CapturedProps =>
   ShareModal.mock.calls[0][0] as CapturedProps;
 
+const wrapper = (queryClient: QueryClient) => {
+  const Wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  Wrapper.displayName = "TestQueryClientProvider";
+  return Wrapper;
+};
+
 describe("ChatMembersModal document permission", () => {
+  let queryClient: QueryClient;
+
   beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     ShareModal.mockClear();
     setDocumentAddPermission.mockClear();
     capabilities.canManageAdders = true;
   });
 
+  afterEach(() => queryClient.clear());
+
   it("lets an admin grant the narrow document capability", () => {
-    render(<ChatMembersModal chat={chat} isOpen onClose={vi.fn()} />);
+    render(<ChatMembersModal chat={chat} isOpen onClose={vi.fn()} />, {
+      wrapper: wrapper(queryClient),
+    });
     const props = capturedProps();
     const member = props.accesses[0];
 
@@ -107,7 +126,9 @@ describe("ChatMembersModal document permission", () => {
   });
 
   it("does not offer revocation for inherited moderator access", () => {
-    render(<ChatMembersModal chat={chat} isOpen onClose={vi.fn()} />);
+    render(<ChatMembersModal chat={chat} isOpen onClose={vi.fn()} />, {
+      wrapper: wrapper(queryClient),
+    });
     const props = capturedProps();
     const moderator = props.accesses[1];
 
@@ -123,7 +144,9 @@ describe("ChatMembersModal document permission", () => {
 
   it("keeps the control read-only for a normal member", () => {
     capabilities.canManageAdders = false;
-    render(<ChatMembersModal chat={chat} isOpen onClose={vi.fn()} />);
+    render(<ChatMembersModal chat={chat} isOpen onClose={vi.fn()} />, {
+      wrapper: wrapper(queryClient),
+    });
     expect(capturedProps().canUpdate).toBe(false);
   });
 });

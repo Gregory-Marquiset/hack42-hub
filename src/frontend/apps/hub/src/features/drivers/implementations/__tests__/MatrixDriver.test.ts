@@ -635,10 +635,13 @@ describe("MatrixDriver room metadata", () => {
           userId: OTHER_ID,
           name: "Alice",
           membership: KnownMembership.Join,
+          getMxcAvatarUrl: () => undefined,
         },
       ],
       getLastActiveTimestamp: () => 0,
       currentState: { getStateEvents: () => undefined },
+      getLiveTimeline: () => ({ getEvents: () => [] }),
+      getMxcAvatarUrl: () => null,
     } as unknown as Room;
 
     expect(matrixJoinedRoomToLocalChat(room, SELF_ID).section).toBe(

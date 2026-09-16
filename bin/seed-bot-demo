@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""Dev-only: a populated room to demo Ariane in.
+
+Run with `make seed-bot-demo` after `make provision-bot`.
+
+Creates four fictional colleagues and one room where they are already talking,
+then walks Ariane in through the admin API. The conversation is not decoration:
+it gives the thread-context work (#30) something real to read back, and the
+subject is one a `/juriste` answer actually fits.
+
+The colleagues are MAS accounts with no upstream identity and no password, so
+nobody can log into them - same recipe as Ariane, minus the Application Service.
+They exist to populate a room, never to be used by a person.
+
+Idempotent: re-running reuses the accounts and the room alias, and does not
+repost the transcript.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+HOMESERVER = "http://localhost:9808"
+SERVER_NAME = "localhost"
+ENV_FILE = pathlib.Path("env.d/development/bots.local")
+
+MAS_CONTAINER = "hub-mas-1"
+MAS_CONFIG = "/config/config.yaml"
+
+# The room is found again by its alias, which is what makes a second run cheap.
+ROOM_ALIAS_LOCALPART = "hub-demo-ariane"
+ROOM_NAME = "Mobilité de l'équipe produit"
+ROOM_TOPIC = "Salon de démonstration. Ariane est là : pingue-la."
+
+OWNER = "hub"
+# The dev account everyone logs in with. Named after the product by default,
+# which reads as a service sitting in the conversation rather than a colleague.
+OWNER_DISPLAY_NAME = "Maxime Torgue"
+COLLEAGUES = [
+    ("camille.dupont", "Camille Dupont"),
+    ("yanis.berger", "Yanis Berger"),
+    ("lea.moreau", "Léa Moreau"),
+    ("omar.faure", "Omar Faure"),
+]
+
+# A thread worth asking a lawyer about - so the /juriste demo has a real question
+# to land on rather than a manufactured one.
+TRANSCRIPT = [
+    ("camille.dupont", "Le site de Nantes ferme en janvier. On doit proposer autre chose aux six personnes de l'équipe."),
+    ("yanis.berger", "Trois ont une clause de mobilité dans leur contrat, trois ne l'ont pas. Ça change quoi concrètement ?"),
+    ("lea.moreau", "Et pour celles qui l'ont, est-ce qu'on peut leur imposer Rennes ? C'est à deux heures."),
+    ("omar.faure", "Il faudrait aussi savoir sous quel délai on doit les prévenir."),
+    ("camille.dupont", "Je ne veux pas qu'on parte sur une réponse au doigt mouillé, on s'engage sur du droit du travail là."),
+]
+
+
+def fail(message: str) -> None:
+    print(f"seed-bot-demo: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def read_env() -> dict[str, str]:
+    if not ENV_FILE.is_file():
+        fail(f"{ENV_FILE} missing. Run `make provision-bot` first.")
+    values = {}
+    for line in ENV_FILE.read_text().splitlines():
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            values[key] = value
+    return values
+
+
+def call(method: str, path: str, token: str, body: dict | None = None) -> dict:
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(HOMESERVER + path, data=data, method=method)
+    request.add_header("Authorization", f"Bearer {token}")
+    if data:
+        request.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as error:
+        payload = json.loads(error.read() or b"{}")
+        payload["_status"] = error.code
+        return payload
+    except urllib.error.URLError as error:
+        fail(f"{HOMESERVER} unreachable ({error.reason}). Run `make run-matrix` first.")
+
+
+def quote(value: str) -> str:
+    return urllib.parse.quote(value, safe="")
+
+
+def mas_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["docker", "exec", MAS_CONTAINER, "mas-cli", "manage", "--config", MAS_CONFIG, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def provision_colleague(username: str, display_name: str) -> str:
+    """Register a fictional colleague and return a token to speak as them.
+
+    No `--upstream-provider-mapping`, so the account has no Keycloak identity
+    and no password: it can be spoken for from here, never logged into.
+    """
+    mas_cli("register-user", "--yes", "--display-name", display_name, username)
+    issued = mas_cli("issue-compatibility-token", username)
+    for word in (issued.stdout + issued.stderr).split():
+        if word.startswith("mct_"):
+            return word
+    fail(f"could not issue a token for {username}: {issued.stderr.strip()}")
+
+
+DOCUMENTS = [
+    ("clause-mobilite.pdf", "application/pdf", "m.file", "camille.dupont",
+     "Voici l'extrait du contrat type, article 7."),
+    ("note-manuscrite.png", "image/png", "m.image", "omar.faure",
+     "Et mes notes de la reunion RH, prises a la main."),
+]
+DOCUMENTS_DIR = pathlib.Path("data/demo-documents")
+
+
+def upload(token: str, path: pathlib.Path, content_type: str) -> str:
+    """Put a file in the media repository and return its mxc:// URI."""
+    request = urllib.request.Request(
+        f"{HOMESERVER:s}/_matrix/media/v3/upload?filename={quote(path.name):s}",
+        data=path.read_bytes(),
+        method="POST",
+    )
+    request.add_header("Authorization", f"Bearer {token:s}")
+    request.add_header("Content-Type", content_type)
+    with urllib.request.urlopen(request) as response:
+        return json.loads(response.read())["content_uri"]
+
+
+def send_documents(room_id: str, tokens: dict[str, str]) -> None:
+    """Attach the demo documents, each from a plausible sender.
+
+    They exist so the assistant has something real to be asked about. Today she
+    only sees their filename - reading them means OCR and parsing on Albert's
+    side, which is its own piece of work.
+    """
+    if not DOCUMENTS_DIR.is_dir():
+        print("  documents   absents, lancer `make demo-documents`")
+        return
+
+    for name, content_type, msgtype, sender, caption in DOCUMENTS:
+        path = DOCUMENTS_DIR / name
+        if not path.is_file():
+            continue
+        token = tokens[sender]
+        mxc = upload(token, path, content_type)
+        call("PUT", f"/_matrix/client/v3/rooms/{quote(room_id):s}"
+             f"/send/m.room.message/doc{int(time.time() * 1000000):d}", token,
+             {"msgtype": "m.text", "body": caption})
+        time.sleep(0.15)
+        call("PUT", f"/_matrix/client/v3/rooms/{quote(room_id):s}"
+             f"/send/m.room.message/doc{int(time.time() * 1000000):d}", token,
+             {"msgtype": msgtype, "body": name, "url": mxc,
+              "info": {"mimetype": content_type, "size": path.stat().st_size}})
+        print(f"  document    {name}")
+        time.sleep(0.15)
+
+
+def _has_documents(room_id: str, token: str) -> bool:
+    """Are the demo documents already in this room?
+
+    Checked by filename rather than by a marker event: re-running the seed must
+    not attach the same two files again, and the filenames are what a reader
+    sees anyway.
+    """
+    names = {name for name, _, _, _, _ in DOCUMENTS}
+    page = call("GET", f"/_matrix/client/v3/rooms/{quote(room_id):s}/messages"
+                       "?dir=b&limit=60", token)
+    seen = {
+        (event.get("content") or {}).get("body")
+        for event in page.get("chunk", [])
+        if event.get("type") == "m.room.message"
+    }
+    return names.issubset(seen)
+
+
+def find_room(token: str) -> str | None:
+    alias = f"#{ROOM_ALIAS_LOCALPART}:{SERVER_NAME}"
+    found = call("GET", f"/_matrix/client/v3/directory/room/{quote(alias)}", token)
+    return found.get("room_id")
+
+
+def main() -> None:
+    env = read_env()
+    ariane = env["MATRIX_BOT_USER_ID"]
+    as_token = env["MATRIX_AS_TOKEN"]
+    admin_token = env["MATRIX_ADMIN_TOKEN"]
+
+    print("seed-bot-demo")
+
+    owner_token = provision_colleague(OWNER, OWNER_DISPLAY_NAME)
+    tokens = {}
+    for username, display_name in COLLEAGUES:
+        tokens[username] = provision_colleague(username, display_name)
+        print(f"  collegue    @{username}:{SERVER_NAME} ({display_name})")
+
+    invites = [f"@{u}:{SERVER_NAME}" for u, _ in COLLEAGUES]
+
+    room_id = find_room(owner_token)
+    if room_id:
+        print(f"  salon       {room_id} (deja present, transcript non rejoue)")
+        replay = False
+        missing_documents = not _has_documents(room_id, owner_token)
+    else:
+        created = call("POST", "/_matrix/client/v3/createRoom", owner_token, {
+            "name": ROOM_NAME,
+            "topic": ROOM_TOPIC,
+            "room_alias_name": ROOM_ALIAS_LOCALPART,
+            "preset": "private_chat",
+            "invite": invites,
+        })
+        room_id = created.get("room_id")
+        if not room_id:
+            fail(f"could not create the room: {created}")
+        print(f"  salon       {room_id} (cree)")
+        replay = True
+        missing_documents = True
+
+    # Each colleague accepts their own invitation - a room where everyone is
+    # merely invited shows no messages and reads as broken.
+    for username, _ in COLLEAGUES:
+        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/join", tokens[username], {})
+
+    # Ariane is not invited. She walks in, which is the whole point.
+    forced = call("POST", f"/_synapse/admin/v1/join/{quote(room_id)}", admin_token, {"user_id": ariane})
+    already_in = "already in the room" in (forced.get("error") or "")
+    if forced.get("room_id") != room_id and not already_in:
+        fail(f"Ariane could not be let in: {forced}")
+    how = "deja presente" if already_in else "entree sans invitation"
+    print(f"  Ariane      {how} ({ariane})")
+
+    if replay:
+        for username, body in TRANSCRIPT:
+            txn = f"demo{int(time.time() * 1000000)}"
+            call("PUT", f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{txn}",
+                 tokens[username], {"msgtype": "m.text", "body": body})
+            time.sleep(0.15)
+        print(f"  transcript  {len(TRANSCRIPT)} messages")
+
+    if missing_documents:
+        send_documents(room_id, tokens)
+
+    print(f"\nOuvre http://localhost:9800, connecte-toi avec {OWNER} / {OWNER}")
+    print(f"Le salon « {ROOM_NAME} » contient 5 personnes et Ariane.")
+
+
+if __name__ == "__main__":
+    main()

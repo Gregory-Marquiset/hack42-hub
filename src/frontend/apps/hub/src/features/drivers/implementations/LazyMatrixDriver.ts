@@ -40,6 +40,7 @@ import type {
   ChatUser,
   LocalChat,
   LocalChatSections,
+  LocalSpace,
   User,
 } from "../types";
 
@@ -110,6 +111,7 @@ export class LazyMatrixDriver extends BaseDriver {
   // Static capability mirroring the real `MatrixDriver`, read synchronously by
   // the New Chat composer before the SDK lazy-loads.
   override readonly supportsConversationCreation = true;
+  override readonly supportsSpaces = true;
 
   private target: Driver | null = null;
   private targetPromise: Promise<Driver> | null = null;
@@ -168,8 +170,12 @@ export class LazyMatrixDriver extends BaseDriver {
     return run(driver);
   }
 
-  async getChats(): Promise<LocalChatSections> {
-    return this.withTarget((driver) => driver.getChats());
+  async getChats(spaceId?: string): Promise<LocalChatSections> {
+    return this.withTarget((driver) => driver.getChats(spaceId));
+  }
+
+  async getSpaces(): Promise<LocalSpace[]> {
+    return this.withTarget((driver) => driver.getSpaces());
   }
 
   async getChatUsers(filters?: ChatUserFilters): Promise<ChatUser[]> {
@@ -186,6 +192,26 @@ export class LazyMatrixDriver extends BaseDriver {
 
   async createChatForUsers(userIds: string[]): Promise<LocalChat> {
     return this.withTarget((driver) => driver.createChatForUsers(userIds));
+  }
+
+  // Static capability mirroring the real `MatrixDriver`, read synchronously
+  // before the SDK lazy-loads.
+  override readonly supportsAvatarUpload = true;
+
+  async setUserAvatar(file: File): Promise<string> {
+    return this.withTarget((driver) => driver.setUserAvatar(file));
+  }
+
+  async setChatAvatar(chatId: string, file: File): Promise<string> {
+    return this.withTarget((driver) => driver.setChatAvatar(chatId, file));
+  }
+
+  async resolveAvatarUrl(url: string): Promise<string> {
+    return this.withTarget((driver) => driver.resolveAvatarUrl(url));
+  }
+
+  async getUserAvatarUrl(): Promise<string | undefined> {
+    return this.withTarget((driver) => driver.getUserAvatarUrl());
   }
 
   async acceptChatInvitation(chatId: string): Promise<LocalChat> {

@@ -29,6 +29,10 @@ and this project adheres to
   Discord-style filters (`from:`, `mentions:`, `has:`, `before:`/`during:`/
   `after:`). Show matches in a "Messages" section of the search modal with
   highlighted excerpts.
+- ✨(search) Persist the message search index to IndexedDB so it survives a
+  page reload. Backfill a room's older history (up to 200 messages or 90
+  days, whichever comes first) automatically when it is opened, or on demand
+  per room from the search modal, with indexing progress shown per room.
 - ✨(frontend) Notify incoming messages, thread replies and invitations.
   Play sound on receipt and show browser notifications when Hub is unfocused.
   Request permission on incoming activity with a user-gesture fallback.

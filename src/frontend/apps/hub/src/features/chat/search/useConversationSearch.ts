@@ -13,6 +13,7 @@ import { hasActiveFilters, type MessageSearchResult } from "./types";
 type Result = { chat: Chat; subtitle: string; accountLabel: string };
 type MessageResult = MessageSearchResult & { chat: Chat; accountLabel: string };
 const PAGE_SIZE = 40;
+const MESSAGE_SEARCH_DEBOUNCE_MS = 150;
 
 export const useConversationSearch = () => {
   const entries = useDriverEntries();
@@ -36,6 +37,22 @@ export const useConversationSearch = () => {
   const parsed = useMemo(() => parseSearchQuery(query), [query]);
   const hasQuery =
     !!normalizeSearch(parsed.freeText) || hasActiveFilters(parsed.filters);
+
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedQuery(query),
+      MESSAGE_SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [query]);
+  const debouncedParsed = useMemo(
+    () => parseSearchQuery(debouncedQuery),
+    [debouncedQuery],
+  );
+  const hasDebouncedQuery =
+    !!normalizeSearch(debouncedParsed.freeText) ||
+    hasActiveFilters(debouncedParsed.filters);
 
   const accounts = entries.filter(
     ({ driver }) => driver.supportsConversationSearch,
@@ -125,7 +142,7 @@ export const useConversationSearch = () => {
   // --- Message search effect (new: free text + structured filters) -------
   useEffect(() => {
     const controller = new AbortController();
-    if (!hasQuery) {
+    if (!hasDebouncedQuery) {
       setMessageResults([]);
       setMessageTotal(0);
       setMessageLoading(false);
@@ -138,8 +155,8 @@ export const useConversationSearch = () => {
         .filter(({ driver }) => driver.supportsMessageSearch)
         .map(async (entry) => {
           const page = await entry.driver.searchMessages({
-            freeText: parsed.freeText,
-            filters: parsed.filters,
+            freeText: debouncedParsed.freeText,
+            filters: debouncedParsed.filters,
             limit: messageLimit,
             signal: controller.signal,
           });
@@ -180,9 +197,9 @@ export const useConversationSearch = () => {
     return () => controller.abort();
   }, [
     entries,
-    parsed.freeText,
-    parsed.filters,
-    hasQuery,
+    debouncedParsed.freeText,
+    debouncedParsed.filters,
+    hasDebouncedQuery,
     messageLimit,
     revision,
   ]);

@@ -1,20 +1,38 @@
-import { MatrixClient, RoomEvent } from "matrix-js-sdk/lib/matrix";
+import {
+  EventTimeline,
+  MatrixClient,
+  RoomEvent,
+} from "matrix-js-sdk/lib/matrix";
 import type { MatrixEvent } from "matrix-js-sdk/lib/models/event";
 import type { Room } from "matrix-js-sdk/lib/models/room";
 
+import { messageBackfills } from "@/features/chat/search/messageBackfillCoordinator";
 import { normalizeSearch } from "@/features/chat/search/model";
 import {
   type MessageSearchDocument,
   type MessageContentKind,
   matchesMessageFilters,
 } from "@/features/chat/search/model";
+import { MessageSearchStorage } from "@/features/chat/search/messageStorage";
 import {
   EMPTY_MESSAGE_SEARCH_STATUS,
+  type MessageBackfillState,
   type MessageSearchPage,
   type MessageSearchRequest,
   type MessageSearchStatus,
+  type RoomBackfillInfo,
 } from "@/features/chat/search/types";
+import {
+  extendTimelineWindow,
+  mainTimelineEvents,
+  scopedTimelineWindow,
+} from "./matrixTimelineWindow";
 import { matrixJoinedRoomToLocalChat } from "./matrixRoomMapping";
+
+const PERSIST_DEBOUNCE_MS = 250;
+const BACKFILL_MAX_MESSAGES = 200;
+const BACKFILL_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+const BACKFILL_PAGE_SIZE = 50;
 
 const EXTRACT_URL_REGEX = /https?:\/\/\S+/i;
 const LEGACY_PILL_REGEX =
@@ -39,21 +57,42 @@ export class MatrixMessageSearch {
   private detach = () => {};
   private readonly poolKey = crypto.randomUUID();
   private joinedRoomIds = new Set<string>();
+  private readonly storage: MessageSearchStorage;
+  private readonly pendingMessages: MessageSearchDocument[] = [];
+  private persistTimer?: ReturnType<typeof setTimeout>;
+  private readonly backfillStates = new Map<string, MessageBackfillState>();
 
   constructor(
     private readonly mx: MatrixClient,
     private readonly accountId: string,
-    private readonly databaseName: string,
+    databaseName: string,
     private readonly changed: () => void,
-  ) {}
+  ) {
+    this.storage = new MessageSearchStorage(databaseName, () => this.close());
+  }
 
   async start(): Promise<void> {
     this.status = { ...EMPTY_MESSAGE_SEARCH_STATUS, freshness: "current" };
+
+    const restored = await this.storage.open();
+    if (this.disposed) return;
+    for (const doc of restored.messages) this.indexMessage(doc.roomId, doc);
+    for (const state of restored.backfill) {
+      // The in-memory pagination behind a "backfilling" state is lost on
+      // reload: let the room be requested again instead of showing it stuck.
+      this.backfillStates.set(
+        state.roomId,
+        state.status === "backfilling"
+          ? { ...state, status: "pending" }
+          : state,
+      );
+    }
 
     // Set up timeline observer for live messages
     this.detach = () => this.mx.off(RoomEvent.Timeline, this.onTimeline);
     this.mx.on(RoomEvent.Timeline, this.onTimeline);
 
+    this.recomputeStatus();
     this.emit();
   }
 
@@ -71,11 +110,144 @@ export class MatrixMessageSearch {
     if (!doc) return;
 
     this.indexMessage(room.roomId, doc);
+    this.pendingMessages.push(doc);
+    this.schedulePersist();
     this.emit();
   };
 
   setJoinedRooms(roomIds: Set<string>): void {
     this.joinedRoomIds = new Set(roomIds);
+    this.recomputeStatus();
+    this.emit();
+  }
+
+  private recomputeStatus(): void {
+    let roomsBackfilled = 0;
+    let hasFailures = false;
+    const pendingRooms: RoomBackfillInfo[] = [];
+    for (const roomId of this.joinedRoomIds) {
+      const state = this.backfillStates.get(roomId);
+      if (state?.status === "done") {
+        roomsBackfilled++;
+        continue;
+      }
+      if (state?.status === "error") hasFailures = true;
+      pendingRooms.push({
+        roomId,
+        roomName: this.mx.getRoom(roomId)?.name || roomId,
+        status: state?.status ?? "pending",
+      });
+    }
+    this.status = {
+      ...this.status,
+      roomsEligible: this.joinedRoomIds.size,
+      roomsBackfilled,
+      roomsPending: this.joinedRoomIds.size - roomsBackfilled,
+      hasFailures,
+      pendingRooms,
+    };
+  }
+
+  /** Fetches up to BACKFILL_MAX_MESSAGES or BACKFILL_MAX_AGE_MS of history for one room, whichever bound is hit first. */
+  backfillRoom(roomId: string): void {
+    if (this.disposed) return;
+    const state = this.backfillStates.get(roomId);
+    if (state?.status === "done" || state?.status === "backfilling") return;
+    const room = this.mx.getRoom(roomId);
+    if (!room) return;
+
+    this.setBackfillState({
+      roomId,
+      status: "backfilling",
+      messageCount: state?.messageCount ?? 0,
+      oldestTimestamp: state?.oldestTimestamp,
+    });
+    messageBackfills.enqueue({
+      key: `${this.poolKey}:${roomId}`,
+      account: this.poolKey,
+      activity: Date.now(),
+      added: Date.now(),
+      due: 0,
+      run: (cancelled) => this.runBackfill(roomId, room, cancelled),
+    });
+  }
+
+  private async runBackfill(
+    roomId: string,
+    room: Room,
+    cancelled: () => boolean,
+  ): Promise<void> {
+    if (this.disposed || cancelled()) return;
+    const cutoff = Date.now() - BACKFILL_MAX_AGE_MS;
+    const { window, dispose } = scopedTimelineWindow(this.mx, room);
+    try {
+      await window.load(undefined, 1);
+      await extendTimelineWindow(
+        window,
+        EventTimeline.BACKWARDS,
+        BACKFILL_PAGE_SIZE,
+        () => {
+          const events = mainTimelineEvents(window);
+          const oldest = events[0];
+          return (
+            events.length >= BACKFILL_MAX_MESSAGES ||
+            (!!oldest && oldest.getTs() <= cutoff)
+          );
+        },
+      );
+      if (this.disposed || cancelled()) return;
+
+      // Paginated-in history arrives still encrypted; unlike live events it
+      // is never awaited elsewhere, so isMainTimelineMessage()/getContent()
+      // would otherwise see m.room.encrypted for every backfilled message.
+      await Promise.all(
+        window
+          .getEvents()
+          .filter((event) => event.isEncrypted())
+          .map((event) => this.mx.decryptEventIfNeeded(event).catch(() => {})),
+      );
+      if (this.disposed || cancelled()) return;
+
+      const events = mainTimelineEvents(window).filter(
+        (event) => !event.isRedacted(),
+      );
+      const withinAge = events.filter((event) => event.getTs() > cutoff);
+      const bounded =
+        withinAge.length > BACKFILL_MAX_MESSAGES
+          ? withinAge.slice(withinAge.length - BACKFILL_MAX_MESSAGES)
+          : withinAge;
+
+      const docs = bounded.flatMap((event) => {
+        const doc = this.buildMessageDocument(roomId, event);
+        return doc ? [doc] : [];
+      });
+      for (const doc of docs) this.indexMessage(roomId, doc);
+      void this.storage.putMessages(docs);
+
+      this.setBackfillState({
+        roomId,
+        status: "done",
+        messageCount: docs.length,
+        oldestTimestamp: docs[0]?.timestamp,
+      });
+    } catch {
+      if (!this.disposed) {
+        this.setBackfillState({
+          roomId,
+          status: "error",
+          messageCount: this.backfillStates.get(roomId)?.messageCount ?? 0,
+        });
+      }
+    } finally {
+      dispose();
+    }
+  }
+
+  private setBackfillState(state: MessageBackfillState): void {
+    this.backfillStates.set(state.roomId, state);
+    void this.storage.putBackfillState(state);
+    this.recomputeStatus();
+    this.emit();
   }
 
   async search(request: MessageSearchRequest): Promise<MessageSearchPage> {
@@ -153,11 +325,22 @@ export class MatrixMessageSearch {
   close(): void {
     this.disposed = true;
     this.detach();
+    clearTimeout(this.persistTimer);
+    messageBackfills.cancel(this.poolKey);
+    this.storage.close();
   }
 
   async remove(): Promise<void> {
     this.close();
-    // TODO: Implement storage cleanup when storage is integrated
+  }
+
+  private schedulePersist(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = undefined;
+      const batch = this.pendingMessages.splice(0, this.pendingMessages.length);
+      void this.storage.putMessages(batch);
+    }, PERSIST_DEBOUNCE_MS);
   }
 
   private indexMessage(roomId: string, doc: MessageSearchDocument): void {

@@ -42,3 +42,33 @@ class UserLightSerializer(UserSerializer):
         model = models.User
         fields = ["full_name", "short_name"]
         read_only_fields = ["full_name", "short_name"]
+
+
+class DocsDocumentCreateSerializer(serializers.Serializer):
+    """Validate the minimal document creation payload sent to Docs."""
+
+    title = serializers.CharField(max_length=255, trim_whitespace=True)
+    member_ids = serializers.ListField(
+        child=serializers.CharField(max_length=255, trim_whitespace=True),
+        default=list,
+        max_length=100,
+        required=False,
+    )
+
+
+class DocsDocumentSharingSerializer(serializers.Serializer):
+    """Serialize the non-sensitive outcome of sharing a Docs document."""
+
+    shared = serializers.ListField(child=serializers.CharField(), read_only=True)
+    unresolved = serializers.ListField(child=serializers.CharField(), read_only=True)
+    failed = serializers.ListField(child=serializers.CharField(), read_only=True)
+
+
+class DocsDocumentSerializer(serializers.Serializer):
+    """Serialize a Docs document reference returned to the frontend."""
+
+    id = serializers.CharField(read_only=True)
+    provider = serializers.CharField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    address = serializers.URLField(read_only=True)
+    sharing = DocsDocumentSharingSerializer(read_only=True)

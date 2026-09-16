@@ -9,15 +9,18 @@ from django.core.cache import cache
 from django.db.models.expressions import RawSQL
 from django.db.models.functions import Greatest
 from django.http import Http404
+from django.utils.decorators import method_decorator
 from django.utils.text import slugify
 
 import rest_framework as drf
 from lasuite.tools.email import get_domain_from_email
 from rest_framework import viewsets
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from core import models
 from core.api.filters import remove_accents
+from core.authentication.decorators import refresh_oidc_access_token
+from core.integrations import docs
 
 from . import permissions, serializers
 from .filters import UserSearchFilter
@@ -29,6 +32,85 @@ from .throttling import (
 logger = logging.getLogger(__name__)
 
 # pylint: disable=too-many-ancestors
+
+
+class DocsIntegrationUnavailable(drf.exceptions.APIException):
+    """Expose a stable error when Docs cannot serve a Hub request."""
+
+    status_code = drf.status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "La Suite Docs is temporarily unavailable."
+
+
+class DocsUpstreamError(drf.exceptions.APIException):
+    """Expose a stable error when Docs rejects an otherwise valid Hub request."""
+
+    status_code = drf.status.HTTP_502_BAD_GATEWAY
+    default_detail = "La Suite Docs rejected the document creation request."
+
+
+@method_decorator(refresh_oidc_access_token, name="dispatch")
+class DocsDocumentCreateView(drf.generics.GenericAPIView):
+    """Create a document in La Suite Docs for the authenticated Hub user."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = serializers.DocsDocumentCreateSerializer
+
+    def post(self, request):
+        """Create a Docs document and share it with resolvable room members."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        access_token = request.session.get("oidc_access_token")
+        if not access_token:
+            raise drf.exceptions.NotAuthenticated(
+                "The Hub session does not contain an OIDC access token."
+            )
+
+        try:
+            document = docs.create_document(
+                access_token=access_token,
+                title=serializer.validated_data["title"],
+            )
+        except docs.DocsConfigurationError as exc:
+            logger.error("Docs integration is not configured")
+            raise DocsIntegrationUnavailable(
+                "The Docs integration is not configured."
+            ) from exc
+        except docs.DocsUnavailableError as exc:
+            logger.warning("Docs is unavailable: %s", exc)
+            raise DocsIntegrationUnavailable from exc
+        except docs.DocsResponseError as exc:
+            logger.warning("Docs rejected document creation with status %s", exc.status)
+            raise DocsUpstreamError from exc
+
+        sharing = {"shared": [], "unresolved": [], "failed": []}
+        user_mapping = settings.DOCS_USER_MAPPING
+        member_ids = list(dict.fromkeys(serializer.validated_data["member_ids"]))
+        for member_id in member_ids:
+            docs_user_id = user_mapping.get(member_id)
+            if not docs_user_id:
+                sharing["unresolved"].append(member_id)
+                continue
+            try:
+                docs.create_document_access(
+                    access_token=access_token,
+                    document_id=document["id"],
+                    user_id=str(docs_user_id),
+                )
+            except (
+                docs.DocsConfigurationError,
+                docs.DocsUnavailableError,
+                docs.DocsResponseError,
+            ):
+                logger.warning(
+                    "Docs document access creation failed for one room member"
+                )
+                sharing["failed"].append(member_id)
+            else:
+                sharing["shared"].append(member_id)
+
+        output = serializers.DocsDocumentSerializer({**document, "sharing": sharing})
+        return drf.response.Response(output.data, status=drf.status.HTTP_201_CREATED)
 
 
 class NestedGenericViewSet(viewsets.GenericViewSet):

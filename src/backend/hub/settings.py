@@ -568,6 +568,17 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # La Suite Docs integration
+    DOCS_BASE_URL = values.Value(
+        default=None, environ_name="DOCS_BASE_URL", environ_prefix=None
+    )
+    DOCS_API_TIMEOUT = values.PositiveIntegerValue(
+        default=5, environ_name="DOCS_API_TIMEOUT", environ_prefix=None
+    )
+    DOCS_USER_MAPPING = values.DictValue(
+        default={}, environ_name="DOCS_USER_MAPPING", environ_prefix=None
+    )
+
     # WARNING: Enabling this setting allows multiple user hub to share the same email
     # address. This may cause security issues and is not recommended for production use when
     # email is activated as fallback for identification (see previous setting).

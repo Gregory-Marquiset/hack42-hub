@@ -72,7 +72,10 @@ export const readSpaceId = (query: ParsedUrlQuery): string | null =>
  * a chat-less `/chat`, never `/chat/new`, so this is the one combination
  * that keeps `?space=` from being dropped by that redirect.
  */
-export const spaceHref = (spaceId: string | null, chatRef?: ChatRef | null) => ({
+export const spaceHref = (
+  spaceId: string | null,
+  chatRef?: ChatRef | null,
+) => ({
   pathname: chatRef ? "/chat" : "/chat/new",
   query: {
     ...(chatRef ? { account: chatRef.accountId, chat: chatRef.chatId } : {}),

@@ -33,7 +33,9 @@ export const MeetingHistory = ({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected =
-    meetings.find((meeting) => meeting.id === selectedId) ?? meetings[0] ?? null;
+    meetings.find((meeting) => meeting.id === selectedId) ??
+    meetings[0] ??
+    null;
 
   // A meeting id belongs to one conversation — drop a selection that no longer
   // exists so the view falls back to the first available meeting.

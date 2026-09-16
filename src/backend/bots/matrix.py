@@ -263,9 +263,19 @@ def recent_messages(room_id: str, limit: int = 20) -> list[dict[str, Any]]:
     return list(reversed(page.get("chunk", [])))
 
 
-def send_message(room_id: str, body: str, *, thread_root: str | None = None) -> str:
+# Marks a message as plumbing rather than conversation: help, refusals,
+# failures. Read back as context they are poison - three refusals in a row and
+# the model concludes that refusing is what it does here.
+ASIDE_KEY = "fr.hack42.bot.aside"
+
+
+def send_message(
+    room_id: str, body: str, *, thread_root: str | None = None, aside: bool = False
+) -> str:
     """Post as Ariane, in a thread when there is one."""
     content: dict[str, Any] = {"msgtype": "m.text", "body": body}
+    if aside:
+        content[ASIDE_KEY] = True
     if thread_root:
         content["m.relates_to"] = {
             "rel_type": "m.thread",

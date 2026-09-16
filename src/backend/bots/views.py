@@ -42,7 +42,13 @@ def _authorised(request) -> bool:
     if not expected:
         logger.error("MATRIX_HS_TOKEN is empty: refusing every transaction")
         return False
-    return hmac.compare_digest(token, expected)
+    # Bytes, not str: `compare_digest` raises TypeError on a non-ASCII string,
+    # and Django decodes headers as latin-1 - so `Authorization: Bearer é`
+    # would turn a plain 403 into a 500 with a traceback.
+    return hmac.compare_digest(
+        token.encode("utf-8", "surrogateescape"),
+        expected.encode("utf-8", "surrogateescape"),
+    )
 
 
 @csrf_exempt
@@ -66,6 +72,12 @@ def transactions(request, txn_id):
             continue
         room_id = event.get("room_id")
         if not room_id or not event.get("event_id"):
+            continue
+        # Filter here, before spending anything. The room namespace is `.*`, so
+        # Synapse pushes every message on the server: spawning a thread first
+        # and checking the ping inside it would start one thread per message
+        # typed by anyone, anywhere.
+        if not handlers.is_pinged((event.get("content") or {}).get("body") or ""):
             continue
         # A daemon thread: the answer is best-effort, and a pending reply must
         # never hold the process open at shutdown.
@@ -91,10 +103,22 @@ def unknown_room(request, room_alias):  # pylint: disable=unused-argument
 
 
 def health(request):
-    """A plain check that the service is wired, without exposing any token."""
+    """Is the assistant configured? Yes or no, and nothing else.
+
+    This route is public. It used to report the bot's Matrix id, the names that
+    trigger it and whether the Albert key was set - no secret, but a free map of
+    the internals for anyone scanning. A probe only needs a yes.
+    """
+    configured = all(
+        (
+            settings.MATRIX_AS_TOKEN,
+            settings.MATRIX_HS_TOKEN,
+            settings.MATRIX_ADMIN_TOKEN,
+            settings.ALBERT_API_KEY,
+        )
+    )
     return HttpResponse(
-        f"bot={settings.MATRIX_BOT_USER_ID}\n"
-        f"ping_names={','.join(settings.BOTS_PING_NAMES)}\n"
-        f"albert_key={'set' if settings.ALBERT_API_KEY else 'MISSING'}\n",
+        "ok\n" if configured else "incomplete\n",
+        status=200 if configured else 503,
         content_type="text/plain",
     )

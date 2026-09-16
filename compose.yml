@@ -74,6 +74,9 @@ services:
       - env.d/development/common.${ENV_OVERRIDE:-local}
       - env.d/development/postgresql
       - env.d/development/postgresql.${ENV_OVERRIDE:-local}
+      # Written by bin/provision-bot, git-ignored. Carries the Matrix and
+      # Albert secrets, which must never reach the frontend.
+      - env.d/development/bots.local
     ports:
       - "9801:8000"
     networks:

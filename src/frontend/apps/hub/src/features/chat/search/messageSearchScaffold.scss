@@ -38,5 +38,23 @@
     &:hover {
       background-color: var(--hub-scaffold-bg-hover);
     }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.6;
+
+      &:hover {
+        background-color: transparent;
+      }
+    }
+  }
+
+  &__pending-rooms {
+    list-style: none;
+    margin: 4px 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 }

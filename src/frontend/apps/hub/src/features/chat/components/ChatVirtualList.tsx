@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
+import { getRegistry } from "@/features/drivers/DriverRegistry";
 import type {
   ChatMessage,
   ChatMessageAuthor,
@@ -72,6 +73,12 @@ export const ChatVirtualList = ({
   } = useChatMessages(chatRef);
   const unread = useMainTimelineUnread(chatRef, messages);
   const chatKey = `${chatRef.accountId}:${chatRef.chatId}`;
+
+  useEffect(() => {
+    getRegistry()
+      .get(chatRef.accountId)
+      .backfillMessageSearchRoom(chatRef.chatId);
+  }, [chatRef.accountId, chatRef.chatId]);
   const lastMessage = messages[messages.length - 1];
   const initialWindowIndex = windowAnchorId
     ? messages.findIndex((message) => message.id === windowAnchorId)

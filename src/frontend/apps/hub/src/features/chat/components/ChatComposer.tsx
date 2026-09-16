@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -83,6 +84,8 @@ export const ChatComposer = ({
   const handledFocusSignalRef = useRef<number | undefined>(undefined);
   const trimmedDraft = useMemo(() => draft.trim(), [draft]);
   const isBusy = isSubmitting || isSubmittingDraft;
+  const listId = useId();
+  const optionId = (index: number) => `${listId}-option-${index}`;
   const assistant = useAssistant();
   const mention = useComposerAutocomplete(mentionCandidates, assistant);
   const hasSuggestions = mention.suggestions.length > 0;
@@ -292,7 +295,7 @@ export const ChatComposer = ({
       {hasSuggestions && (
         <ul
           className="hub__chat-composer__mentions"
-          id="hub-mention-list"
+          id={listId}
           role="listbox"
           aria-label={t("Suggestions")}
         >
@@ -301,6 +304,10 @@ export const ChatComposer = ({
               <button
                 type="button"
                 role="option"
+                id={optionId(index)}
+                // The widget is driven by aria-activedescendant, so the options
+                // must not be tab stops of their own.
+                tabIndex={-1}
                 aria-selected={index === mention.activeIndex}
                 className={
                   index === mention.activeIndex
@@ -309,10 +316,14 @@ export const ChatComposer = ({
                 }
                 // The textarea blurs before a click lands, which would close the
                 // list first and swallow the pick. Insert on mousedown instead.
+                // mousedown keeps the focus in the textarea, but a synthetic
+                // click - what a screen reader or a pointing aid emits - only
+                // fires onClick, so both are wired.
                 onMouseDown={(event) => {
                   event.preventDefault();
                   insertMention(suggestion);
                 }}
+                onClick={() => insertMention(suggestion)}
                 onMouseEnter={() => mention.move(index - mention.activeIndex)}
               >
                 <span className="hub__chat-composer__mention-name">
@@ -327,7 +338,19 @@ export const ChatComposer = ({
         </ul>
       )}
       <form className="hub__chat-composer" onSubmit={handleSubmit}>
-        <div className="hub__chat-composer__field">
+        {/*
+          ARIA in HTML allows no role on a textarea, so the combobox lives on
+          the wrapper and the textarea keeps its native multiline textbox role.
+          This is the ARIA APG pattern, and it stops the composer being
+          announced as a drop-down list on every single message.
+        */}
+        <div
+          className="hub__chat-composer__field"
+          role="combobox"
+          aria-expanded={hasSuggestions}
+          aria-controls={hasSuggestions ? listId : undefined}
+          aria-haspopup="listbox"
+        >
           <textarea
             ref={inputRef}
             rows={1}
@@ -353,10 +376,12 @@ export const ChatComposer = ({
               );
             }}
             onBlur={() => mention.dismiss()}
-            role="combobox"
-            aria-expanded={hasSuggestions}
-            aria-controls="hub-mention-list"
             aria-autocomplete="list"
+            // Without this the arrow keys are silent: the focus never leaves
+            // the textarea, so `aria-selected` alone announces nothing.
+            aria-activedescendant={
+              hasSuggestions ? optionId(mention.activeIndex) : undefined
+            }
             onKeyDown={(event) => {
               // While the list is open it owns the arrows, Enter and Tab: they
               // are how you pick a name. Everything else falls through, so the
@@ -367,7 +392,10 @@ export const ChatComposer = ({
                   mention.move(event.key === "ArrowDown" ? 1 : -1);
                   return;
                 }
-                if (event.key === "Enter" || event.key === "Tab") {
+                if (
+                  event.key === "Enter" ||
+                  (event.key === "Tab" && !event.shiftKey)
+                ) {
                   event.preventDefault();
                   insertMention(mention.suggestions[mention.activeIndex]);
                   return;

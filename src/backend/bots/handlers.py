@@ -153,10 +153,11 @@ def parse_command(body: str) -> tuple[str | None, bool]:
 def clean_question(body: str) -> str:
     """The message without the ping and the command, which are addressing, not content."""
     text = strip_quotes(body)
+    # The command goes - it is addressing, not content. The mention stays:
+    # removing it produced a question that no longer pinged anyone, and the
+    # model, reading its own past "write @Ariane to reach me" in the history,
+    # refused to answer it.
     text = COMMAND_RE.sub(" ", text)
-    # Only the `@name` that addressed her is removed. A later mention of her in
-    # the sentence itself is content, and cutting it would change the question.
-    text = ping_pattern().sub(" ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -174,10 +175,27 @@ def _as_messages(
             continue
         if skip_event_id and event.get("event_id") == skip_event_id:
             continue
-        body = (event.get("content") or {}).get("body")
+        content = event.get("content") or {}
+        if content.get(matrix.ASIDE_KEY):
+            continue
+        body = content.get("body")
         if not body:
             continue
-        messages.append({"role": _role(event.get("sender", "")), "content": body})
+        # Attribution, but as plain text. An XML-ish wrapper was tried first and
+        # backfired twice: the model imitated the tags in its own answer, and it
+        # copied back its own earlier messages verbatim. A "name: text" prefix
+        # carries the same information without teaching a format.
+        #
+        # Only human turns are prefixed. Ariane's own turns stay bare, which is
+        # what the chat API expects of an assistant turn.
+        sender = event.get("sender", "inconnu")
+        role = _role(sender)
+        messages.append(
+            {
+                "role": role,
+                "content": body if role == "assistant" else f"{sender:s} : {body:s}",
+            }
+        )
     return messages
 
 
@@ -307,15 +325,13 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
     return _as_messages(_dedupe(room_history), skip_event_id=event_id), None
 
 
-def canned_reply(room_id: str, command: str | None, unknown: bool) -> str | None:
+def canned_reply(command: str | None, unknown: bool) -> str | None:
     """The answer Ariane gives without asking Albert anything, if there is one.
 
-    Three cases, and none should cost a model call: a room she cannot read, a
-    command that does not exist, and the help itself - a model asked to recite
-    a catalogue invents an entry sooner or later.
+    A command that does not exist, and the help itself - a model asked to recite
+    a catalogue invents an entry sooner or later. The unreadable-room case is
+    handled earlier, before she even enters.
     """
-    if matrix.is_encrypted(room_id):
-        return ENCRYPTED_MESSAGE
     if unknown:
         return UNKNOWN_COMMAND.format(name=settings.BOTS_PING_NAMES[0].capitalize())
     if command == HELP_COMMAND:
@@ -338,7 +354,16 @@ def handle_message(room_id: str, event: dict) -> None:
 
     logger.info("Ariane pinged in %s by %s", room_id, sender)
 
+    # Encryption is checked before entering, not after. Forcing a robot into a
+    # private encrypted room through the admin door, only to announce that it
+    # cannot read anything, spends the most intrusive privilege we have for a
+    # result known in advance.
     try:
+        if matrix.is_encrypted(room_id):
+            matrix.send_message(
+                room_id, ENCRYPTED_MESSAGE, thread_root=aside_root(event), aside=True
+            )
+            return
         matrix.ensure_in_room(room_id)
     except matrix.MatrixError as exc:
         logger.warning("could not enter %s: %s", room_id, exc)
@@ -351,9 +376,11 @@ def handle_message(room_id: str, event: dict) -> None:
     answer_root = thread_root_of(event)
 
     try:
-        canned = canned_reply(room_id, command, unknown)
+        canned = canned_reply(command, unknown)
         if canned:
-            matrix.send_message(room_id, canned, thread_root=aside_root(event))
+            matrix.send_message(
+                room_id, canned, thread_root=aside_root(event), aside=True
+            )
             return
 
         messages, _ = build_context(room_id, event)
@@ -372,6 +399,8 @@ def handle_message(room_id: str, event: dict) -> None:
     except albert.AlbertError as exc:
         # Silence after a ping reads as a broken product. Say something.
         logger.warning("Albert failed: %s", exc)
-        matrix.send_message(room_id, FAILURE_MESSAGE, thread_root=aside_root(event))
+        matrix.send_message(
+            room_id, FAILURE_MESSAGE, thread_root=aside_root(event), aside=True
+        )
     except matrix.MatrixError as exc:
         logger.warning("Matrix failed while answering: %s", exc)

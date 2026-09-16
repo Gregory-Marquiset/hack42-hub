@@ -16,7 +16,8 @@ and this project adheres to
   summarises messages they are not allowed to read. `/aide` lists the
   commands and states what she reads.
 - ✨(frontend) Suggest room members with `@` and assistant commands with `/`
-  in the message composer.
+  in the message composer. The list follows the ARIA combobox pattern and is
+  usable with a screen reader.
 - ✨(frontend) Show real profile/group photos in the account menu, chat
   header and members list. Reorder the account menu, add Direct messages
   filter tabs, and fix the language picker only applying French.

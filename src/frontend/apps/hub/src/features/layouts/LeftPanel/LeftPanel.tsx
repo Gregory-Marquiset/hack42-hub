@@ -75,7 +75,10 @@ const filterChatsByTab = (
   }
 };
 
-const buildTabs = (t: TFunction, unreadCount: number): { id: Tab; label: string }[] => [
+const buildTabs = (
+  t: TFunction,
+  unreadCount: number,
+): { id: Tab; label: string }[] => [
   { id: "all", label: t("All") },
   {
     id: "unread",
@@ -157,9 +160,7 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
       <div className="hub__left-panel__top">
         <div className="hub__left-panel__logo">
           <TchapLogo />
-          <span className="hub__left-panel__logo__label">
-            {t("Messaging")}
-          </span>
+          <span className="hub__left-panel__logo__label">{t("Messaging")}</span>
         </div>
 
         <nav
@@ -336,13 +337,9 @@ const ChatRow = ({
           )}
         </span>
         <span className="hub__left-panel__chat__row">
-          <span className="hub__left-panel__chat__preview">
-            {previewText}
-          </span>
+          <span className="hub__left-panel__chat__preview">{previewText}</span>
           {unread.unread && unread.count > 0 && (
-            <span className="hub__left-panel__chat__badge">
-              {unread.count}
-            </span>
+            <span className="hub__left-panel__chat__badge">{unread.count}</span>
           )}
         </span>
       </span>
@@ -443,7 +440,9 @@ const DirectMessagesSection = ({
         inert={!isOpen}
       >
         <div className="hub__left-panel__dm-section__panel__inner">
-          {chats.length > 0 && <TabsRow tab={tab} tabs={tabs} onChange={setTab} />}
+          {chats.length > 0 && (
+            <TabsRow tab={tab} tabs={tabs} onChange={setTab} />
+          )}
           {visibleChats.length > 0 ? (
             <ul className="hub__left-panel__list">
               {visibleChats.map((chat) => (

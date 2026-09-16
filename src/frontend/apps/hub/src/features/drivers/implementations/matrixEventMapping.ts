@@ -328,7 +328,10 @@ export const lastMainTimelinePreview = (
   room: Room,
   selfUserId: string | undefined,
 ): ChatPreview | undefined => {
-  const events = room.getLiveTimeline().getEvents().filter(isMainTimelineMessage);
+  const events = room
+    .getLiveTimeline()
+    .getEvents()
+    .filter(isMainTimelineMessage);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event.isRedacted()) {
@@ -345,7 +348,11 @@ export const lastMainTimelinePreview = (
       isOwnMessage,
       ...(isOwnMessage
         ? {}
-        : { senderName: sender ? room.getMember(sender)?.name ?? sender : undefined }),
+        : {
+            senderName: sender
+              ? (room.getMember(sender)?.name ?? sender)
+              : undefined,
+          }),
     };
   }
   return undefined;

@@ -262,11 +262,11 @@ seed-matrix: ## seed the local Matrix stack with a DM and a group room (needs ru
 	@python3 bin/seed-matrix
 .PHONY: seed-matrix
 
-provision-bot: ## provision the Hub assistant and its Synapse admin token (needs run-matrix)
+provision-bot: ## provision Ariane, the Hub assistant (needs run-matrix)
 	@python3 bin/provision-bot
 .PHONY: provision-bot
 
-check-bot: ## prove the assistant reaches a private room it was never invited to
+check-bot: ## prove the assistant enters a room only when invited
 	@python3 bin/check-bot
 .PHONY: check-bot
 

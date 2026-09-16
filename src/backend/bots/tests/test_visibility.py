@@ -14,7 +14,7 @@ from django.test import override_settings
 
 import pytest
 
-from bots import handlers
+from bots import handlers, matrix
 
 pytestmark = pytest.mark.django_db
 
@@ -75,3 +75,32 @@ def test_thread_root_older_than_the_asker_is_cut_too():
     root = message("$root", 500, "racine anterieure a l'arrivee")
     reply = message("$reply", 4_000, "reponse posterieure")
     assert handlers.visible_to([root, reply], 2_000) == [reply]
+
+
+def test_horizon_is_the_later_of_the_two_memberships(monkeypatch):
+    """Ariane's own arrival caps the context, even in an open-history room.
+
+    An invitation is not retroactive. A `shared` room would hand her everything
+    said before she joined, and summarising that back turns "we invited the
+    assistant" into "the assistant read the archive".
+    """
+    monkeypatch.setattr(matrix, "history_visibility", lambda _room: "shared")
+    monkeypatch.setattr(matrix, "joined_at", lambda _room: 5_000)
+
+    assert handlers.history_horizon("!r:localhost", "@asker:localhost") == 5_000
+
+
+def test_horizon_takes_the_asker_when_they_arrived_last(monkeypatch):
+    """The stricter of the two limits always wins."""
+    monkeypatch.setattr(matrix, "history_visibility", lambda _room: "joined")
+    monkeypatch.setattr(matrix, "joined_at", lambda _room: 1_000)
+    monkeypatch.setattr(matrix, "membership_since", lambda _room, _user: 9_000)
+
+    assert handlers.history_horizon("!r:localhost", "@asker:localhost") == 9_000
+
+
+def test_no_horizon_when_ariane_is_not_a_member(monkeypatch):
+    """Unknown membership drops everything rather than allowing everything."""
+    monkeypatch.setattr(matrix, "joined_at", lambda _room: None)
+
+    assert handlers.history_horizon("!r:localhost", "@asker:localhost") is None

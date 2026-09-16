@@ -45,13 +45,14 @@ and this project adheres to
 - ✨(frontend) Name a meeting, plan its duration or schedule it ahead,
   follow its progress in the meeting window, and let its organizer rename,
   extend or close it.
-- ✨(bots) Add Ariane, an assistant reachable from any room with `@Ariane`.
-  She answers only when addressed, reads the thread and the recent room
-  history for context, and changes register with `/juriste`, `/avocat`,
-  `/po` and `/pm`. Answers come from the Albert API, from the server only.
-  The context is cut at the asker's own history horizon, so she never
-  summarises messages they are not allowed to read. `/aide` lists the
-  commands and states what she reads.
+- ✨(bots) Add Ariane, an assistant reachable with `@Ariane` in any room she
+  has been invited to. She answers only when addressed, reads the thread and
+  the room history that followed her arrival, and changes register with
+  `/juriste`, `/avocat`, `/po` and `/pm`. Answers come from the Albert API,
+  from the server only. The context is cut at both her own arrival and the
+  asker's history horizon, so she never reads back what either of them is not
+  entitled to. She cannot work in encrypted rooms, which includes every private
+  message. `/aide` lists the commands and states what she reads.
 - ✨(frontend) Suggest room members with `@` and assistant commands with `/`
   in the message composer. The list follows the ARIA combobox pattern and is
   usable with a screen reader.

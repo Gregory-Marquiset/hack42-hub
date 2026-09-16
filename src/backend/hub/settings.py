@@ -374,11 +374,6 @@ class Base(Configuration):
     MATRIX_HS_TOKEN = values.Value(
         None, environ_name="MATRIX_HS_TOKEN", environ_prefix=None
     )
-    # 🔒️ Synapse admin rights. The only way into a room nobody invited Ariane
-    # to - the client API answers M_FORBIDDEN there.
-    MATRIX_ADMIN_TOKEN = values.Value(
-        None, environ_name="MATRIX_ADMIN_TOKEN", environ_prefix=None
-    )
 
     # What counts as a ping. The Hub emits no `m.mentions`, so the message body
     # is the only signal available.

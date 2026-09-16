@@ -50,16 +50,16 @@ namespaces:
       regex: "#hub-as_.*:localhost"
   # Every room the service receives events for. `.*` is what makes the bot
   # omnipresent: Synapse pushes it the events of every room on the server, with
-  # no membership and no invitation. That is the whole point - the bot has to
-  # see a mention before it can answer it.
+  # no membership and no invitation. That is what lets the bot see an
+  # invitation addressed to it, and a mention in a room it has joined.
   #
   # `exclusive: false` is not a detail. Set to true, the service would claim
   # ownership of every room id on the homeserver, and Synapse would refuse room
   # creation to everybody else.
   #
-  # Reading is not writing: to POST in a room the bot must be a member. Joining
-  # a private room it was never invited to needs the Synapse admin API, which
-  # is why MATRIX_ADMIN_TOKEN exists (see env.d/development/bots.local).
+  # Reading is not writing: to POST in a room the bot must be a member, and it
+  # becomes one only by accepting an invitation. There is no admin token and
+  # no forced entry (see bin/provision-bot).
   rooms:
     - exclusive: false
       regex: ".*"

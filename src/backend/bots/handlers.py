@@ -74,11 +74,14 @@ def help_message() -> str:
         "",
         "Sans commande, je réponds sur un ton normal.",
         "",
-        "Ce que je lis : les messages récents du salon et, quand vous me "
-        "pinguez dans un fil, ce fil en entier. Uniquement ce que vous-même "
-        "avez le droit de lire — si vous avez rejoint le salon après une "
-        "conversation, elle ne m'est pas accessible non plus pour vous "
-        "répondre. Je n'ouvre pas les fichiers joints.",
+        "Où je travaille : uniquement dans les salons où l'on m'a invitée, et "
+        "jamais dans un salon chiffré — je ne peux pas y lire les messages. "
+        "Les messages privés étant toujours chiffrés, je n'y suis jamais.",
+        "",
+        "Ce que je lis : les messages du salon postérieurs à mon arrivée et, "
+        "quand vous me pinguez dans un fil, ce fil. Jamais ce qui a été dit "
+        "avant qu'on m'invite, et jamais ce que vous-même n'avez pas le droit "
+        "de lire. Je n'ouvre pas les fichiers joints.",
     ]
     return "\n".join(lines)
 
@@ -228,17 +231,31 @@ def visible_to(events: list[dict], horizon: int | None) -> list[dict]:
 
 
 def history_horizon(room_id: str, asker: str) -> int | None:
-    """The oldest timestamp `asker` may read in this room, or None for all of it.
+    """The oldest timestamp Ariane may use to answer `asker` in this room.
 
-    Under `invited` the server would let them read from their invitation, while
-    this uses the timestamp of their current membership event. That is stricter
-    than the specification when someone was invited long before joining, and
-    stricter is the correct direction to be wrong in.
+    Two limits, and the later one wins.
+
+    The asker's own: she must never read back history the homeserver withheld
+    from them. Under `invited` the server would allow reading from their
+    invitation, while this uses their current membership event - stricter than
+    the specification, which is the correct direction to be wrong in.
+
+    Her own: an invitation is not retroactive. A room with
+    `history_visibility: shared` would hand her everything said before she
+    arrived, and summarising that back would turn "we invited the assistant"
+    into "the assistant read the archive".
     """
+    mine = matrix.joined_at(room_id)
+    if mine is None:
+        return None
+
     visibility = matrix.history_visibility(room_id)
-    if visibility in OPEN_HISTORY:
-        return 0
-    return matrix.membership_since(room_id, asker)
+    theirs = (
+        0 if visibility in OPEN_HISTORY else matrix.membership_since(room_id, asker)
+    )
+    if theirs is None:
+        return None
+    return max(mine, theirs)
 
 
 def thread_root_of(event: dict) -> str | None:
@@ -325,6 +342,34 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
     return _as_messages(_dedupe(room_history), skip_event_id=event_id), None
 
 
+def access_refusal(room_id: str) -> str | None:
+    """Why Ariane cannot answer in this room, if she cannot.
+
+    Encryption is checked before joining, not after: entering a room only to
+    announce that nothing can be read there is a wasted membership, and the
+    answer is known in advance. That one she can say, because she is able to
+    join and then speak.
+
+    Not being invited is different, and there is no message for it: she cannot
+    post in a room she is not in, so any refusal would fail to send. Silence is
+    the only possible outcome, and the composer is where this is prevented - it
+    only ever suggests people who are in the room.
+    """
+    if matrix.is_encrypted(room_id):
+        return ENCRYPTED_MESSAGE
+    if not matrix.ensure_in_room(room_id):
+        logger.info(
+            "Ariane was addressed in %s without being invited; staying out", room_id
+        )
+        return SILENT
+    return None
+
+
+# Distinguishes "refuse with this message" from "say nothing at all". Returning
+# an empty string would be indistinguishable from no refusal.
+SILENT = "\0"
+
+
 def canned_reply(command: str | None, unknown: bool) -> str | None:
     """The answer Ariane gives without asking Albert anything, if there is one.
 
@@ -354,17 +399,14 @@ def handle_message(room_id: str, event: dict) -> None:
 
     logger.info("Ariane pinged in %s by %s", room_id, sender)
 
-    # Encryption is checked before entering, not after. Forcing a robot into a
-    # private encrypted room through the admin door, only to announce that it
-    # cannot read anything, spends the most intrusive privilege we have for a
-    # result known in advance.
     try:
-        if matrix.is_encrypted(room_id):
-            matrix.send_message(
-                room_id, ENCRYPTED_MESSAGE, thread_root=aside_root(event), aside=True
-            )
+        refusal = access_refusal(room_id)
+        if refusal is not None:
+            if refusal is not SILENT:
+                matrix.send_message(
+                    room_id, refusal, thread_root=aside_root(event), aside=True
+                )
             return
-        matrix.ensure_in_room(room_id)
     except matrix.MatrixError as exc:
         logger.warning("could not enter %s: %s", room_id, exc)
         return

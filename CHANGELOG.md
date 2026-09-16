@@ -8,6 +8,16 @@ and this project adheres to
 
 ### Added
 
+- ✨(bots) Add Ariane, an assistant reachable from any room with `@Ariane`.
+  She answers only when addressed, reads the thread and the recent room
+  history for context, and changes register with `/juriste`, `/avocat`,
+  `/po` and `/pm`. Answers come from the Albert API, from the server only.
+  The context is cut at the asker's own history horizon, so she never
+  summarises messages they are not allowed to read. `/aide` lists the
+  commands and states what she reads.
+- ✨(frontend) Suggest room members with `@` and assistant commands with `/`
+  in the message composer. The list follows the ARIA combobox pattern and is
+  usable with a screen reader.
 - ✨(frontend) Show real profile/group photos in the account menu, chat
   header and members list. Reorder the account menu, add Direct messages
   filter tabs, and fix the language picker only applying French.

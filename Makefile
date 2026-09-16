@@ -262,6 +262,22 @@ seed-matrix: ## seed the local Matrix stack with a DM and a group room (needs ru
 	@python3 bin/seed-matrix
 .PHONY: seed-matrix
 
+provision-bot: ## provision the Hub assistant and its Synapse admin token (needs run-matrix)
+	@python3 bin/provision-bot
+.PHONY: provision-bot
+
+check-bot: ## prove the assistant reaches a private room it was never invited to
+	@python3 bin/check-bot
+.PHONY: check-bot
+
+demo-documents: ## build the PDF and image the demo room is seeded with
+	@python3 bin/build-demo-documents
+.PHONY: demo-documents
+
+seed-bot-demo: ## create a populated room to demo Ariane in (needs provision-bot)
+	@python3 bin/seed-bot-demo
+.PHONY: seed-bot-demo
+
 clear-db-e2e: ## quickly clears the e2e database, used by Playwright between tests
 	$(PSQL_E2E) -c "$$(cat bin/clear_db_e2e.sql)"
 .PHONY: clear-db-e2e

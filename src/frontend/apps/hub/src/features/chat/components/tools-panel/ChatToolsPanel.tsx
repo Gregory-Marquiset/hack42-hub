@@ -53,7 +53,11 @@ export const ChatToolsPanel = ({
             isOpen={isOpen}
             onClose={onClose}
           />
-          <DocumentsTool />
+          <DocumentsTool
+            key={JSON.stringify([chatRef.accountId, chatRef.chatId])}
+            chatRef={chatRef}
+            isOpen={isOpen}
+          />
         </>
       )}
       {tool === "threads" && (

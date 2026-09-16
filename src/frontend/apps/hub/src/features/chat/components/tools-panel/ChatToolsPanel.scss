@@ -149,6 +149,45 @@
     color: var(--c--contextuals--content--semantic--neutral--tertiary, #75758a);
   }
 
+  &__document {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--xxxs, 4px);
+    padding: var(--c--globals--spacings--xs, 8px) 0;
+    overflow-wrap: anywhere;
+
+    &__author {
+      font-size: 12px;
+      color: var(
+        --c--contextuals--content--semantic--neutral--tertiary,
+        #75758a
+      );
+    }
+  }
+
+  &__document-add {
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--c--globals--spacings--xs, 8px);
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: var(--c--globals--spacings--xxxs, 4px);
+    }
+
+    input {
+      width: 100%;
+    }
+
+    &__actions {
+      display: flex;
+      gap: var(--c--globals--spacings--xs, 8px);
+    }
+  }
+
   &__section {
     display: flex;
     flex-direction: column;

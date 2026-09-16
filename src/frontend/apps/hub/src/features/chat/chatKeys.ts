@@ -22,6 +22,8 @@ export const chatKeys = {
     ["chat-main-timeline-unread", ref.accountId, ref.chatId] as const,
   threads: (ref: ChatRef) =>
     ["chat-threads", ref.accountId, ref.chatId] as const,
+  documents: (ref: ChatRef) =>
+    ["chat-documents", ref.accountId, ref.chatId] as const,
   thread: (ref: ChatRef, threadId: string) =>
     ["chat-thread", ref.accountId, ref.chatId, threadId] as const,
   threadDetails: (ref: ChatRef) =>

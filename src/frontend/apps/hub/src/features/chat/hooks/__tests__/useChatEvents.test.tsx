@@ -165,6 +165,10 @@ describe("useChatEvents", () => {
       ["chat-threads", "account-a", "c1"],
     ],
     [
+      { type: "documents:changed", chatId: "c1" },
+      ["chat-documents", "account-a", "c1"],
+    ],
+    [
       { type: "members:changed", chatId: "c1" },
       ["chat-members", "account-a", "c1"],
     ],
@@ -177,5 +181,27 @@ describe("useChatEvents", () => {
     emit(event);
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey });
+  });
+
+  it("invalidates documents only for the emitting account and chat", () => {
+    const refs: ChatRef[] = [
+      CHAT_REF,
+      { accountId: "account-a", chatId: "c2" },
+      { accountId: "account-b", chatId: "c1" },
+    ];
+    refs.forEach((ref) =>
+      queryClient.setQueryData(chatKeys.documents(ref), []),
+    );
+    mount();
+    emit({ type: "documents:changed", chatId: "c1" });
+    expect(
+      queryClient.getQueryState(chatKeys.documents(CHAT_REF))?.isInvalidated,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryState(chatKeys.documents(refs[1]))?.isInvalidated,
+    ).toBe(false);
+    expect(
+      queryClient.getQueryState(chatKeys.documents(refs[2]))?.isInvalidated,
+    ).toBe(false);
   });
 });

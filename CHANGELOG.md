@@ -25,6 +25,7 @@ and this project adheres to
   the Matrix room so every member can rejoin it.
 - ✨(backend) Create Meet rooms through the Meet external API. Add the
   `/meetings/` endpoint, enabled once the Meet application credentials are set.
+  Rooms are public by default so they can be joined from an embedded frame.
 - ✨(frontend) Search joined conversations by name and current participants.
   Persist the search index separately and prepare small rooms progressively.
   Add a QuickSearch modal with local results across connected accounts.

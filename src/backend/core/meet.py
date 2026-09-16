@@ -48,7 +48,7 @@ def create_room(email):
 
         room_response = requests.post(
             f"{base_url}/rooms/",
-            json={},
+            json={"access_level": settings.MEET_ROOM_ACCESS_LEVEL},
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=timeout,
         )

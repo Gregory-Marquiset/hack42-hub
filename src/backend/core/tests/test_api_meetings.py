@@ -91,6 +91,7 @@ def test_api_meetings_create_success():
         "scope": "jane@example.com",
     }
     assert responses.calls[1].request.headers["Authorization"] == "Bearer meet-token"
+    assert json.loads(responses.calls[1].request.body) == {"access_level": "public"}
 
 
 @override_settings(**MEET_SETTINGS)

@@ -487,6 +487,11 @@ class Base(Configuration):
     MEET_APPLICATION_CLIENT_SECRET = SecretFileValue(
         None, environ_name="MEET_APPLICATION_CLIENT_SECRET", environ_prefix=None
     )
+    # The Hub shows the call in a frame, where the Meet session does not reach:
+    # rooms must be public for participants to join without a waiting room.
+    MEET_ROOM_ACCESS_LEVEL = values.Value(
+        "public", environ_name="MEET_ROOM_ACCESS_LEVEL", environ_prefix=None
+    )
     MEET_API_TIMEOUT = values.PositiveIntegerValue(
         10, environ_name="MEET_API_TIMEOUT", environ_prefix=None
     )

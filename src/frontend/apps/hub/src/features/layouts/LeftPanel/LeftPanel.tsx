@@ -1,6 +1,7 @@
 import { Button } from "@gouvfr-lasuite/ui-components";
 import {
   ArrowDropDown,
+  Lock,
   Plus,
   QuestionMark,
 } from "@gouvfr-lasuite/ui-components/icons";
@@ -325,6 +326,14 @@ const ChatRow = ({
             )}
           >
             {chat.name}
+            {chat.encrypted && (
+              // Two conversations with the same person, one clear and one
+              // encrypted, are otherwise indistinguishable in this list.
+              <Lock
+                className="hub__left-panel__chat__encrypted"
+                aria-label={t("End-to-end encrypted")}
+              />
+            )}
             {showAccountLabel && accountLabel && (
               <span className="hub__left-panel__chat__account">
                 {" "}

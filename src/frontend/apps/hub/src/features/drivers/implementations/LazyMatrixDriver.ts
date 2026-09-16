@@ -34,6 +34,7 @@ import type {
   ChatThreadMutationResult,
   ChatUnread,
   ChatUser,
+  CreateChatOptions,
   LocalChat,
   LocalChatSections,
   LocalSpace,
@@ -190,8 +191,18 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) => driver.getChatForUsers(userIds));
   }
 
-  async createChatForUsers(userIds: string[]): Promise<LocalChat> {
-    return this.withTarget((driver) => driver.createChatForUsers(userIds));
+  // Mirrored from the real `MatrixDriver`: this wrapper is what the registry
+  // hands out, so a capability declared only on the real driver reads as false
+  // everywhere and the feature silently disappears from the UI.
+  override readonly supportsEncryption = true;
+
+  async createChatForUsers(
+    userIds: string[],
+    options?: CreateChatOptions,
+  ): Promise<LocalChat> {
+    return this.withTarget((driver) =>
+      driver.createChatForUsers(userIds, options),
+    );
   }
 
   // Static capability mirroring the real `MatrixDriver`, read synchronously

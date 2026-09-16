@@ -24,6 +24,7 @@ import {
   ChatTypingUser,
   ChatUnread,
   ChatUser,
+  CreateChatOptions,
   LocalChat,
   LocalChatSections,
   LocalSpace,
@@ -420,12 +421,24 @@ export abstract class Driver {
    * flow — the UI creates the conversation lazily, on confirming the selection.
    * Unsupported by default so drivers opt in (see `supportsConversationCreation`).
    */
-  async createChatForUsers(_userIds: string[]): Promise<LocalChat> {
+  async createChatForUsers(
+    _userIds: string[],
+    _options?: CreateChatOptions,
+  ): Promise<LocalChat> {
     void _userIds;
+    void _options;
     throw new Error(
       `${this.constructor.name}.createChatForUsers: creating a conversation is not supported by this driver.`,
     );
   }
+
+  /**
+   * Whether this driver can create end-to-end encrypted conversations.
+   *
+   * Off by default so drivers opt in; gates the encryption toggle in the New
+   * Chat screen. A driver that cannot encrypt must not be offered the choice.
+   */
+  readonly supportsEncryption: boolean = false;
 
   // --- Avatars -------------------------------------------------------------
   // Unsupported by default so drivers opt in; gates the photo-change actions

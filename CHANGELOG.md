@@ -8,6 +8,10 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Encrypt conversations end to end. A private message is always
+  encrypted; a group room carries the choice, made once at creation because
+  Matrix offers no way back. Encrypted conversations are marked with a lock in
+  the conversation list and in the room header.
 - ✨(bots) Add Ariane, an assistant reachable from any room with `@Ariane`.
   She answers only when addressed, reads the thread and the recent room
   history for context, and changes register with `/juriste`, `/avocat`,

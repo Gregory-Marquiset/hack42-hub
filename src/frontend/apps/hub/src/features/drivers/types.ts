@@ -115,6 +115,14 @@ export type LocalChat = {
    * chats always set it.
    */
   membership?: ChatMembership;
+  /**
+   * Whether the conversation is end-to-end encrypted.
+   *
+   * Carried on the chat rather than read from the room on demand because the
+   * consequences are user-visible and permanent: search does not reach these
+   * messages, and the state can never be turned back off.
+   */
+  encrypted?: boolean;
   /** Invitation metadata; present only when `membership === "invite"`. */
   invitation?: ChatInvitation;
   /** Last main-timeline message, for the conversation list row's preview line. */
@@ -205,6 +213,19 @@ export type ChatMember = {
   id: string;
   name: string;
   secondaryText: string;
+};
+
+/**
+ * How a conversation should be created.
+ *
+ * `encrypted` is opt-in and decided once, at creation: Matrix has no way back.
+ * Turning `m.room.encryption` on is a one-way door - the state event can be
+ * added but never removed, and every later message in the room is encrypted for
+ * good.
+ */
+export type CreateChatOptions = {
+  /** Enable end-to-end encryption on the new room. */
+  encrypted?: boolean;
 };
 
 /** Read-only membership snapshot used by the conversation members modal. */

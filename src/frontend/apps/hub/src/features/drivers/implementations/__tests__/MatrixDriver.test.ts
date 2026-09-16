@@ -94,6 +94,9 @@ const makeRoom = (
   ({
     roomId: ROOM_ID,
     getMember: (id: string) => ({ name: id === SELF_ID ? "Me" : id }),
+    // Read by the room mapper on every joined room; a fixture without it
+    // throws instead of describing a clear room.
+    hasEncryptionStateEvent: () => false,
     currentState: { maySendRedactionForEvent: () => false },
     getThread: (threadId: string) => threadsById[threadId] ?? null,
     findEventById: (eventId: string) => eventsById[eventId],
@@ -350,6 +353,7 @@ describe("MatrixDriver room metadata", () => {
       currentState: { getStateEvents: () => undefined },
       getLiveTimeline: () => ({ getEvents: () => [] }),
       getMxcAvatarUrl: () => null,
+      hasEncryptionStateEvent: () => false,
     } as unknown as Room;
 
     expect(matrixJoinedRoomToLocalChat(room, SELF_ID).section).toBe(
@@ -543,5 +547,78 @@ describe("MatrixDriver.toggleChatReaction", () => {
     expect(updated.reactions).toEqual([
       { emoji: "👍", count: 1, reactedByMe: true },
     ]);
+  });
+});
+
+describe("createChatForUsers (encryption)", () => {
+  const BOB = "@bob:localhost";
+  const CAROL = "@carol:localhost";
+
+  /**
+   * The narrowest client that lets `createChatForUsers` run to the end. No
+   * existing room ever matches, so every call reaches `createRoom` - the one
+   * method whose arguments these tests are about. `getRoom` stays empty so
+   * `waitForRoom` falls back on its timer, which fake timers then skip.
+   */
+  const clientFor = () => {
+    // The signature is given so `mock.calls[0][0]` is typed: an untyped
+    // `vi.fn` records its calls as an empty tuple, and the assertions below
+    // read the arguments `createRoom` was given.
+    const createRoom = vi.fn<
+      (opts: Record<string, unknown>) => Promise<{ room_id: string }>
+    >(async () => ({ room_id: "!new:localhost" }));
+    const mx = {
+      getUserId: () => SELF_ID,
+      getJoinedRooms: vi.fn(async () => ({ joined_rooms: [] })),
+      getVisibleRooms: () => [],
+      getRoom: () => null,
+      on: vi.fn(),
+      off: vi.fn(),
+      createRoom,
+    } as unknown as MatrixClient;
+    return { mx, createRoom };
+  };
+
+  const create = async (
+    userIds: string[],
+    options?: Parameters<MatrixDriver["createChatForUsers"]>[1],
+  ) => {
+    const { mx, createRoom } = clientFor();
+    vi.useFakeTimers();
+    try {
+      const pending = driverWithClient(mx).createChatForUsers(userIds, options);
+      await vi.advanceTimersByTimeAsync(5000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+    return createRoom.mock.calls[0][0] as {
+      is_direct?: boolean;
+      invite?: string[];
+      initial_state?: { type: string }[];
+    };
+  };
+
+  const encryptionOf = (opts: { initial_state?: { type: string }[] }) =>
+    opts.initial_state?.some((s) => s.type === "m.room.encryption") ?? false;
+
+  it("always encrypts a one-to-one conversation", async () => {
+    const opts = await create([BOB]);
+    expect(opts.is_direct).toBe(true);
+    expect(opts.invite).toEqual([BOB]);
+    expect(encryptionOf(opts)).toBe(true);
+  });
+
+  it("leaves a group room clear unless asked otherwise", async () => {
+    const opts = await create([BOB, CAROL]);
+    expect(opts.is_direct).toBe(false);
+    expect(opts.invite).toEqual([BOB, CAROL]);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("encrypts a group room on request", async () => {
+    const opts = await create([BOB, CAROL], { encrypted: true });
+    expect(opts.invite).toEqual([BOB, CAROL]);
+    expect(encryptionOf(opts)).toBe(true);
   });
 });

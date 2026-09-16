@@ -88,6 +88,7 @@ import {
   ChatTypingUser,
   ChatUnread,
   ChatUser,
+  CreateChatOptions,
   LocalChat,
   LocalChatSections,
   LocalSpace,
@@ -293,6 +294,9 @@ export class MatrixDriver extends Driver {
   override readonly supportsConversationHistoryRemoval: boolean = true;
   override readonly supportsConversationCreation: boolean = true;
   override readonly supportsSpaces: boolean = true;
+  // Rust Crypto is initialised in `initMatrix`, so this driver can create
+  // encrypted rooms and read them back within a session.
+  override readonly supportsEncryption: boolean = true;
 
   private mx: MatrixClient | null = null;
   /** Subscribers to the single global event stream. */
@@ -561,7 +565,10 @@ export class MatrixDriver extends Driver {
    * creating a second one. Concurrent local calls for the same participant set
    * share one promise.
    */
-  async createChatForUsers(userIds: string[]): Promise<LocalChat> {
+  async createChatForUsers(
+    userIds: string[],
+    options?: CreateChatOptions,
+  ): Promise<LocalChat> {
     const mx = this.requireClient("createChatForUsers");
     const participantIds = [...new Set(userIds)].filter(Boolean);
     if (participantIds.length === 0) {
@@ -570,13 +577,26 @@ export class MatrixDriver extends Driver {
       );
     }
 
-    const creationKey = participantSetKey(participantIds);
+    // The encryption choice is part of the identity of what is being created:
+    // without it, two concurrent calls - one clear, one encrypted - would share
+    // a promise and the second caller would silently get the first one's room.
+    // A direct message is always encrypted, so its key never varies; a group
+    // carries the choice, because two concurrent calls - one clear, one
+    // encrypted - must not share a promise and hand the second caller the
+    // first one's room.
+    const creationKey = `${participantSetKey(participantIds)}|${
+      participantIds.length === 1 || options?.encrypted ? "e2ee" : "clear"
+    }`;
     const inFlight = this.chatCreations.get(creationKey);
     if (inFlight) {
       return inFlight;
     }
 
-    const creation = this.resolveOrCreateChatForUsers(mx, participantIds);
+    const creation = this.resolveOrCreateChatForUsers(
+      mx,
+      participantIds,
+      options,
+    );
     this.chatCreations.set(creationKey, creation);
     try {
       return await creation;
@@ -641,12 +661,25 @@ export class MatrixDriver extends Driver {
   private async resolveOrCreateChatForUsers(
     mx: MatrixClient,
     participantIds: string[],
+    options?: CreateChatOptions,
   ): Promise<LocalChat> {
     // Creation is rare and duplicate rooms are permanent, so bypass the cached
     // joined set for this last-chance check against the homeserver.
     await this.refreshJoinedRoomIds(mx);
+
+    // A direct message is always encrypted: there is no choice to make for a
+    // one-to-one conversation, and offering one would only produce private
+    // conversations that are not private. A group room is what the toggle is
+    // for.
+    const isDirect = participantIds.length === 1;
+    const wantsEncryption = isDirect || Boolean(options?.encrypted);
+
+    // Reuse only a room that already matches. Handing back the clear room when
+    // an encrypted one was asked for is the one failure mode a security
+    // feature must not have, and the reverse would quietly encrypt a
+    // conversation someone deliberately left readable.
     const existing = await this.getChatForUsers(participantIds);
-    if (existing) {
+    if (existing && Boolean(existing.encrypted) === wantsEncryption) {
       return existing;
     }
 
@@ -690,11 +723,27 @@ export class MatrixDriver extends Driver {
     }
 
     const selfUserId = mx.getUserId() ?? undefined;
-    const isDirect = participantIds.length === 1;
+    // Encryption is decided here and only here. `m.room.encryption` is a
+    // one-way door in Matrix: the state event can be added to an existing room
+    // but never removed, so a room created in the clear stays readable and a
+    // room created encrypted stays encrypted. Passing it in `initial_state`
+    // rather than setting it afterwards also closes the window in which the
+    // first messages would be sent unencrypted.
     const { room_id: roomId } = await mx.createRoom({
       preset: Preset.PrivateChat,
       is_direct: isDirect,
       invite: participantIds,
+      ...(wantsEncryption
+        ? {
+            initial_state: [
+              {
+                type: "m.room.encryption",
+                state_key: "",
+                content: { algorithm: "m.megolm.v1.aes-sha2" },
+              },
+            ],
+          }
+        : {}),
     });
 
     const room = await this.waitForRoom(mx, roomId);

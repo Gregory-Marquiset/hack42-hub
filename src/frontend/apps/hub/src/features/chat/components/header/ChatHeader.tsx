@@ -11,6 +11,7 @@ import {
   File,
   ImageAdd,
   Leave,
+  Lock,
   Meet,
   Shared,
   Star,
@@ -257,6 +258,14 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
     >
       <ChatAvatar chat={chat} />
       <span className="hub__chat-header__breadcrumb__name">{chat.name}</span>
+      {chat.encrypted && (
+        // Not decorative: whether a conversation is encrypted changes what can
+        // be said in it, so it is announced rather than merely drawn.
+        <Lock
+          className="hub__chat-header__encrypted"
+          aria-label={t("End-to-end encrypted")}
+        />
+      )}
       {!isInvitation && <ArrowDropDown aria-hidden="true" />}
     </Button>
   );

@@ -26,6 +26,7 @@ import {
 import type {
   AccountId,
   ChatMainTimelineUnread,
+  ChatMeeting,
   ChatMessage,
   ChatMessagesPage,
   ChatMembers,
@@ -37,6 +38,7 @@ import type {
   LocalChat,
   LocalChatSections,
   LocalSpace,
+  MeetRoom,
   User,
 } from "../types";
 
@@ -112,6 +114,9 @@ export class LazyMatrixDriver extends BaseDriver {
   // the New Chat composer before the SDK lazy-loads.
   override readonly supportsConversationCreation = true;
   override readonly supportsSpaces = true;
+  // Static capability mirroring the real `MatrixDriver`, read by the meeting
+  // button before the SDK lazy-loads.
+  override readonly supportsMeetings = true;
 
   private target: Driver | null = null;
   private targetPromise: Promise<Driver> | null = null;
@@ -281,6 +286,19 @@ export class LazyMatrixDriver extends BaseDriver {
   async setChatFavourite(chatId: string, favourite: boolean): Promise<void> {
     return this.withTarget((driver) =>
       driver.setChatFavourite(chatId, favourite),
+    );
+  }
+
+  override async getChatMeetings(chatId: string): Promise<ChatMeeting[]> {
+    return this.withTarget((driver) => driver.getChatMeetings(chatId));
+  }
+
+  override async startChatMeeting(
+    chatId: string,
+    createRoom: () => Promise<MeetRoom>,
+  ): Promise<ChatMeeting> {
+    return this.withTarget((driver) =>
+      driver.startChatMeeting(chatId, createRoom),
     );
   }
 

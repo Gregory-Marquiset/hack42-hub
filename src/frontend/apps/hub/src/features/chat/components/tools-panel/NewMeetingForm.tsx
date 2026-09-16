@@ -1,14 +1,19 @@
 import { Plus, XMark } from "@gouvfr-lasuite/ui-components/icons";
-import { useId, useState } from "react";
+import { type ChangeEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { notify } from "@/features/ui/components/toast";
+
 import { Download } from "./MeetingIcons";
+import { TEXT_FILE_ACCEPT, isTextFile } from "./textFile";
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
 
 type DraftDocument = {
   id: string;
   title: string;
   url: string;
+  /** Picked on this device and served from a blob URL, to release on removal. */
+  isLocalFile?: boolean;
 };
 
 type NewMeetingFormProps = {
@@ -21,9 +26,49 @@ type NewMeetingFormProps = {
   onStartNow: () => void;
 };
 
+type DocumentRowProps = {
+  document: DraftDocument;
+  tabIndex: number;
+  onRemove: () => void;
+};
+
+/** One attached document: its name, a remove button and a download link. */
+const DocumentRow = ({ document, tabIndex, onRemove }: DocumentRowProps) => {
+  const { t } = useTranslation();
+
+  return (
+    <li className="hub__chat-meetings__row">
+      <span className="hub__chat-meetings__row-label">{document.title}</span>
+      <span className="hub__chat-meetings__row-actions">
+        <button
+          type="button"
+          className="hub__chat-meetings__icon-button"
+          aria-label={t("Remove {{name}}", { name: document.title })}
+          tabIndex={tabIndex}
+          onClick={onRemove}
+        >
+          <XMark />
+        </button>
+        <a
+          className="hub__chat-meetings__icon-button"
+          href={document.url}
+          {...(document.isLocalFile
+            ? { download: document.title }
+            : { download: true, target: "_blank", rel: "noopener noreferrer" })}
+          aria-label={t("Download {{name}}", { name: document.title })}
+          tabIndex={tabIndex}
+        >
+          <Download />
+        </a>
+      </span>
+    </li>
+  );
+};
+
 /**
  * Meeting creation form. The title is renamable, the date opens the browser's
- * calendar and the documents column lists the supports of the meeting.
+ * calendar, and the agenda and the documents accept .txt and .md files from
+ * the user's device; documents can also be added by link ("Docs").
  *
  * Nothing is persisted yet: the Hub has no store for a planned meeting, so the
  * title, date, agenda and documents live in component state and only the
@@ -42,33 +87,95 @@ export const NewMeetingForm = ({
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [agenda, setAgenda] = useState("");
+  const [agendaFile, setAgendaFile] = useState<DraftDocument | null>(null);
   const [documents, setDocuments] = useState<DraftDocument[]>([]);
   const [isAddingDocument, setIsAddingDocument] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftUrl, setDraftUrl] = useState("");
+  const agendaFileInputRef = useRef<HTMLInputElement>(null);
+  const documentFileInputRef = useRef<HTMLInputElement>(null);
+  const nextDocumentId = useRef(0);
+  const localFileUrls = useRef(new Set<string>());
 
   const tabIndex = isOpen ? 0 : -1;
+
+  // Blob URLs of picked files live until their document is removed, or the
+  // form goes away.
+  useEffect(() => {
+    const urls = localFileUrls.current;
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
+    };
+  }, []);
+
+  const newDocumentId = () => `document-${nextDocumentId.current++}`;
+
+  const toLocalDocument = (file: File): DraftDocument => {
+    const url = URL.createObjectURL(file);
+    localFileUrls.current.add(url);
+    return { id: newDocumentId(), title: file.name, url, isLocalFile: true };
+  };
+
+  const release = (document: DraftDocument | null | undefined) => {
+    if (document?.isLocalFile) {
+      URL.revokeObjectURL(document.url);
+      localFileUrls.current.delete(document.url);
+    }
+  };
+
+  /** The picked .txt/.md files; any other type is refused with a message. */
+  const pickTextFiles = (event: ChangeEvent<HTMLInputElement>): File[] => {
+    const files = Array.from(event.target.files ?? []);
+    // Reset so picking the same file again still fires `change`.
+    event.target.value = "";
+    const accepted = files.filter((file) => isTextFile(file.name));
+    if (accepted.length !== files.length) {
+      notify.error(t("Only .txt or .md files can be attached."));
+    }
+    return accepted;
+  };
+
+  const attachAgendaFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const [file] = pickTextFiles(event);
+    if (!file) {
+      return;
+    }
+    release(agendaFile);
+    setAgendaFile(toLocalDocument(file));
+  };
+
+  const removeAgendaFile = () => {
+    release(agendaFile);
+    setAgendaFile(null);
+  };
+
+  const attachDocumentFiles = (event: ChangeEvent<HTMLInputElement>) => {
+    const added = pickTextFiles(event).map(toLocalDocument);
+    if (added.length > 0) {
+      setDocuments((current) => [...current, ...added]);
+    }
+  };
 
   const addDocument = () => {
     const url = draftUrl.trim();
     if (url === "") {
       return;
     }
-    setDocuments((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-${current.length}`,
-        title: draftTitle.trim() === "" ? url : draftTitle.trim(),
-        url,
-      },
-    ]);
+    const document = {
+      id: newDocumentId(),
+      title: draftTitle.trim() === "" ? url : draftTitle.trim(),
+      url,
+    };
+    setDocuments((current) => [...current, document]);
     setDraftTitle("");
     setDraftUrl("");
     setIsAddingDocument(false);
   };
 
-  const removeDocument = (id: string) => {
-    setDocuments((current) => current.filter((doc) => doc.id !== id));
+  const removeDocument = (document: DraftDocument) => {
+    release(document);
+    setDocuments((current) => current.filter((doc) => doc.id !== document.id));
   };
 
   return (
@@ -106,9 +213,28 @@ export const NewMeetingForm = ({
         </div>
 
         <div className="hub__chat-meetings__field">
-          <label className="hub__chat-meetings__label" htmlFor={agendaId}>
-            {t("Agenda")}
-          </label>
+          <div className="hub__chat-meetings__label-row">
+            <label className="hub__chat-meetings__label" htmlFor={agendaId}>
+              {t("Agenda")}
+            </label>
+            <button
+              type="button"
+              className="hub__chat-meetings__icon-button"
+              aria-label={t("Attach an agenda file")}
+              tabIndex={tabIndex}
+              onClick={() => agendaFileInputRef.current?.click()}
+            >
+              <Plus />
+            </button>
+            <input
+              ref={agendaFileInputRef}
+              type="file"
+              accept={TEXT_FILE_ACCEPT}
+              hidden
+              data-testid="agenda-file-input"
+              onChange={attachAgendaFile}
+            />
+          </div>
           <textarea
             id={agendaId}
             className="hub__chat-meetings__textarea"
@@ -118,10 +244,39 @@ export const NewMeetingForm = ({
             tabIndex={tabIndex}
             onChange={(event) => setAgenda(event.target.value)}
           />
+          {agendaFile && (
+            <ul className="hub__chat-meetings__list">
+              <DocumentRow
+                document={agendaFile}
+                tabIndex={tabIndex}
+                onRemove={removeAgendaFile}
+              />
+            </ul>
+          )}
         </div>
 
         <section className="hub__chat-meetings__card">
-          <h3 className="hub__chat-meetings__card-title">{t("Documents")}</h3>
+          <div className="hub__chat-meetings__label-row">
+            <h3 className="hub__chat-meetings__card-title">{t("Documents")}</h3>
+            <button
+              type="button"
+              className="hub__chat-meetings__icon-button"
+              aria-label={t("Attach document files")}
+              tabIndex={tabIndex}
+              onClick={() => documentFileInputRef.current?.click()}
+            >
+              <Plus />
+            </button>
+            <input
+              ref={documentFileInputRef}
+              type="file"
+              accept={TEXT_FILE_ACCEPT}
+              multiple
+              hidden
+              data-testid="document-file-input"
+              onChange={attachDocumentFiles}
+            />
+          </div>
           {documents.length === 0 && !isAddingDocument && (
             <p className="hub__chat-tools-panel__empty">
               {t("No document yet")}
@@ -129,35 +284,12 @@ export const NewMeetingForm = ({
           )}
           <ul className="hub__chat-meetings__list">
             {documents.map((doc) => (
-              <li key={doc.id} className="hub__chat-meetings__row">
-                <span className="hub__chat-meetings__row-label">
-                  {doc.title}
-                </span>
-                <span className="hub__chat-meetings__row-actions">
-                  <button
-                    type="button"
-                    className="hub__chat-meetings__icon-button"
-                    aria-label={t("Remove {{name}}", { name: doc.title })}
-                    tabIndex={tabIndex}
-                    onClick={() => removeDocument(doc.id)}
-                  >
-                    <XMark />
-                  </button>
-                  <a
-                    className="hub__chat-meetings__icon-button"
-                    href={doc.url}
-                    download
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={t("Download {{name}}", {
-                      name: doc.title,
-                    })}
-                    tabIndex={tabIndex}
-                  >
-                    <Download />
-                  </a>
-                </span>
-              </li>
+              <DocumentRow
+                key={doc.id}
+                document={doc}
+                tabIndex={tabIndex}
+                onRemove={() => removeDocument(doc)}
+              />
             ))}
           </ul>
 
@@ -203,14 +335,15 @@ export const NewMeetingForm = ({
               </div>
             </div>
           ) : (
+            // Adds a document by link for now; picking it from Docs comes later.
             <button
               type="button"
               className="hub__chat-meetings__add-document"
-              aria-label={t("Add a document")}
+              aria-label={t("Add a Docs link")}
               tabIndex={tabIndex}
               onClick={() => setIsAddingDocument(true)}
             >
-              <Plus />
+              Docs
             </button>
           )}
         </section>

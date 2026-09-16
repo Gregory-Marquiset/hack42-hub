@@ -27,6 +27,8 @@ and this project adheres to
 - ✨(frontend) Start a temporary meeting from a conversation, shown in a Meet
   window inside the Hub. Record the call in the Matrix room so every member
   can rejoin it.
+- ✨(frontend) Attach .txt or .md files to the agenda and the documents of a
+  new meeting. Add documents by link from the Docs button.
 - ✨(backend) Create Meet rooms through the Meet external API. Add the
   `/meetings/` endpoint, enabled once the Meet application credentials are set.
   Rooms are public by default so they can be joined from an embedded frame.

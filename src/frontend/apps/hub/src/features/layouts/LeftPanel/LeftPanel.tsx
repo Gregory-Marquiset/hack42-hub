@@ -160,7 +160,6 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
       <div className="hub__left-panel__top">
         <div className="hub__left-panel__logo">
           <TchapLogo />
-          <span className="hub__left-panel__logo__label">{t("Messaging")}</span>
         </div>
 
         <nav

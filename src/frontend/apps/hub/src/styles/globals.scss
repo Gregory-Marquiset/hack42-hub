@@ -8,6 +8,7 @@
 @use "./../features/layouts/LeftPanel/TchapLogo.scss";
 @use "./../features/layouts/components/AccountSelector/AccountSelector.scss";
 @use "./../features/ui/components/avatar/Avatar.scss";
+@use "./../features/ui/components/user-profile/UserProfile.scss";
 @use "./../features/ui/components/toast/Toast.scss";
 @use "./../features/chat/components/header/ChatHeader.scss";
 @use "./../features/chat/components/ChatBubble.scss";
@@ -53,6 +54,20 @@ body {
 
 .c__modal__backdrop {
   z-index: 10;
+}
+
+// The ui-components library's own toast portal (separate from this app's
+// react-toastify one) is pinned bottom-left with padding that gives it a
+// hit box even with zero toasts inside — sitting exactly where the account
+// menu button lives, silently swallowing its clicks. `pointer-events: none`
+// on the empty container, restored on an actual toast, fixes that without
+// touching the button itself (unrelated to it).
+.c__toast__container {
+  pointer-events: none;
+
+  .c__toast {
+    pointer-events: auto;
+  }
 }
 
 .c__modal__backdrop:has(.file-preview__container) {

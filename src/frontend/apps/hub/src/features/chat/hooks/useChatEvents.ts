@@ -247,6 +247,13 @@ const applyChatEvent = (
       void queryClient.invalidateQueries({
         queryKey: chatKeys.chatForUsersOf(accountId),
       });
+      // The room list also determines espace membership (joining/leaving a
+      // space, or a space's child rooms changing) — no dedicated event for
+      // that yet, so the broad "chats changed" signal covers it too.
+      void queryClient.invalidateQueries({
+        queryKey: chatKeys.spacesOf(accountId),
+      });
+      void queryClient.invalidateQueries({ queryKey: chatKeys.spacesAll() });
       return;
   }
 };

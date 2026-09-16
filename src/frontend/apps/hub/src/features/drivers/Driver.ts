@@ -22,6 +22,7 @@ import {
   ChatUser,
   LocalChat,
   LocalChatSections,
+  LocalSpace,
   User,
 } from "./types";
 
@@ -239,12 +240,22 @@ export abstract class Driver {
    * New Chat composer for a not-yet-existing conversation.
    */
   readonly supportsConversationCreation: boolean = false;
+  /** Whether the driver exposes a Matrix-Space-like grouping (`getSpaces`). */
+  readonly supportsSpaces: boolean = false;
 
   constructor(accountId: AccountId = "default") {
     this.accountId = accountId;
   }
 
-  abstract getChats(): Promise<LocalChatSections>;
+  /** All conversations, optionally scoped to one espace (`spaceId`). */
+  abstract getChats(spaceId?: string): Promise<LocalChatSections>;
+  /**
+   * Espaces (Matrix Spaces) the current user belongs to. Unsupported by
+   * default; see `supportsSpaces`.
+   */
+  async getSpaces(): Promise<LocalSpace[]> {
+    return [];
+  }
   /** People available when composing a new chat. */
   abstract getChatUsers(filters?: ChatUserFilters): Promise<ChatUser[]>;
   /** Joined members and pending invitees of one conversation. */
@@ -382,6 +393,54 @@ export abstract class Driver {
     throw new Error(
       `${this.constructor.name}.createChatForUsers: creating a conversation is not supported by this driver.`,
     );
+  }
+
+  // --- Avatars -------------------------------------------------------------
+  // Unsupported by default so drivers opt in; gates the photo-change actions
+  // on the account menu and the group chat header.
+  readonly supportsAvatarUpload: boolean = false;
+
+  /** Uploads `file` and sets it as the current user's own avatar. Resolves
+   * with the new photo's `ChatVisual.url` — a driver-specific identifier
+   * (for Matrix, an `mxc://` URI), not necessarily a directly fetchable
+   * link; render it through `resolveAvatarUrl`. */
+  async setUserAvatar(_file: File): Promise<string> {
+    void _file;
+    throw new Error(
+      `${this.constructor.name}.setUserAvatar: avatar upload is not supported by this driver.`,
+    );
+  }
+
+  /** Uploads `file` and sets it as `chatId`'s avatar (group chats only —
+   * a direct chat's photo comes from its counterpart's own avatar). Resolves
+   * with the new photo's `ChatVisual.url` (see `setUserAvatar`). */
+  async setChatAvatar(_chatId: string, _file: File): Promise<string> {
+    void _chatId;
+    void _file;
+    throw new Error(
+      `${this.constructor.name}.setChatAvatar: avatar upload is not supported by this driver.`,
+    );
+  }
+
+  /** The current user's own avatar as a `ChatVisual.url` (see
+   * `setUserAvatar`), or `undefined` if none is set. Unsupported drivers
+   * (or one with no avatar) report `undefined` rather than throwing — this
+   * is read on every load to show the account menu's own icon, not just
+   * right after a change. */
+  async getUserAvatarUrl(): Promise<string | undefined> {
+    return undefined;
+  }
+
+  /**
+   * Resolves a `ChatVisual.url` (of kind `"image"`) to a URL an `<img>` can
+   * actually load. Identity by default — most backends' avatar URLs are
+   * already directly fetchable. Matrix overrides this: its `mxc://` URIs
+   * need translating, and this homeserver requires an authenticated
+   * request a plain `<img src>` can't make, so it fetches the photo itself
+   * and returns a local `blob:` URL.
+   */
+  async resolveAvatarUrl(url: string): Promise<string> {
+    return url;
   }
 
   // --- Incoming invitations -----------------------------------------------

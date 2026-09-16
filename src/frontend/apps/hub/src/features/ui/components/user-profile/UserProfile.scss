@@ -1,0 +1,28 @@
+// Both of our `actions` items (change-photo, logout) land inside the
+// library's `.user-menu__actions__left` wrapper, which is a row flexbox
+// by default (`display: flex; align-items: center`) — that's what puts
+// them side by side, not the outer `.user-menu__actions` container. The
+// user wants logout stacked below the change-photo action instead.
+.user-menu__actions__left {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+// `UserMenu`'s own avatar (trigger button + popover header) only ever
+// renders initials — the library gives it no `src`/photo prop at all — so
+// the real photo is layered on top of the trigger button as a plain `<img>`,
+// sized to match `.user-menu__button` (32px, see AccountSelector.scss).
+.hub__user-profile {
+  position: relative;
+  display: inline-flex;
+
+  &__avatar {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+}

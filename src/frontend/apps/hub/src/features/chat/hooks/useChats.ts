@@ -1,4 +1,8 @@
-import { useQueries, type UseQueryResult } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQueries,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 
 import { decorateChatSections } from "@/features/chat/chatRefs";
 import { compareChats } from "@/features/chat/chatSorting";
@@ -62,17 +66,23 @@ export const mergeChatSections = (
   };
 };
 
-export const useChats = (): MergedChatsResult => {
+/** All chats, or only those belonging to `spaceId` when given. */
+export const useChats = (spaceId?: string): MergedChatsResult => {
   const entries = useDriverEntries();
 
   return useQueries({
     queries: entries.map((entry) => ({
-      queryKey: chatKeys.chatsOf(entry.accountId),
+      queryKey: chatKeys.chatsOf(entry.accountId, spaceId),
       queryFn: async () => {
-        const localSections: LocalChatSections = await entry.driver.getChats();
+        const localSections: LocalChatSections =
+          await entry.driver.getChats(spaceId);
         return decorateChatSections(entry.accountId, localSections);
       },
       staleTime: Infinity,
+      // Switching espaces changes the query key; keep showing the previous
+      // espace's rooms while the new one loads instead of flashing empty —
+      // most noticeable when clicking quickly between espaces.
+      placeholderData: keepPreviousData,
       meta: { noGlobalError: true },
     })),
     combine: (results) =>

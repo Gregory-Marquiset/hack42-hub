@@ -1,0 +1,53 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
+
+import { getRegistry } from "@/features/drivers/DriverRegistry";
+import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
+import { notify } from "@/features/ui/components/toast";
+
+import { chatKeys } from "../chatKeys";
+
+export type UseStartChatMeetingResult = {
+  /** Starts (or rejoins) the conversation's meeting and resolves with it. */
+  startMeeting: () => Promise<ChatMeeting>;
+  isPending: boolean;
+};
+
+/**
+ * Starts a new meeting for a conversation, or rejoins the one already
+ * ongoing. The caller is responsible for opening the resolved `url` — this
+ * hook only owns the Matrix write and its cache invalidation.
+ */
+export const useStartChatMeeting = (
+  ref: ChatRef | null,
+): UseStartChatMeetingResult => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const { mutateAsync, isPending } = useMutation<ChatMeeting, Error, void>({
+    mutationFn: () => {
+      if (!ref) {
+        return Promise.reject(
+          new Error("useStartChatMeeting requires a conversation."),
+        );
+      }
+      return getRegistry().get(ref.accountId).startChatMeeting(ref.chatId);
+    },
+    onSuccess: () => {
+      if (ref) {
+        void queryClient.invalidateQueries({
+          queryKey: chatKeys.meetings(ref),
+        });
+      }
+    },
+    onError: () => {
+      notify.error(t("The meeting could not be started. Please try again."));
+    },
+    meta: { noGlobalError: true },
+  });
+
+  const startMeeting = useCallback(() => mutateAsync(), [mutateAsync]);
+
+  return { startMeeting, isPending };
+};

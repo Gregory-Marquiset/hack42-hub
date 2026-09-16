@@ -137,6 +137,33 @@ export type Chat = LocalChat & {
   ref: ChatRef;
 };
 
+/** A document linked to a meeting: an agenda file, a shared doc, a recap. */
+export type ChatMeetingDocument = {
+  id: string;
+  title: string;
+  url: string;
+};
+
+/**
+ * One call held in a conversation via the "Start a meeting" camera button.
+ * `isOngoing` is derived from `startedAt` by the driver (Visio exposes no
+ * call-end signal, so a meeting is treated as still joinable for a limited
+ * window after it started rather than tracked through an explicit end event).
+ */
+export type ChatMeeting = {
+  id: string;
+  /** URL of the Meet call every participant joins. */
+  url: string;
+  organizerId: string;
+  /** ISO 8601 timestamp of when the call was started. */
+  startedAt: string;
+  isOngoing: boolean;
+  /** Documents shared for this meeting (agenda, support…), newest first. */
+  documents: ChatMeetingDocument[];
+  /** Recap/summary document, once attached. */
+  summary?: ChatMeetingDocument;
+};
+
 export type LocalChatSections = {
   favourites: LocalChat[];
   all: LocalChat[];

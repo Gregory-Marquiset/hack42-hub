@@ -78,6 +78,7 @@ import {
   AccountId,
   ChatLocalUser,
   ChatMainTimelineUnread,
+  ChatMeeting,
   ChatMessage,
   ChatMember,
   ChatMembers,
@@ -123,6 +124,11 @@ import { matrixDirectoryUserToChatUser } from "./matrixIdentity";
 import { subscribeToIncomingMatrixEvents } from "./matrixIncomingEvents";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
+import {
+  buildMeetingUrl,
+  getChatMeetingsFromRoom,
+  MEETING_EVENT_TYPE,
+} from "./matrixMeetingMapping";
 import {
   clearStoredConversationSearch,
   MATRIX_USER_STORAGE_KEY,
@@ -293,6 +299,7 @@ export class MatrixDriver extends Driver {
   override readonly supportsConversationHistoryRemoval: boolean = true;
   override readonly supportsConversationCreation: boolean = true;
   override readonly supportsSpaces: boolean = true;
+  override readonly supportsMeetings: boolean = true;
 
   private mx: MatrixClient | null = null;
   /** Subscribers to the single global event stream. */
@@ -493,6 +500,49 @@ export class MatrixDriver extends Driver {
       return;
     }
     await mx.deleteRoomTag(chatId, MATRIX_FAVOURITE_TAG);
+  }
+
+  async getChatMeetings(chatId: string): Promise<ChatMeeting[]> {
+    const { room } = this.requireRoom("getChatMeetings", chatId);
+    return getChatMeetingsFromRoom(room);
+  }
+
+  async startChatMeeting(chatId: string): Promise<ChatMeeting> {
+    const { mx, room } = this.requireRoom("startChatMeeting", chatId);
+    const joinedRoomIds = await this.getJoinedRoomIds(mx);
+    if (!joinedRoomIds.has(chatId)) {
+      throw new Error(
+        `MatrixDriver.startChatMeeting: room "${chatId}" is not joined.`,
+      );
+    }
+    const ongoing = getChatMeetingsFromRoom(room).find(
+      (meeting) => meeting.isOngoing,
+    );
+    if (ongoing) {
+      return ongoing;
+    }
+    const selfUserId = mx.getUserId();
+    if (!selfUserId) {
+      throw new Error(
+        "MatrixDriver.startChatMeeting: no authenticated user.",
+      );
+    }
+    const meetingId = crypto.randomUUID();
+    const startedAt = Date.now();
+    await mx.sendStateEvent(
+      chatId,
+      MEETING_EVENT_TYPE,
+      { meetingUrl: buildMeetingUrl(meetingId), startedAt },
+      meetingId,
+    );
+    return {
+      id: meetingId,
+      url: buildMeetingUrl(meetingId),
+      organizerId: selfUserId,
+      startedAt: new Date(startedAt).toISOString(),
+      isOngoing: true,
+      documents: [],
+    };
   }
 
   /**
@@ -2368,6 +2418,15 @@ export class MatrixDriver extends Driver {
     const onTags = (_event: MatrixEvent, room: Room) => {
       this.emit({ type: "tags:changed", chatId: room.roomId });
     };
+    const onRoomState = (event: MatrixEvent) => {
+      if (event.getType() !== MEETING_EVENT_TYPE) {
+        return;
+      }
+      const roomId = event.getRoomId();
+      if (roomId) {
+        this.emit({ type: "meeting:changed", chatId: roomId });
+      }
+    };
     const onAccountData = (event: MatrixEvent, room: Room) => {
       if (event.getType() === EventType.FullyRead) {
         emitMainTimelineUnread(room);
@@ -2472,6 +2531,7 @@ export class MatrixDriver extends Driver {
     mx.on(RoomMemberEvent.Typing, onTyping);
     mx.on(RoomMemberEvent.PowerLevel, onPowerLevel);
     mx.on(RoomStateEvent.Members, onMembers);
+    mx.on(RoomStateEvent.Events, onRoomState);
     mx.on(RoomEvent.Name, onName);
     mx.on(RoomEvent.Tags, onTags);
     mx.on(RoomEvent.AccountData, onAccountData);
@@ -2494,6 +2554,7 @@ export class MatrixDriver extends Driver {
       mx.off(RoomMemberEvent.Typing, onTyping);
       mx.off(RoomMemberEvent.PowerLevel, onPowerLevel);
       mx.off(RoomStateEvent.Members, onMembers);
+      mx.off(RoomStateEvent.Events, onRoomState);
       mx.off(RoomEvent.Name, onName);
       mx.off(RoomEvent.Tags, onTags);
       mx.off(RoomEvent.AccountData, onAccountData);

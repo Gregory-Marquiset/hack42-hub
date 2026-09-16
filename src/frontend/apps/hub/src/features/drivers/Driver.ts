@@ -13,6 +13,7 @@ import {
   AccountId,
   ChatLocalUser,
   ChatMainTimelineUnread,
+  ChatMeeting,
   ChatMessage,
   ChatMessageAuthor,
   ChatMessagesPage,
@@ -207,7 +208,8 @@ export type ChatEvent =
     }
   | { type: "members:changed"; chatId: string }
   | { type: "tags:changed"; chatId: string }
-  | { type: "chats:changed" };
+  | { type: "chats:changed" }
+  | { type: "meeting:changed"; chatId: string };
 
 export type ChatEventListener = (event: ChatEvent) => void;
 
@@ -274,6 +276,8 @@ export abstract class Driver {
   readonly supportsConversationCreation: boolean = false;
   /** Whether the driver exposes a Matrix-Space-like grouping (`getSpaces`). */
   readonly supportsSpaces: boolean = false;
+  /** Whether the driver can start/list meetings for a conversation. */
+  readonly supportsMeetings: boolean = false;
 
   constructor(accountId: AccountId = "default") {
     this.accountId = accountId;
@@ -334,6 +338,29 @@ export abstract class Driver {
 
   /** Sets the current user's favourite tag for one conversation. */
   abstract setChatFavourite(chatId: string, favourite: boolean): Promise<void>;
+
+  /**
+   * Meetings held in this conversation, newest first. Unsupported drivers
+   * resolve with an empty list so the meeting history UI can render an
+   * empty state without branching on driver capability.
+   */
+  async getChatMeetings(_chatId: string): Promise<ChatMeeting[]> {
+    void _chatId;
+    return [];
+  }
+
+  /**
+   * Starts a new meeting for the conversation, or returns the one already
+   * ongoing so a second click (from this user or another member) joins the
+   * same call instead of creating a duplicate room. Unsupported by default
+   * so drivers opt in (see `supportsMeetings`).
+   */
+  async startChatMeeting(_chatId: string): Promise<ChatMeeting> {
+    void _chatId;
+    throw new Error(
+      `${this.constructor.name}.startChatMeeting: meetings are not supported by this driver.`,
+    );
+  }
 
   /**
    * Leaves a conversation and removes its history from the current account.

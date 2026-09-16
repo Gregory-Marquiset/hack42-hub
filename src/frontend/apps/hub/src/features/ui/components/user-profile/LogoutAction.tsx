@@ -12,5 +12,7 @@ import { logout } from "@/features/auth/Auth";
  */
 export const LogoutAction = () => {
   const { t } = useTranslation();
-  return <UserMenuItem label={t("Logout")} icon={<Logout />} onClick={logout} />;
+  return (
+    <UserMenuItem label={t("Logout")} icon={<Logout />} onClick={logout} />
+  );
 };

@@ -171,7 +171,10 @@
       padding: 0 4px;
       border-radius: 8px;
       background: var(--c--globals--colors--brand-050, #edf0ff);
-      color: var(--c--contextuals--content--semantic--brand--secondary, #304ddf);
+      color: var(
+        --c--contextuals--content--semantic--brand--secondary,
+        #304ddf
+      );
       font-size: 10px;
       font-weight: 700;
     }
@@ -368,7 +371,10 @@
     height: 28px;
     padding: 0 10px;
     border-radius: 14px;
-    color: var(--c--contextuals--content--semantic--neutral--secondary, #555e74);
+    color: var(
+      --c--contextuals--content--semantic--neutral--secondary,
+      #555e74
+    );
     font: inherit;
     font-size: 13px;
     font-weight: 500;
@@ -389,7 +395,10 @@
 
     &--active {
       background: var(--c--globals--colors--brand-050, #edf0ff);
-      color: var(--c--contextuals--content--semantic--brand--secondary, #304ddf);
+      color: var(
+        --c--contextuals--content--semantic--brand--secondary,
+        #304ddf
+      );
       font-weight: 700;
     }
   }
@@ -498,7 +507,10 @@
       flex: 0 0 auto;
       font-size: 12px;
       line-height: 16px;
-      color: var(--c--contextuals--content--semantic--neutral--tertiary, #75758a);
+      color: var(
+        --c--contextuals--content--semantic--neutral--tertiary,
+        #75758a
+      );
     }
 
     &__preview {
@@ -506,7 +518,10 @@
       min-width: 0;
       font-size: 12px;
       line-height: 16px;
-      color: var(--c--contextuals--content--semantic--neutral--secondary, #555e74);
+      color: var(
+        --c--contextuals--content--semantic--neutral--secondary,
+        #555e74
+      );
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -519,7 +534,10 @@
       padding: 0 5px;
       border-radius: 9px;
       background: var(--c--globals--colors--brand-050, #edf0ff);
-      color: var(--c--contextuals--content--semantic--brand--secondary, #304ddf);
+      color: var(
+        --c--contextuals--content--semantic--brand--secondary,
+        #304ddf
+      );
       font-size: 11px;
       font-weight: 700;
       line-height: 18px;

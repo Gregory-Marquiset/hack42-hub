@@ -22,9 +22,7 @@ const combineSpaces = (
   entries: DriverEntry[],
   results: UseQueryResult<Space[], Error>[],
 ): SpacesResult => ({
-  spaces: results
-    .flatMap((result) => result.data ?? [])
-    .sort(compareSpaces),
+  spaces: results.flatMap((result) => result.data ?? []).sort(compareSpaces),
   isLoading: results.some((result) => result.isPending),
   isError: results.some((result) => result.isError),
 });
@@ -38,7 +36,9 @@ export const useSpaces = (): SpacesResult => {
       queryKey: chatKeys.spacesOf(entry.accountId),
       queryFn: async () => {
         const localSpaces: LocalSpace[] = await entry.driver.getSpaces();
-        return localSpaces.map((space) => decorateSpace(entry.accountId, space));
+        return localSpaces.map((space) =>
+          decorateSpace(entry.accountId, space),
+        );
       },
       staleTime: Infinity,
       meta: { noGlobalError: true },

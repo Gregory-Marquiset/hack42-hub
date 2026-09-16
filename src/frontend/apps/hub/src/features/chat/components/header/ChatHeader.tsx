@@ -231,7 +231,15 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
         callback: () => setIsLeaveOpen(true),
       },
     ],
-    [canChangeAvatar, canLeave, isFavourite, isLeaving, isPending, setFavourite, t],
+    [
+      canChangeAvatar,
+      canLeave,
+      isFavourite,
+      isLeaving,
+      isPending,
+      setFavourite,
+      t,
+    ],
   );
 
   const trigger = (

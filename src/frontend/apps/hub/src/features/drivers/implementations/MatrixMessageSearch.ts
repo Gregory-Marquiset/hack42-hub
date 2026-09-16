@@ -17,7 +17,8 @@ import {
 import { matrixJoinedRoomToLocalChat } from "./matrixRoomMapping";
 
 const EXTRACT_URL_REGEX = /https?:\/\/\S+/i;
-const LEGACY_PILL_REGEX = /https:\/\/matrix\.to\/#\/@([^:]+):([^/]+)|@([^:]+):([^/]+)/g;
+const LEGACY_PILL_REGEX =
+  /https:\/\/matrix\.to\/#\/@([^:]+):([^/]+)|@([^:]+):([^/]+)/g;
 
 type MatrixMessageContent = {
   body?: string;
@@ -28,7 +29,10 @@ type MatrixMessageContent = {
 };
 
 export class MatrixMessageSearch {
-  private readonly messages = new Map<string, Map<string, MessageSearchDocument>>();
+  private readonly messages = new Map<
+    string,
+    Map<string, MessageSearchDocument>
+  >();
   private revision = 0;
   private status: MessageSearchStatus = { ...EMPTY_MESSAGE_SEARCH_STATUS };
   private disposed = false;
@@ -40,7 +44,7 @@ export class MatrixMessageSearch {
     private readonly mx: MatrixClient,
     private readonly accountId: string,
     private readonly databaseName: string,
-    private readonly changed: () => void
+    private readonly changed: () => void,
   ) {}
 
   async start(): Promise<void> {
@@ -164,7 +168,10 @@ export class MatrixMessageSearch {
     this.revision++;
   }
 
-  private buildMessageDocument(roomId: string, event: MatrixEvent): MessageSearchDocument | null {
+  private buildMessageDocument(
+    roomId: string,
+    event: MatrixEvent,
+  ): MessageSearchDocument | null {
     try {
       const content = event.getContent<MatrixMessageContent>();
       if (!content.body || typeof content.body !== "string") return null;
@@ -184,7 +191,8 @@ export class MatrixMessageSearch {
       const hasLink = EXTRACT_URL_REGEX.test(content.body);
 
       // Extract reply-to info
-      const { replyToEventId, replyToSenderId } = this.extractReplyInfo(content);
+      const { replyToEventId, replyToSenderId } =
+        this.extractReplyInfo(content);
 
       // Get sender display name
       const room = this.mx.getRoom(roomId);
@@ -230,7 +238,9 @@ export class MatrixMessageSearch {
 
     // Try m.mentions (MSC3952)
     if (Array.isArray(content["m.mentions"]?.user_ids)) {
-      content["m.mentions"]!.user_ids!.forEach((id: string) => mentioned.add(id));
+      content["m.mentions"]!.user_ids!.forEach((id: string) =>
+        mentioned.add(id),
+      );
     }
 
     // Fallback: legacy pill regex in body/formatted_body
@@ -268,7 +278,9 @@ export class MatrixMessageSearch {
 
     if (!matchRange) {
       // No specific match, just first MAX_EXCERPT_LEN chars
-      return body.length > MAX_EXCERPT_LEN ? body.substring(0, MAX_EXCERPT_LEN) + "..." : body;
+      return body.length > MAX_EXCERPT_LEN
+        ? body.substring(0, MAX_EXCERPT_LEN) + "..."
+        : body;
     }
 
     const [start, end] = matchRange;

@@ -111,7 +111,9 @@ describe("queryParser", () => {
     });
 
     it("combines multiple from and has (different kinds AND, same kind OR)", () => {
-      const result = parseSearchQuery("from:alice from:bob has:image has:video budget");
+      const result = parseSearchQuery(
+        "from:alice from:bob has:image has:video budget",
+      );
       expect(result.filters.from).toEqual(["alice", "bob"]);
       expect(result.filters.has).toEqual(["image", "video"]);
       expect(result.freeText).toBe("budget");
@@ -143,7 +145,7 @@ describe("queryParser", () => {
 
     it("handles complex real-world query", () => {
       const result = parseSearchQuery(
-        'from:alice mentions:"Bob Smith" has:image has:video before:2025-09-15 "budget review" project'
+        'from:alice mentions:"Bob Smith" has:image has:video before:2025-09-15 "budget review" project',
       );
       expect(result.filters.from).toEqual(["alice"]);
       expect(result.filters.mentions).toEqual(["Bob Smith"]);

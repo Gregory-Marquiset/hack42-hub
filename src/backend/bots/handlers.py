@@ -74,9 +74,11 @@ def help_message() -> str:
         "",
         "Sans commande, je réponds sur un ton normal.",
         "",
-        "Où je travaille : uniquement dans les salons où l'on m'a invitée, et "
-        "jamais dans un salon chiffré — je ne peux pas y lire les messages. "
-        "Les messages privés étant toujours chiffrés, je n'y suis jamais.",
+        "Où je travaille : dans chaque salon de groupe non chiffré, où l'on "
+        "m'invite automatiquement à la création, et en conversation directe "
+        "avec moi. Jamais dans un salon chiffré — je ne peux pas y lire les "
+        "messages — ni dans un message privé entre deux personnes, qui l'est "
+        "toujours.",
         "",
         "Ce que je lis : les messages du salon postérieurs à mon arrivée et, "
         "quand vous me pinguez dans un fil, ce fil. Jamais ce qui a été dit "
@@ -340,6 +342,30 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
 
     # No thread: answer in the room, where the question was asked.
     return _as_messages(_dedupe(room_history), skip_event_id=event_id), None
+
+
+def is_invitation_for_me(event: dict) -> bool:
+    """Is this the membership event that invites Ariane into a room?"""
+    return (
+        event.get("type") == "m.room.member"
+        and event.get("state_key") == settings.MATRIX_BOT_USER_ID
+        and (event.get("content") or {}).get("membership") == "invite"
+    )
+
+
+def accept_invitation(room_id: str) -> None:
+    """Join a room Ariane was just invited to.
+
+    Her horizon starts at her join, so joining late would silently discard the
+    messages in between. An encrypted room is joined too: she will not read it,
+    but the member list should show she is there and say so rather than leave
+    a pending invitation nobody understands.
+    """
+    try:
+        if matrix.ensure_in_room(room_id):
+            logger.info("Ariane accepted an invitation to %s", room_id)
+    except matrix.MatrixError as exc:
+        logger.warning("could not accept the invitation to %s: %s", room_id, exc)
 
 
 def access_refusal(room_id: str) -> str | None:

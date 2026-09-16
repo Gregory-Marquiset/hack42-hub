@@ -68,10 +68,19 @@ def transactions(request, txn_id):
         return JsonResponse({})
 
     for event in events:
-        if event.get("type") != "m.room.message":
-            continue
         room_id = event.get("room_id")
         if not room_id or not event.get("event_id"):
+            continue
+        # An invitation is accepted the moment it arrives, not at the first
+        # ping. The Hub invites her when a room is created; waiting for someone
+        # to address her would leave a gap between the room's first message
+        # and her arrival, and everything said in that gap would be lost to her.
+        if handlers.is_invitation_for_me(event):
+            threading.Thread(
+                target=handlers.accept_invitation, args=(room_id,), daemon=True
+            ).start()
+            continue
+        if event.get("type") != "m.room.message":
             continue
         # Filter here, before spending anything. The room namespace is `.*`, so
         # Synapse pushes every message on the server: spawning a thread first

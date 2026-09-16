@@ -53,6 +53,11 @@ and this project adheres to
   asker's history horizon, so she never reads back what either of them is not
   entitled to. She cannot work in encrypted rooms, which includes every private
   message. `/aide` lists the commands and states what she reads.
+- ✨(bots) Put Ariane in every room she can read. A clear group room invites
+  her at creation and she joins at once, so her context starts with the room's
+  first message. A conversation with her alone is not encrypted, and she can
+  be found in the people search. She is kept out of encrypted rooms, which
+  includes every private message between people.
 - ✨(frontend) Suggest room members with `@` and assistant commands with `/`
   in the message composer. The list follows the ARIA combobox pattern and is
   usable with a screen reader.

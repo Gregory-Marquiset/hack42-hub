@@ -6,6 +6,7 @@ import { notify } from "@/features/ui/components/toast";
 
 import { useComposerAccountId } from "./useChatAccounts";
 import { useChatCreationSupport } from "./useChatCreationSupport";
+import { useAssistant } from "./useAssistant";
 import { useChatEncryptionSupport } from "./useChatEncryptionSupport";
 import { useAccountChatCompositionSupport } from "./useChatCompositionSupport";
 import { useChatForUsers } from "./useChatForUsers";
@@ -48,9 +49,16 @@ export const useNewChatConversation = ({
         : null,
     [accountId, encrypted, selectedUserIds],
   );
-  // A one-to-one is always encrypted; only a group carries the choice.
+  // A one-to-one is always encrypted; only a group carries the choice. The
+  // one exception is a conversation with the assistant alone: she could not
+  // read it, and there is no human on the other side to protect.
+  const assistant = useAssistant();
   const isDirect = selectedUserIds.length === 1;
-  const willEncrypt = isDirect || encrypted;
+  const isAssistantOnly =
+    isDirect &&
+    Boolean(assistant.userId) &&
+    selectedUserIds[0] === assistant.userId;
+  const willEncrypt = !isAssistantOnly && (isDirect || encrypted);
   // "The conversation with these people" depends on what is being asked for:
   // a clear room and its encrypted twin are different conversations. The
   // lookup is told which one, so an existing private message shows up as soon
@@ -136,7 +144,10 @@ export const useNewChatConversation = ({
     creationTargetRef.current = selectionTarget;
     let creation = inFlightCreationsRef.current.get(selectionTarget);
     if (!creation) {
-      creation = createChatForUsers(selectedUserIds, { encrypted });
+      creation = createChatForUsers(selectedUserIds, {
+        encrypted,
+        assistantUserId: assistant.userId || undefined,
+      });
       inFlightCreationsRef.current.set(selectionTarget, creation);
     }
 
@@ -152,6 +163,7 @@ export const useNewChatConversation = ({
       }
     }
   }, [
+    assistant.userId,
     chat,
     createChatForUsers,
     createdChatRef,
@@ -237,7 +249,9 @@ export const useNewChatConversation = ({
     // exists. A one-to-one is always encrypted, and once the room is created
     // the choice has been spent - Matrix offers no way back.
     canChooseEncryption: isEncryptionSupported && !chatRef && !isDirect,
-    // A one-to-one has no choice to offer, but the fact still has to be said.
-    isEncryptionForced: isEncryptionSupported && isDirect,
+    // A one-to-one has no choice to offer, but the fact still has to be said -
+    // except with the assistant, where nothing is encrypted and nothing is
+    // forced.
+    isEncryptionForced: isEncryptionSupported && isDirect && !isAssistantOnly,
   };
 };

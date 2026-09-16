@@ -1178,7 +1178,8 @@ describe("MatrixDriver.startChatMeeting permissions", () => {
   });
 });
 
-describe("createChatForUsers (encryption)", () => {
+describe("createChatForUsers (encryption and the assistant)", () => {
+  const ASSISTANT_ID = "@hub-as_ariane:localhost";
   const BOB = "@bob:localhost";
   const CAROL = "@carol:localhost";
 
@@ -1291,6 +1292,32 @@ describe("createChatForUsers (encryption)", () => {
     expect(chat.id).toBe("!clear:localhost");
     expect(chat.encrypted).toBeUndefined();
     expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("never encrypts a one-to-one with the assistant", async () => {
+    const opts = await create([ASSISTANT_ID], {
+      assistantUserId: ASSISTANT_ID,
+    });
+    expect(opts.is_direct).toBe(true);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("invites the assistant into a clear group", async () => {
+    const opts = await create([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+      encrypted: false,
+    });
+    expect(opts.invite).toEqual([BOB, CAROL, ASSISTANT_ID]);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("keeps the assistant out of an encrypted group", async () => {
+    const opts = await create([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+      encrypted: true,
+    });
+    expect(opts.invite).toEqual([BOB, CAROL]);
+    expect(encryptionOf(opts)).toBe(true);
   });
 });
 

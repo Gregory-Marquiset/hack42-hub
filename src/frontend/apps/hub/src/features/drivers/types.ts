@@ -316,6 +316,15 @@ export type CreateChatOptions = {
   forceNew?: boolean;
   /** Enable end-to-end encryption on the new room. */
   encrypted?: boolean;
+  /**
+   * Matrix id of the assistant, when the account has one.
+   *
+   * The driver needs it for two decisions it cannot make from the participant
+   * list alone: a group room invites her automatically, and a conversation
+   * with her alone is not encrypted - she could not read it, and there is no
+   * human on the other side whose privacy the encryption would protect.
+   */
+  assistantUserId?: string;
 };
 
 /**

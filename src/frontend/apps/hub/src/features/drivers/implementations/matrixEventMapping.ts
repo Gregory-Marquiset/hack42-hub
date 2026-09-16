@@ -30,6 +30,7 @@ import { ChatEvent } from "../Driver";
 import {
   ChatMessage,
   ChatMessageAuthor,
+  ChatPreview,
   ChatReaction,
   ChatThread,
   ChatThreadDetail,
@@ -315,7 +316,47 @@ export const roomUnread = (
   // Unlike getRoomUnreadNotificationCount, this includes thread mentions.
   highlight:
     room.getUnreadNotificationCount(NotificationCountType.Highlight) > 0,
+  count: room.getUnreadNotificationCount(NotificationCountType.Total),
 });
+
+/**
+ * Preview of the room's most recent main-timeline message, for the
+ * conversation list row's second line. `undefined` when the room has no
+ * eligible message yet (a brand-new invite, for example).
+ */
+export const lastMainTimelinePreview = (
+  room: Room,
+  selfUserId: string | undefined,
+): ChatPreview | undefined => {
+  const events = room
+    .getLiveTimeline()
+    .getEvents()
+    .filter(isMainTimelineMessage);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.isRedacted()) {
+      continue;
+    }
+    const content = event.getContent<{ body?: string }>();
+    if (typeof content.body !== "string" || !content.body) {
+      continue;
+    }
+    const sender = event.getSender();
+    const isOwnMessage = Boolean(selfUserId && sender === selfUserId);
+    return {
+      text: content.body,
+      isOwnMessage,
+      ...(isOwnMessage
+        ? {}
+        : {
+            senderName: sender
+              ? (room.getMember(sender)?.name ?? sender)
+              : undefined,
+          }),
+    };
+  }
+  return undefined;
+};
 
 export const authorForSender = (
   room: Room,

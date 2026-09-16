@@ -479,7 +479,7 @@ class Base(Configuration):
         environ_prefix=None,
     )
     OIDC_CALLBACK_CLASS = values.Value(
-        "lasuite.oidc_login.views.OIDCAuthenticationCallbackView",
+        "core.authentication.views.OIDCAuthenticationCallbackView",
         environ_name="OIDC_CALLBACK_CLASS",
         environ_prefix=None,
     )

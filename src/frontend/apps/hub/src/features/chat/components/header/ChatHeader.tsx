@@ -87,7 +87,11 @@ export const ChatHeader = ({
       <div className="hub__chat-header__actions">
         {showTools && (
           <div className="hub__chat-header__selector">
-            <MeetingButton chatRef={chatRef} />
+            <MeetingButton
+              chatRef={chatRef}
+              isActive={activeTool === "meetings"}
+              onToggle={() => onToggleTool("meetings")}
+            />
             <span className="hub__chat-header__separator" aria-hidden="true" />
             <Button
               type="button"

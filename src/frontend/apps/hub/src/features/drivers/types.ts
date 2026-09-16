@@ -153,7 +153,7 @@ export type ChatMeetingDocument = {
 };
 
 /**
- * One call held in a conversation via the "Start a meeting" camera button.
+ * One call held in a conversation, started from the meetings panel.
  * `isOngoing` is derived from `startedAt` by the driver (Visio exposes no
  * call-end signal, so a meeting is treated as still joinable for a limited
  * window after it started rather than tracked through an explicit end event).

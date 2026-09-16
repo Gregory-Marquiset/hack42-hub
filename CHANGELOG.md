@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(frontend) Show real profile/group photos in the account menu, chat
   header and members list. Reorder the account menu, add Direct messages
   filter tabs, and fix the language picker only applying French.
+- ✨(frontend) Open a meetings panel from the conversation header, with the
+  meetings list, a creation form and the history of past meetings and their
+  documents. The call is now started from "Start now" in that form.
 - ✨(frontend) Start a temporary meeting from a conversation, shown in a Meet
   window inside the Hub. Record the call in the Matrix room so every member
   can rejoin it.

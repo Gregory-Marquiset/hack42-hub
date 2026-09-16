@@ -337,7 +337,7 @@ describe("MatrixDriver chat documents", () => {
     return { driver: driverWithClient(mx), room, sendStateEvent };
   };
 
-  it("reads room documents with the empty state key", async () => {
+  it("reads legacy room documents without id or provider", async () => {
     const { driver, room } = clientWithDocuments({
       documents: [existingDocument],
     });
@@ -374,7 +374,7 @@ describe("MatrixDriver chat documents", () => {
     expect(sendStateEvent).not.toHaveBeenCalled();
   });
 
-  it("writes the complete list and derives addedBy from the client", async () => {
+  it("writes Docs identity fields and derives addedBy from the client", async () => {
     const sendStateEvent = vi.fn(async () => ({}));
     const { driver } = clientWithDocuments(
       { documents: [existingDocument] },
@@ -382,10 +382,14 @@ describe("MatrixDriver chat documents", () => {
     );
     const added = await driver.addChatDocument({
       chatId: ROOM_ID,
+      id: "doc-2",
+      provider: "docs",
       address: "https://docs.example/doc2",
       title: "Second document",
     });
     expect(added).toEqual({
+      id: "doc-2",
+      provider: "docs",
       address: "https://docs.example/doc2",
       title: "Second document",
       addedBy: SELF_ID,

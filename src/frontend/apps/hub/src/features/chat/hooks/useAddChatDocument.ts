@@ -11,14 +11,18 @@ export const useAddChatDocument = (ref: ChatRef) => {
   const mutation = useMutation<
     ChatDocument,
     Error,
-    Pick<AddChatDocumentParams, "address" | "title">
+    Pick<AddChatDocumentParams, "address" | "id" | "provider" | "title">
   >({
-    mutationFn: ({ address, title }) =>
-      getRegistry().get(ref.accountId).addChatDocument({
-        chatId: ref.chatId,
-        address,
-        title,
-      }),
+    mutationFn: ({ address, id, provider, title }) =>
+      getRegistry()
+        .get(ref.accountId)
+        .addChatDocument({
+          chatId: ref.chatId,
+          address,
+          title,
+          ...(id !== undefined ? { id } : {}),
+          ...(provider !== undefined ? { provider } : {}),
+        }),
     onSuccess: (document) => {
       // The server accepted the write, but local room state may await /sync.
       // Add only the confirmed result to a warm cache; sync reconciles it.

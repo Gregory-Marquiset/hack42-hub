@@ -176,7 +176,11 @@ const documentsFromStateContent = (content: unknown): ChatDocument[] => {
         document !== null &&
         typeof (document as Record<string, unknown>).address === "string" &&
         typeof (document as Record<string, unknown>).title === "string" &&
-        typeof (document as Record<string, unknown>).addedBy === "string",
+        typeof (document as Record<string, unknown>).addedBy === "string" &&
+        (!("id" in document) ||
+          typeof (document as Record<string, unknown>).id === "string") &&
+        (!("provider" in document) ||
+          (document as Record<string, unknown>).provider === "docs"),
     )
   ) {
     throw new Error("MatrixDriver: invalid documents room state content.");
@@ -538,6 +542,8 @@ export class MatrixDriver extends Driver {
 
   async addChatDocument({
     chatId,
+    id,
+    provider,
     address,
     title,
   }: AddChatDocumentParams): Promise<ChatDocument> {
@@ -554,7 +560,13 @@ export class MatrixDriver extends Driver {
         "MatrixDriver.addChatDocument: user cannot add documents to this room.",
       );
     }
-    const document = { address, title, addedBy };
+    const document: ChatDocument = { address, title, addedBy };
+    if (id !== undefined) {
+      document.id = id;
+    }
+    if (provider !== undefined) {
+      document.provider = provider;
+    }
     const documents = await this.getChatDocuments(chatId);
     await mx.sendStateEvent(
       chatId,

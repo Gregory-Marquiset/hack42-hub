@@ -13,6 +13,8 @@ const addChatDocument =
   vi.fn<
     (params: {
       chatId: string;
+      id?: string;
+      provider?: "docs";
       address: string;
       title: string;
     }) => Promise<ChatDocument>
@@ -94,6 +96,41 @@ describe("useAddChatDocument", () => {
     ).rejects.toThrow("forbidden");
     expect(queryClient.getQueryData(chatKeys.documents(REF))).toEqual([
       oldDocument,
+    ]);
+  });
+
+  it("passes Docs identity fields to the existing Driver mutation", async () => {
+    const docsDocument: ChatDocument = {
+      id: "doc-1",
+      provider: "docs",
+      address: "https://docs.test/docs/doc-1/",
+      title: "Test Hub",
+      addedBy: "@a:test",
+    };
+    addChatDocument.mockResolvedValue(docsDocument);
+    const { result } = renderHook(() => useAddChatDocument(REF), {
+      wrapper: wrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.addDocument({
+        id: "doc-1",
+        provider: "docs",
+        address: "https://docs.test/docs/doc-1/",
+        title: "Test Hub",
+      });
+    });
+
+    expect(addChatDocument).toHaveBeenCalledWith({
+      chatId: "chat-1",
+      id: "doc-1",
+      provider: "docs",
+      address: "https://docs.test/docs/doc-1/",
+      title: "Test Hub",
+    });
+    expect(queryClient.getQueryData(chatKeys.documents(REF))).toEqual([
+      oldDocument,
+      docsDocument,
     ]);
   });
 

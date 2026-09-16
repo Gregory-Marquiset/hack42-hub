@@ -85,6 +85,8 @@ export type SendChatMessageParams = {
 
 export type AddChatDocumentParams = {
   chatId: string;
+  id?: string;
+  provider?: "docs";
   address: string;
   title: string;
 };

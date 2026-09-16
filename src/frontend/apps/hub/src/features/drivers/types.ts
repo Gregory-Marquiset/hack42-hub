@@ -139,6 +139,8 @@ export type Chat = LocalChat & {
 
 /** Metadata for a document linked to a conversation. */
 export type ChatDocument = {
+  id?: string;
+  provider?: "docs";
   address: string;
   title: string;
   addedBy: string;

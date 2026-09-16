@@ -12,14 +12,24 @@ const {
   documentsQuery,
   useChatDocuments,
   useAddChatDocument,
+  useCreateDocsDocument,
   useChatDocumentCapabilities,
   capabilities,
   pending,
+  createPending,
+  createDocument,
+  membersQuery,
+  useChatMembers,
 } = vi.hoisted(() => {
   const refetch = vi.fn();
   const addDocument =
     vi.fn<
-      (params: { title: string; address: string }) => Promise<ChatDocument>
+      (params: {
+        id?: string;
+        provider?: "docs";
+        title: string;
+        address: string;
+      }) => Promise<ChatDocument>
     >();
   const documentsQuery = {
     documents: [] as ChatDocument[],
@@ -28,6 +38,18 @@ const {
     refetch,
   };
   const pending = { isAdding: false };
+  const createPending = { isCreating: false };
+  const createDocument = vi.fn();
+  const membersQuery = {
+    present: [
+      { id: "@cdutel:test", name: "CD", secondaryText: "@cdutel:test" },
+      { id: "@demo0:test", name: "Demo 0", secondaryText: "@demo0:test" },
+    ],
+    pendingInvites: [],
+    isInitialLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  };
   const capabilities = { canRead: true, canAdd: true, canManageAdders: false };
   return {
     refetch,
@@ -39,20 +61,36 @@ const {
       addDocument,
       isAdding: pending.isAdding,
     })),
+    useCreateDocsDocument: vi.fn(() => ({
+      createDocument,
+      isCreating: createPending.isCreating,
+    })),
     useChatDocumentCapabilities: vi.fn(() => capabilities),
     capabilities,
+    createPending,
+    createDocument,
+    membersQuery,
+    useChatMembers: vi.fn(() => membersQuery),
   };
 });
 
 vi.mock("../../../hooks/useChatDocuments", () => ({ useChatDocuments }));
 vi.mock("../../../hooks/useAddChatDocument", () => ({ useAddChatDocument }));
+vi.mock("../../../hooks/useCreateDocsDocument", () => ({
+  useCreateDocsDocument,
+}));
 vi.mock("../../../hooks/useChatDocumentCapabilities", () => ({
   useChatDocumentCapabilities,
 }));
+vi.mock("../../../hooks/useChatMembers", () => ({ useChatMembers }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, values?: { userId: string }) =>
-      values ? key.replace("{{userId}}", values.userId) : key,
+    t: (key: string, values?: Record<string, string | number>) =>
+      Object.entries(values ?? {}).reduce(
+        (translated, [name, value]) =>
+          translated.replace(`{{${name}}}`, String(value)),
+        key,
+      ),
   }),
 }));
 
@@ -62,14 +100,21 @@ const renderTool = () => render(<DocumentsTool chatRef={REF} isOpen />);
 describe("DocumentsTool", () => {
   beforeEach(() => {
     pending.isAdding = false;
+    createPending.isCreating = false;
+    membersQuery.isInitialLoading = false;
+    membersQuery.isError = false;
     capabilities.canAdd = true;
     documentsQuery.documents = [];
     documentsQuery.isInitialLoading = false;
     documentsQuery.isError = false;
     refetch.mockClear();
+    membersQuery.refetch.mockClear();
     addDocument.mockReset();
+    createDocument.mockReset();
     useChatDocuments.mockClear();
     useAddChatDocument.mockClear();
+    useCreateDocsDocument.mockClear();
+    useChatMembers.mockClear();
   });
 
   it("keeps documents readable but hides add controls without permission", () => {
@@ -172,6 +217,149 @@ describe("DocumentsTool", () => {
       }),
     );
     await waitFor(() => expect(screen.queryByLabelText("Title")).toBeNull());
+  });
+
+  it("associates a successfully created Docs document with the room", async () => {
+    const createdDocument = {
+      id: "doc-1",
+      provider: "docs" as const,
+      title: "Test Hub",
+      address: "https://docs.test/docs/doc-1/",
+      sharing: {
+        shared: ["@demo0:test"],
+        unresolved: [],
+        failed: [],
+      },
+    };
+    createDocument.mockResolvedValue(createdDocument);
+    addDocument.mockResolvedValue({
+      ...createdDocument,
+      addedBy: "@a:test",
+    });
+    renderTool();
+    fireEvent.click(screen.getByText("Add document"));
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "  Test Hub  " },
+    });
+    fireEvent.click(screen.getByText("Create document"));
+
+    await waitFor(() =>
+      expect(createDocument).toHaveBeenCalledWith({
+        title: "Test Hub",
+        memberIds: ["@demo0:test"],
+      }),
+    );
+    expect(addDocument).toHaveBeenCalledWith({
+      id: createdDocument.id,
+      provider: createdDocument.provider,
+      title: createdDocument.title,
+      address: createdDocument.address,
+    });
+    await waitFor(() => expect(screen.queryByLabelText("Title")).toBeNull());
+  });
+
+  it("keeps the form open when Docs creation fails", async () => {
+    createDocument.mockRejectedValue(new Error("offline"));
+    renderTool();
+    fireEvent.click(screen.getByText("Add document"));
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Test Hub" },
+    });
+    fireEvent.click(screen.getByText("Create document"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Document could not be created in Docs.",
+      ),
+    );
+    expect(screen.getByLabelText("Title")).toBeTruthy();
+    expect(addDocument).not.toHaveBeenCalled();
+  });
+
+  it("keeps the created URL and retries only the Matrix association", async () => {
+    const createdDocument = {
+      id: "doc-1",
+      provider: "docs" as const,
+      title: "Test Hub",
+      address: "https://docs.test/docs/doc-1/",
+      sharing: {
+        shared: ["@demo0:test"],
+        unresolved: [],
+        failed: [],
+      },
+    };
+    createDocument.mockResolvedValue(createdDocument);
+    addDocument.mockRejectedValueOnce(new Error("matrix unavailable"));
+    renderTool();
+    fireEvent.click(screen.getByText("Add document"));
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Test Hub" },
+    });
+    fireEvent.click(screen.getByText("Create document"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "The document was created in Docs, but could not be added",
+      ),
+    );
+    expect(createDocument).toHaveBeenCalledOnce();
+    expect(addDocument).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("link", { name: "Test Hub" }).getAttribute("href"),
+    ).toBe(createdDocument.address);
+
+    addDocument.mockResolvedValue({
+      ...createdDocument,
+      addedBy: "@a:test",
+    });
+    fireEvent.click(screen.getByText("Retry association"));
+
+    await waitFor(() => expect(addDocument).toHaveBeenCalledTimes(2));
+    expect(createDocument).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByLabelText("Title")).toBeNull());
+  });
+
+  it("associates the document and warns when some members are unresolved", async () => {
+    const createdDocument = {
+      id: "doc-1",
+      provider: "docs" as const,
+      title: "Test Hub",
+      address: "https://docs.test/docs/doc-1/",
+      sharing: {
+        shared: ["@demo0:test"],
+        unresolved: ["@unknown:test"],
+        failed: [],
+      },
+    };
+    createDocument.mockResolvedValue(createdDocument);
+    addDocument.mockResolvedValue({ ...createdDocument, addedBy: "@a:test" });
+    renderTool();
+    fireEvent.click(screen.getByText("Add document"));
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Test Hub" },
+    });
+    fireEvent.click(screen.getByText("Create document"));
+
+    await waitFor(() => expect(addDocument).toHaveBeenCalledOnce());
+    expect(screen.getByRole("alert").textContent).toContain(
+      "1 room member(s) may not have access",
+    );
+  });
+
+  it("does not create while room members cannot be loaded", () => {
+    membersQuery.isError = true;
+    renderTool();
+    fireEvent.click(screen.getByText("Add document"));
+
+    expect(
+      screen.getByText("Create document").closest("button")?.disabled,
+    ).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Room members could not be loaded",
+    );
+    fireEvent.click(screen.getByText("Retry"));
+    expect(membersQuery.refetch).toHaveBeenCalledOnce();
+    expect(createDocument).not.toHaveBeenCalled();
   });
 
   it("keeps the form and list on a failed write", async () => {

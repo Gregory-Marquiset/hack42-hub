@@ -39,6 +39,7 @@ import type {
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  StartMeetingOptions,
   User,
 } from "../types";
 
@@ -296,9 +297,39 @@ export class LazyMatrixDriver extends BaseDriver {
   override async startChatMeeting(
     chatId: string,
     createRoom: () => Promise<MeetRoom>,
+    options?: StartMeetingOptions,
   ): Promise<ChatMeeting> {
     return this.withTarget((driver) =>
-      driver.startChatMeeting(chatId, createRoom),
+      driver.startChatMeeting(chatId, createRoom, options),
+    );
+  }
+
+  override async endChatMeeting(
+    chatId: string,
+    meetingId: string,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.endChatMeeting(chatId, meetingId),
+    );
+  }
+
+  override async renameChatMeeting(
+    chatId: string,
+    meetingId: string,
+    title: string,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.renameChatMeeting(chatId, meetingId, title),
+    );
+  }
+
+  override async extendChatMeeting(
+    chatId: string,
+    meetingId: string,
+    minutes: number,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.extendChatMeeting(chatId, meetingId, minutes),
     );
   }
 

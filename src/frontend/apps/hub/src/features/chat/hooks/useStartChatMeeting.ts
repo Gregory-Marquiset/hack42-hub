@@ -4,23 +4,30 @@ import { useTranslation } from "react-i18next";
 
 import { getRegistry } from "@/features/drivers/DriverRegistry";
 import { MeetingNotAllowedError } from "@/features/drivers/meetingErrors";
-import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
+import type {
+  ChatMeeting,
+  ChatRef,
+  StartMeetingOptions,
+} from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { createMeetRoom } from "../api/meetRooms";
 import { chatKeys } from "../chatKeys";
 
 export type UseStartChatMeetingResult = {
-  /** Starts (or rejoins) the conversation's meeting and resolves with it. */
-  startMeeting: () => Promise<ChatMeeting>;
+  /**
+   * Starts (or rejoins) the conversation's meeting, or schedules one when
+   * `options.startsAt` is in the future, and resolves with it.
+   */
+  startMeeting: (options?: StartMeetingOptions) => Promise<ChatMeeting>;
   isPending: boolean;
 };
 
 /**
- * Starts a new meeting for a conversation, or rejoins the one already
- * ongoing. A Meet room is only created, through the Hub backend, when no
- * meeting is ongoing. The caller is responsible for opening the resolved
- * `url` — this hook only owns the Matrix write and its cache invalidation.
+ * Starts or schedules a meeting for a conversation. A Meet room is only
+ * created, through the Hub backend, when a new call is needed. The caller is
+ * responsible for opening the resolved `url` — this hook only owns the Matrix
+ * write and its cache invalidation.
  */
 export const useStartChatMeeting = (
   ref: ChatRef | null,
@@ -28,8 +35,12 @@ export const useStartChatMeeting = (
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
-  const { mutateAsync, isPending } = useMutation<ChatMeeting, Error, void>({
-    mutationFn: () => {
+  const { mutateAsync, isPending } = useMutation<
+    ChatMeeting,
+    Error,
+    StartMeetingOptions | undefined
+  >({
+    mutationFn: (options) => {
       if (!ref) {
         return Promise.reject(
           new Error("useStartChatMeeting requires a conversation."),
@@ -37,7 +48,7 @@ export const useStartChatMeeting = (
       }
       return getRegistry()
         .get(ref.accountId)
-        .startChatMeeting(ref.chatId, createMeetRoom);
+        .startChatMeeting(ref.chatId, createMeetRoom, options);
     },
     onSuccess: () => {
       if (ref) {
@@ -56,7 +67,10 @@ export const useStartChatMeeting = (
     meta: { noGlobalError: true },
   });
 
-  const startMeeting = useCallback(() => mutateAsync(), [mutateAsync]);
+  const startMeeting = useCallback(
+    (options?: StartMeetingOptions) => mutateAsync(options),
+    [mutateAsync],
+  );
 
   return { startMeeting, isPending };
 };

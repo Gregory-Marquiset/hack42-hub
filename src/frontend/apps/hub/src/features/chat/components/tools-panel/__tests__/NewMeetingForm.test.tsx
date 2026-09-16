@@ -27,6 +27,7 @@ const renderForm = () =>
       onClose={vi.fn()}
       onBack={vi.fn()}
       onStartNow={vi.fn()}
+      onSchedule={vi.fn()}
     />,
   );
 
@@ -132,5 +133,86 @@ describe("NewMeetingForm files", () => {
     expect(link.getAttribute("href")).toBe("https://docs.example.org/docs/1/");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("NewMeetingForm start and schedule", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  const renderWithHandlers = () => {
+    const onStartNow = vi.fn();
+    const onSchedule = vi.fn();
+    render(
+      <NewMeetingForm
+        isOpen
+        isStarting={false}
+        onClose={vi.fn()}
+        onBack={vi.fn()}
+        onStartNow={onStartNow}
+        onSchedule={onSchedule}
+      />,
+    );
+    return { onStartNow, onSchedule };
+  };
+
+  const pad = (value: number) => String(value).padStart(2, "0");
+
+  it("starts the call now with its name and duration", () => {
+    const { onStartNow } = renderWithHandlers();
+
+    fireEvent.change(screen.getByLabelText("Meeting name"), {
+      target: { value: "Point hebdo" },
+    });
+    fireEvent.change(screen.getByLabelText("Duration"), {
+      target: { value: "30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start now" }));
+
+    expect(onStartNow).toHaveBeenCalledWith({
+      title: "Point hebdo",
+      plannedDurationMinutes: 30,
+    });
+  });
+
+  it("needs a date and a future time to schedule", () => {
+    const { onSchedule } = renderWithHandlers();
+    const schedule = screen.getByRole("button", { name: "Schedule" });
+
+    expect(schedule.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Meeting date"), {
+      target: { value: "2000-01-01" },
+    });
+    fireEvent.change(screen.getByLabelText("Start time"), {
+      target: { value: "10:00" },
+    });
+
+    expect(schedule.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(schedule);
+    expect(onSchedule).not.toHaveBeenCalled();
+  });
+
+  it("schedules the meeting at the chosen local date and time", () => {
+    const { onSchedule } = renderWithHandlers();
+    const start = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    start.setHours(14, 30, 0, 0);
+    const date = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+
+    fireEvent.change(screen.getByLabelText("Meeting date"), {
+      target: { value: date },
+    });
+    fireEvent.change(screen.getByLabelText("Start time"), {
+      target: { value: "14:30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+
+    expect(onSchedule).toHaveBeenCalledWith({
+      title: undefined,
+      plannedDurationMinutes: 60,
+      startsAt: start,
+    });
   });
 });

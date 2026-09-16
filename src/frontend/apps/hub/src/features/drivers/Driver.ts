@@ -29,6 +29,7 @@ import {
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  StartMeetingOptions,
   User,
 } from "./types";
 
@@ -351,20 +352,60 @@ export abstract class Driver {
   }
 
   /**
-   * Starts a new meeting for the conversation, or returns the one already
-   * ongoing so a second click (from this user or another member) joins the
-   * same call instead of creating a duplicate room. `createRoom` is only
-   * called when a new call is needed. Unsupported by default so drivers opt
-   * in (see `supportsMeetings`).
+   * Starts a meeting now, or schedules one when `options.startsAt` is in the
+   * future. Starting now returns the meeting already ongoing, if any, so a
+   * second click (from this user or another member) joins the same call
+   * instead of creating a duplicate room. `createRoom` is only called when a
+   * new call is needed. Unsupported by default so drivers opt in (see
+   * `supportsMeetings`).
    */
   async startChatMeeting(
     _chatId: string,
     _createRoom: () => Promise<MeetRoom>,
+    _options?: StartMeetingOptions,
   ): Promise<ChatMeeting> {
     void _chatId;
     void _createRoom;
+    void _options;
     throw new Error(
       `${this.constructor.name}.startChatMeeting: meetings are not supported by this driver.`,
+    );
+  }
+
+  /** Closes a meeting for every member. Only its organizer may do it. */
+  async endChatMeeting(_chatId: string, _meetingId: string): Promise<void> {
+    void _chatId;
+    void _meetingId;
+    throw new Error(
+      `${this.constructor.name}.endChatMeeting: meetings are not supported by this driver.`,
+    );
+  }
+
+  /** Renames a meeting; an empty title removes it. Only its organizer may do it. */
+  async renameChatMeeting(
+    _chatId: string,
+    _meetingId: string,
+    _title: string,
+  ): Promise<void> {
+    void _chatId;
+    void _meetingId;
+    void _title;
+    throw new Error(
+      `${this.constructor.name}.renameChatMeeting: meetings are not supported by this driver.`,
+    );
+  }
+
+  /** Adds time to a meeting's planned duration. Only its organizer may do it. */
+  async extendChatMeeting(
+    _chatId: string,
+    _meetingId: string,
+    _minutes: number,
+  ): Promise<void> {
+    void _chatId;
+    void _meetingId;
+    void _minutes;
+    throw new Error(
+      `${this.constructor.name}.extendChatMeeting: meetings are not supported by this driver.`,
     );
   }
 

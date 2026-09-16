@@ -113,6 +113,7 @@ export const MeetingHistory = ({
                     meeting,
                     t("Meeting"),
                     locale,
+                    { withTime: true },
                   );
                   return (
                     <li
@@ -158,7 +159,9 @@ export const MeetingHistory = ({
             {selected && (
               <section className="hub__chat-meetings__card">
                 <h3 className="hub__chat-meetings__card-title">
-                  {formatMeetingLabel(selected, t("Meeting"), locale)}
+                  {formatMeetingLabel(selected, t("Meeting"), locale, {
+                    withTime: true,
+                  })}
                 </h3>
                 {documents.length === 0 ? (
                   <p className="hub__chat-tools-panel__empty">

@@ -15,8 +15,14 @@ export const MEETING_EVENT_TYPE = "io.lasuite.hub.meeting";
 /** Content of an `io.lasuite.hub.meeting` state event. */
 export type MeetingStateEventContent = {
   meetingUrl: string;
-  /** Epoch milliseconds. */
+  /** Epoch milliseconds: actual start, or planned start when scheduled. */
   startedAt: number;
+  /** Matrix id of the organizer (the sender changes when the state is updated). */
+  organizerId?: string;
+  title?: string;
+  plannedDurationMinutes?: number;
+  /** Epoch milliseconds, set when the organizer closes the meeting. */
+  endedAt?: number;
   documents?: unknown;
   summary?: unknown;
 };
@@ -27,15 +33,6 @@ declare module "matrix-js-sdk/lib/@types/event" {
     "io.lasuite.hub.meeting": MeetingStateEventContent;
   }
 }
-
-/**
- * Visio (Meet) exposes no "is this call over" signal, so there is no event to
- * flip a meeting from ongoing to ended. Instead a meeting is only offered as
- * "join the existing call" for this long after it started; past that window
- * the next camera click starts a fresh one. Generous enough to cover a long
- * meeting without ever forcing two simultaneous rooms for the same call.
- */
-export const MEETING_ONGOING_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 const toDocument = (raw: unknown): ChatMeetingDocument | undefined => {
   if (typeof raw !== "object" || raw === null) {
@@ -63,12 +60,14 @@ const toDocuments = (raw: unknown): ChatMeetingDocument[] =>
  * `null` when its content is missing the fields the call needs to be joined. */
 export const chatMeetingFromStateEvent = (
   event: MatrixEvent,
-  now: number = Date.now(),
 ): ChatMeeting | null => {
   const content = event.getContent<Record<string, unknown>>();
   const url = content.meetingUrl;
   const startedAt = content.startedAt;
-  const organizerId = event.getSender();
+  const organizerId =
+    typeof content.organizerId === "string" && content.organizerId
+      ? content.organizerId
+      : event.getSender();
   const stateKey = event.getStateKey();
   if (
     typeof url !== "string" ||
@@ -79,14 +78,42 @@ export const chatMeetingFromStateEvent = (
   ) {
     return null;
   }
+  const { title, plannedDurationMinutes, endedAt } = content;
   return {
     id: stateKey,
     url,
     organizerId,
+    ...(typeof title === "string" && title.trim()
+      ? { title: title.trim() }
+      : {}),
     startedAt: new Date(startedAt).toISOString(),
-    isOngoing: now - startedAt < MEETING_ONGOING_WINDOW_MS,
+    ...(typeof plannedDurationMinutes === "number" && plannedDurationMinutes > 0
+      ? { plannedDurationMinutes }
+      : {}),
+    ...(typeof endedAt === "number"
+      ? { endedAt: new Date(endedAt).toISOString() }
+      : {}),
     documents: toDocuments(content.documents),
     summary: toDocument(content.summary),
+  };
+};
+
+/** The raw state content of one meeting, to update it without losing fields. */
+export const getMeetingStateContent = (
+  room: Room,
+  meetingId: string,
+): (MeetingStateEventContent & { organizerId: string }) | null => {
+  const event = room.currentState?.getStateEvents(
+    MEETING_EVENT_TYPE,
+    meetingId,
+  );
+  const meeting = event ? chatMeetingFromStateEvent(event) : null;
+  if (!event || !meeting) {
+    return null;
+  }
+  return {
+    ...event.getContent<MeetingStateEventContent>(),
+    organizerId: meeting.organizerId,
   };
 };
 

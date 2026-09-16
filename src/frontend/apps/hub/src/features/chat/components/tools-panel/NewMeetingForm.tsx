@@ -2,6 +2,8 @@ import { Plus, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import { type ChangeEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { formatMeetingDuration } from "@/features/drivers/meetingTime";
+import type { StartMeetingOptions } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { Download } from "./MeetingIcons";
@@ -16,14 +18,29 @@ type DraftDocument = {
   isLocalFile?: boolean;
 };
 
+/** Planned lengths offered in the form, in minutes. */
+export const MEETING_DURATIONS = [15, 30, 45, 60, 90, 120, 180] as const;
+export const DEFAULT_MEETING_DURATION = 60;
+
 type NewMeetingFormProps = {
   isOpen: boolean;
-  /** Whether the immediate call is already being created. */
+  /** Whether a call is already being created or scheduled. */
   isStarting: boolean;
   onClose: () => void;
   onBack: () => void;
   /** Starts the conversation's call right away ("Appel immédiat"). */
-  onStartNow: () => void;
+  onStartNow: (options: StartMeetingOptions) => void;
+  /** Schedules the call at the chosen date and time. */
+  onSchedule: (options: StartMeetingOptions) => void;
+};
+
+/** The local date and time of the form as a `Date`, when both are set. */
+const toStartDate = (date: string, time: string): Date | undefined => {
+  if (!date || !time) {
+    return undefined;
+  }
+  const start = new Date(`${date}T${time}`);
+  return Number.isNaN(start.getTime()) ? undefined : start;
 };
 
 type DocumentRowProps = {
@@ -80,12 +97,20 @@ export const NewMeetingForm = ({
   onClose,
   onBack,
   onStartNow,
+  onSchedule,
 }: NewMeetingFormProps) => {
   const { t } = useTranslation();
+  const titleId = useId();
   const dateId = useId();
+  const timeId = useId();
+  const durationId = useId();
   const agendaId = useId();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState<number>(
+    DEFAULT_MEETING_DURATION,
+  );
   const [agenda, setAgenda] = useState("");
   const [agendaFile, setAgendaFile] = useState<DraftDocument | null>(null);
   const [documents, setDocuments] = useState<DraftDocument[]>([]);
@@ -98,6 +123,13 @@ export const NewMeetingForm = ({
   const localFileUrls = useRef(new Set<string>());
 
   const tabIndex = isOpen ? 0 : -1;
+
+  const meetingOptions: StartMeetingOptions = {
+    title: title.trim() || undefined,
+    plannedDurationMinutes: durationMinutes,
+  };
+  const startsAt = toStartDate(date, time);
+  const canSchedule = startsAt !== undefined && startsAt.getTime() > Date.now();
 
   // Blob URLs of picked files live until their document is removed, or the
   // form goes away.
@@ -188,15 +220,21 @@ export const NewMeetingForm = ({
         backLabel={t("Back to meetings")}
       />
       <div className="hub__chat-tools-panel__content">
-        <input
-          type="text"
-          className="hub__chat-meetings__title-input"
-          value={title}
-          placeholder={t("New meeting")}
-          aria-label={t("Meeting name")}
-          tabIndex={tabIndex}
-          onChange={(event) => setTitle(event.target.value)}
-        />
+        <div className="hub__chat-meetings__field">
+          <label className="hub__chat-meetings__label" htmlFor={titleId}>
+            {t("Meeting name")}
+          </label>
+          <input
+            id={titleId}
+            type="text"
+            className="hub__chat-meetings__input"
+            value={title}
+            placeholder={t("E.g. Weekly team meeting")}
+            maxLength={120}
+            tabIndex={tabIndex}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </div>
 
         <div className="hub__chat-meetings__field">
           <label className="hub__chat-meetings__label" htmlFor={dateId}>
@@ -210,6 +248,42 @@ export const NewMeetingForm = ({
             tabIndex={tabIndex}
             onChange={(event) => setDate(event.target.value)}
           />
+        </div>
+
+        <div className="hub__chat-meetings__field-row">
+          <div className="hub__chat-meetings__field">
+            <label className="hub__chat-meetings__label" htmlFor={timeId}>
+              {t("Start time")}
+            </label>
+            <input
+              id={timeId}
+              type="time"
+              className="hub__chat-meetings__input"
+              value={time}
+              tabIndex={tabIndex}
+              onChange={(event) => setTime(event.target.value)}
+            />
+          </div>
+          <div className="hub__chat-meetings__field">
+            <label className="hub__chat-meetings__label" htmlFor={durationId}>
+              {t("Duration")}
+            </label>
+            <select
+              id={durationId}
+              className="hub__chat-meetings__input"
+              value={durationMinutes}
+              tabIndex={tabIndex}
+              onChange={(event) =>
+                setDurationMinutes(Number(event.target.value))
+              }
+            >
+              {MEETING_DURATIONS.map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {formatMeetingDuration(minutes * 60_000)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="hub__chat-meetings__field">
@@ -348,17 +422,31 @@ export const NewMeetingForm = ({
           )}
         </section>
 
-        <button
-          type="button"
-          className="hub__chat-meetings__action hub__chat-meetings__start-now"
-          data-primary="true"
-          disabled={isStarting}
-          aria-busy={isStarting || undefined}
-          tabIndex={tabIndex}
-          onClick={onStartNow}
-        >
-          {t("Start now")}
-        </button>
+        <div className="hub__chat-meetings__start-actions">
+          <button
+            type="button"
+            className="hub__chat-meetings__action"
+            disabled={isStarting || !canSchedule}
+            title={canSchedule ? undefined : t("Pick a date and a future time")}
+            tabIndex={tabIndex}
+            onClick={() =>
+              startsAt && onSchedule({ ...meetingOptions, startsAt })
+            }
+          >
+            {t("Schedule")}
+          </button>
+          <button
+            type="button"
+            className="hub__chat-meetings__action hub__chat-meetings__start-now"
+            data-primary="true"
+            disabled={isStarting}
+            aria-busy={isStarting || undefined}
+            tabIndex={tabIndex}
+            onClick={() => onStartNow(meetingOptions)}
+          >
+            {t("Start now")}
+          </button>
+        </div>
       </div>
     </>
   );

@@ -108,8 +108,7 @@
   }
 
   &__input,
-  &__textarea,
-  &__title-input {
+  &__textarea {
     appearance: none;
     width: 100%;
     box-sizing: border-box;
@@ -142,11 +141,20 @@
     min-height: 72px;
   }
 
-  &__title-input {
-    text-align: center;
-    font-size: 16px;
-    font-weight: 700;
-    line-height: 22px;
+  &__field-row {
+    display: flex;
+    gap: var(--c--globals--spacings--xs, 8px);
+    width: 100%;
+  }
+
+  &__start-actions {
+    display: flex;
+    gap: var(--c--globals--spacings--xs, 8px);
+    width: 100%;
+
+    > * {
+      flex: 1 1 0;
+    }
   }
 
   &__label-row {
@@ -229,6 +237,15 @@
     background: color-mix(
       in srgb,
       var(--c--contextuals--background--semantic--brand--primary, #3e5de7) 12%,
+      transparent
+    );
+  }
+
+  &__row-badge[data-overdue] {
+    color: var(--c--contextuals--content--semantic--warning--primary, #b34000);
+    background: color-mix(
+      in srgb,
+      var(--c--contextuals--content--semantic--warning--primary, #b34000) 12%,
       transparent
     );
   }

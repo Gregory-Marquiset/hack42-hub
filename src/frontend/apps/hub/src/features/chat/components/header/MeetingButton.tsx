@@ -3,6 +3,8 @@ import { Meet } from "@gouvfr-lasuite/ui-components/icons";
 import { useTranslation } from "react-i18next";
 
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
+import { useNow } from "@/features/chat/meetings/useNow";
+import { isMeetingOngoing } from "@/features/drivers/meetingTime";
 import type { ChatRef } from "@/features/drivers/types";
 
 type MeetingButtonProps = {
@@ -26,8 +28,11 @@ export const MeetingButton = ({
 }: MeetingButtonProps) => {
   const { t } = useTranslation();
   const { meetings } = useChatMeetings(chatRef, true);
+  const now = useNow();
 
-  const hasOngoingMeeting = meetings.some((meeting) => meeting.isOngoing);
+  const hasOngoingMeeting = meetings.some((meeting) =>
+    isMeetingOngoing(meeting, now),
+  );
 
   return (
     <Button

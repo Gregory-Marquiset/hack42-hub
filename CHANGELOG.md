@@ -8,6 +8,9 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Name a meeting, plan its duration or schedule it ahead,
+  follow its progress in the meeting window, and let its organizer rename,
+  extend or close it.
 - ✨(bots) Add Ariane, an assistant reachable from any room with `@Ariane`.
   She answers only when addressed, reads the thread and the recent room
   history for context, and changes register with `/juriste`, `/avocat`,

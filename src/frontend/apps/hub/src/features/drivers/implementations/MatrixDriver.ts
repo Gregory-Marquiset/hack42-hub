@@ -93,9 +93,11 @@ import {
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  StartMeetingOptions,
   User,
 } from "../types";
 import { MeetingNotAllowedError } from "../meetingErrors";
+import { isMeetingOngoing } from "../meetingTime";
 import {
   authorForSender,
   buildAuthors,
@@ -128,7 +130,9 @@ import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
   getChatMeetingsFromRoom,
+  getMeetingStateContent,
   MEETING_EVENT_TYPE,
+  type MeetingStateEventContent,
 } from "./matrixMeetingMapping";
 import {
   clearStoredConversationSearch,
@@ -511,6 +515,7 @@ export class MatrixDriver extends Driver {
   async startChatMeeting(
     chatId: string,
     createRoom: () => Promise<MeetRoom>,
+    options: StartMeetingOptions = {},
   ): Promise<ChatMeeting> {
     const { mx, room } = this.requireRoom("startChatMeeting", chatId);
     const joinedRoomIds = await this.getJoinedRoomIds(mx);
@@ -519,38 +524,129 @@ export class MatrixDriver extends Driver {
         `MatrixDriver.startChatMeeting: room "${chatId}" is not joined.`,
       );
     }
-    const ongoing = getChatMeetingsFromRoom(room).find(
-      (meeting) => meeting.isOngoing,
-    );
-    if (ongoing) {
-      return ongoing;
+    const now = Date.now();
+    const scheduledStart = options.startsAt?.getTime();
+    const isScheduled = scheduledStart !== undefined && scheduledStart > now;
+    if (!isScheduled) {
+      const ongoing = getChatMeetingsFromRoom(room).find((meeting) =>
+        isMeetingOngoing(meeting, now),
+      );
+      if (ongoing) {
+        return ongoing;
+      }
     }
-    const selfUserId = mx.getUserId();
-    if (!selfUserId) {
-      throw new Error("MatrixDriver.startChatMeeting: no authenticated user.");
-    }
-    // Checked before creating the Meet room, which would otherwise be left
-    // unused when the homeserver refuses the state event.
-    if (!room.currentState.maySendStateEvent(MEETING_EVENT_TYPE, selfUserId)) {
-      throw new MeetingNotAllowedError(chatId);
-    }
+    const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
     // The Meet slug is unique per room: it doubles as the state key.
     const { slug: meetingId, url } = await createRoom();
-    const startedAt = Date.now();
-    await mx.sendStateEvent(
-      chatId,
-      MEETING_EVENT_TYPE,
-      { meetingUrl: url, startedAt },
-      meetingId,
-    );
+    const title = options.title?.trim() || undefined;
+    const content: MeetingStateEventContent = {
+      meetingUrl: url,
+      startedAt: isScheduled ? scheduledStart : now,
+      organizerId: selfUserId,
+      ...(title ? { title } : {}),
+      ...(options.plannedDurationMinutes
+        ? { plannedDurationMinutes: options.plannedDurationMinutes }
+        : {}),
+    };
+    await mx.sendStateEvent(chatId, MEETING_EVENT_TYPE, content, meetingId);
     return {
       id: meetingId,
       url,
       organizerId: selfUserId,
-      startedAt: new Date(startedAt).toISOString(),
-      isOngoing: true,
+      ...(title ? { title } : {}),
+      startedAt: new Date(content.startedAt).toISOString(),
+      ...(content.plannedDurationMinutes
+        ? { plannedDurationMinutes: content.plannedDurationMinutes }
+        : {}),
       documents: [],
     };
+  }
+
+  async endChatMeeting(chatId: string, meetingId: string): Promise<void> {
+    await this.updateOwnMeeting("endChatMeeting", chatId, meetingId, () => ({
+      endedAt: Date.now(),
+    }));
+  }
+
+  async extendChatMeeting(
+    chatId: string,
+    meetingId: string,
+    minutes: number,
+  ): Promise<void> {
+    await this.updateOwnMeeting(
+      "extendChatMeeting",
+      chatId,
+      meetingId,
+      (content) => {
+        // Without a planned duration, the extension counts from now.
+        const elapsedMinutes = Math.ceil(
+          Math.max(0, Date.now() - content.startedAt) / 60000,
+        );
+        return {
+          plannedDurationMinutes:
+            (content.plannedDurationMinutes ?? elapsedMinutes) + minutes,
+        };
+      },
+    );
+  }
+
+  async renameChatMeeting(
+    chatId: string,
+    meetingId: string,
+    title: string,
+  ): Promise<void> {
+    const trimmed = title.trim();
+    await this.updateOwnMeeting("renameChatMeeting", chatId, meetingId, () => ({
+      title: trimmed || undefined,
+    }));
+  }
+
+  /**
+   * The connected user, when they may record a meeting in the room. Checked
+   * before creating a Meet room, which would otherwise be left unused when the
+   * homeserver refuses the state event.
+   */
+  private requireMeetingOrganizerRights(
+    mx: MatrixClient,
+    room: Room,
+    chatId: string,
+  ): string {
+    const selfUserId = mx.getUserId();
+    if (!selfUserId) {
+      throw new Error("MatrixDriver: no authenticated user.");
+    }
+    if (!room.currentState.maySendStateEvent(MEETING_EVENT_TYPE, selfUserId)) {
+      throw new MeetingNotAllowedError(chatId);
+    }
+    return selfUserId;
+  }
+
+  /** Rewrites one meeting's state, only for its organizer. */
+  private async updateOwnMeeting(
+    method: "endChatMeeting" | "extendChatMeeting" | "renameChatMeeting",
+    chatId: string,
+    meetingId: string,
+    change: (
+      content: MeetingStateEventContent,
+    ) => Partial<MeetingStateEventContent>,
+  ): Promise<void> {
+    const { mx, room } = this.requireRoom(method, chatId);
+    const content = getMeetingStateContent(room, meetingId);
+    if (!content) {
+      throw new Error(
+        `MatrixDriver.${method}: meeting "${meetingId}" not found in "${chatId}".`,
+      );
+    }
+    const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
+    if (content.organizerId !== selfUserId) {
+      throw new MeetingNotAllowedError(chatId);
+    }
+    await mx.sendStateEvent(
+      chatId,
+      MEETING_EVENT_TYPE,
+      { ...content, ...change(content) },
+      meetingId,
+    );
   }
 
   /**

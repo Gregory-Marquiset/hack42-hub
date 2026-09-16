@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { timelineEventToChatEvent } from "../matrixEventMapping";
 import { MatrixDriver } from "../MatrixDriver";
+import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
 import {
   matrixJoinedRoomToLocalChat,
   MATRIX_FAVOURITE_TAG,
@@ -543,5 +544,89 @@ describe("MatrixDriver.toggleChatReaction", () => {
     expect(updated.reactions).toEqual([
       { emoji: "👍", count: 1, reactedByMe: true },
     ]);
+  });
+});
+
+describe("MatrixDriver.startChatMeeting", () => {
+  const MEET_ROOM = {
+    slug: "abc-defg-hij",
+    url: "https://meet.example.com/abc-defg-hij",
+  };
+
+  const makeMeetingRoom = (stateEvents: MatrixEvent[] = []): Room =>
+    ({
+      roomId: ROOM_ID,
+      currentState: { getStateEvents: () => stateEvents },
+    }) as unknown as Room;
+
+  const makeClient = (room: Room) => {
+    const sendStateEvent = vi.fn(async () => ({
+      event_id: "$state:localhost",
+    }));
+    const mx = {
+      getRoom: () => room,
+      getUserId: () => SELF_ID,
+      getJoinedRooms: async () => ({ joined_rooms: [ROOM_ID] }),
+      sendStateEvent,
+    } as unknown as MatrixClient;
+    return { mx, sendStateEvent };
+  };
+
+  it("creates a Meet room and records its link in the room state", async () => {
+    const { mx, sendStateEvent } = makeClient(makeMeetingRoom());
+    const createRoom = vi.fn(async () => MEET_ROOM);
+
+    const meeting = await driverWithClient(mx).startChatMeeting(
+      ROOM_ID,
+      createRoom,
+    );
+
+    expect(createRoom).toHaveBeenCalledOnce();
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      MEETING_EVENT_TYPE,
+      { meetingUrl: MEET_ROOM.url, startedAt: expect.any(Number) },
+      MEET_ROOM.slug,
+    );
+    expect(meeting).toMatchObject({
+      id: MEET_ROOM.slug,
+      url: MEET_ROOM.url,
+      organizerId: SELF_ID,
+      isOngoing: true,
+    });
+  });
+
+  it("rejoins the ongoing meeting without creating a Meet room", async () => {
+    const ongoing = {
+      getContent: () => ({
+        meetingUrl: "https://meet.example.com/xyz-abcd-efg",
+        startedAt: Date.now(),
+      }),
+      getSender: () => OTHER_ID,
+      getStateKey: () => "xyz-abcd-efg",
+    } as unknown as MatrixEvent;
+    const { mx, sendStateEvent } = makeClient(makeMeetingRoom([ongoing]));
+    const createRoom = vi.fn(async () => MEET_ROOM);
+
+    const meeting = await driverWithClient(mx).startChatMeeting(
+      ROOM_ID,
+      createRoom,
+    );
+
+    expect(createRoom).not.toHaveBeenCalled();
+    expect(sendStateEvent).not.toHaveBeenCalled();
+    expect(meeting.url).toBe("https://meet.example.com/xyz-abcd-efg");
+  });
+
+  it("records nothing when Meet cannot create the room", async () => {
+    const { mx, sendStateEvent } = makeClient(makeMeetingRoom());
+    const createRoom = vi.fn(async () => {
+      throw new Error("Meet unavailable");
+    });
+
+    await expect(
+      driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom),
+    ).rejects.toThrow("Meet unavailable");
+    expect(sendStateEvent).not.toHaveBeenCalled();
   });
 });

@@ -3,8 +3,8 @@
  * the camera button writes a `io.lasuite.hub.meeting` state event (one
  * `state_key` per meeting, so the history accumulates instead of being
  * overwritten), and the homeserver's `/sync` replicates it to every member —
- * no polling, no server of our own. See `.context/CHANTIER-2-REUNIONS.md` for
- * the sibling "planned meeting" chantier this convention is modelled on.
+ * no polling. The Meet room itself is created beforehand through the Hub
+ * backend, which calls the Meet external API.
  */
 import type { MatrixEvent, Room } from "matrix-js-sdk/lib/matrix";
 
@@ -12,20 +12,28 @@ import type { ChatMeeting, ChatMeetingDocument } from "../types";
 
 export const MEETING_EVENT_TYPE = "io.lasuite.hub.meeting";
 
-const DEFAULT_MEET_URL = "https://meet.hack42-suite.duckdns.org";
+/** Content of an `io.lasuite.hub.meeting` state event. */
+export type MeetingStateEventContent = {
+  meetingUrl: string;
+  /** Epoch milliseconds. */
+  startedAt: number;
+  documents?: unknown;
+  summary?: unknown;
+};
 
-/** Base URL of the Meet instance, overridable per environment. */
-export const MEET_BASE_URL = (
-  process.env.NEXT_PUBLIC_MEET_URL || DEFAULT_MEET_URL
-).replace(/\/+$/, "");
+// Registers the custom state event so `sendStateEvent` accepts it.
+declare module "matrix-js-sdk/lib/@types/event" {
+  interface StateEvents {
+    "io.lasuite.hub.meeting": MeetingStateEventContent;
+  }
+}
 
 /**
- * Visio (Meet) exposes no "is this call over" signal (documented dead end —
- * see CHANTIER-2-REUNIONS.md §4.2), so there is no event to flip a meeting
- * from ongoing to ended. Instead a meeting is only offered as "join the
- * existing call" for this long after it started; past that window the next
- * camera click starts a fresh one. Generous enough to cover a long meeting
- * without ever forcing two simultaneous rooms for the same call.
+ * Visio (Meet) exposes no "is this call over" signal, so there is no event to
+ * flip a meeting from ongoing to ended. Instead a meeting is only offered as
+ * "join the existing call" for this long after it started; past that window
+ * the next camera click starts a fresh one. Generous enough to cover a long
+ * meeting without ever forcing two simultaneous rooms for the same call.
  */
 export const MEETING_ONGOING_WINDOW_MS = 3 * 60 * 60 * 1000;
 
@@ -88,6 +96,3 @@ export const getChatMeetingsFromRoom = (room: Room): ChatMeeting[] =>
     .map((event) => chatMeetingFromStateEvent(event))
     .filter((meeting): meeting is ChatMeeting => meeting !== null)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-
-export const buildMeetingUrl = (meetingId: string): string =>
-  `${MEET_BASE_URL}/${meetingId}`;

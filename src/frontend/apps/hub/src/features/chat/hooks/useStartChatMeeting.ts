@@ -6,6 +6,7 @@ import { getRegistry } from "@/features/drivers/DriverRegistry";
 import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
+import { createMeetRoom } from "../api/meetRooms";
 import { chatKeys } from "../chatKeys";
 
 export type UseStartChatMeetingResult = {
@@ -16,8 +17,9 @@ export type UseStartChatMeetingResult = {
 
 /**
  * Starts a new meeting for a conversation, or rejoins the one already
- * ongoing. The caller is responsible for opening the resolved `url` — this
- * hook only owns the Matrix write and its cache invalidation.
+ * ongoing. A Meet room is only created, through the Hub backend, when no
+ * meeting is ongoing. The caller is responsible for opening the resolved
+ * `url` — this hook only owns the Matrix write and its cache invalidation.
  */
 export const useStartChatMeeting = (
   ref: ChatRef | null,
@@ -32,7 +34,9 @@ export const useStartChatMeeting = (
           new Error("useStartChatMeeting requires a conversation."),
         );
       }
-      return getRegistry().get(ref.accountId).startChatMeeting(ref.chatId);
+      return getRegistry()
+        .get(ref.accountId)
+        .startChatMeeting(ref.chatId, createMeetRoom);
     },
     onSuccess: () => {
       if (ref) {

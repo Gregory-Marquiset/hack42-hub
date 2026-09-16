@@ -28,6 +28,7 @@ import {
   LocalChat,
   LocalChatSections,
   LocalSpace,
+  MeetRoom,
   User,
 } from "./types";
 
@@ -352,11 +353,16 @@ export abstract class Driver {
   /**
    * Starts a new meeting for the conversation, or returns the one already
    * ongoing so a second click (from this user or another member) joins the
-   * same call instead of creating a duplicate room. Unsupported by default
-   * so drivers opt in (see `supportsMeetings`).
+   * same call instead of creating a duplicate room. `createRoom` is only
+   * called when a new call is needed. Unsupported by default so drivers opt
+   * in (see `supportsMeetings`).
    */
-  async startChatMeeting(_chatId: string): Promise<ChatMeeting> {
+  async startChatMeeting(
+    _chatId: string,
+    _createRoom: () => Promise<MeetRoom>,
+  ): Promise<ChatMeeting> {
     void _chatId;
+    void _createRoom;
     throw new Error(
       `${this.constructor.name}.startChatMeeting: meetings are not supported by this driver.`,
     );

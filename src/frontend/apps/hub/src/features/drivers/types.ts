@@ -9,6 +9,14 @@ export type ChatRef = {
   chatId: string;
 };
 
+/** A Meet room created through the Hub backend. */
+export type MeetRoom = {
+  /** Link every participant opens to join the call. */
+  url: string;
+  /** Meet's room identifier, unique per room. */
+  slug: string;
+};
+
 export type ChatAccountConfig = {
   accountId: AccountId;
   label: string;

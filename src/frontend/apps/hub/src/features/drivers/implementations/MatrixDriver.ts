@@ -92,6 +92,7 @@ import {
   LocalChat,
   LocalChatSections,
   LocalSpace,
+  MeetRoom,
   User,
 } from "../types";
 import {
@@ -125,7 +126,6 @@ import { subscribeToIncomingMatrixEvents } from "./matrixIncomingEvents";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
-  buildMeetingUrl,
   getChatMeetingsFromRoom,
   MEETING_EVENT_TYPE,
 } from "./matrixMeetingMapping";
@@ -507,7 +507,10 @@ export class MatrixDriver extends Driver {
     return getChatMeetingsFromRoom(room);
   }
 
-  async startChatMeeting(chatId: string): Promise<ChatMeeting> {
+  async startChatMeeting(
+    chatId: string,
+    createRoom: () => Promise<MeetRoom>,
+  ): Promise<ChatMeeting> {
     const { mx, room } = this.requireRoom("startChatMeeting", chatId);
     const joinedRoomIds = await this.getJoinedRoomIds(mx);
     if (!joinedRoomIds.has(chatId)) {
@@ -523,21 +526,20 @@ export class MatrixDriver extends Driver {
     }
     const selfUserId = mx.getUserId();
     if (!selfUserId) {
-      throw new Error(
-        "MatrixDriver.startChatMeeting: no authenticated user.",
-      );
+      throw new Error("MatrixDriver.startChatMeeting: no authenticated user.");
     }
-    const meetingId = crypto.randomUUID();
+    // The Meet slug is unique per room: it doubles as the state key.
+    const { slug: meetingId, url } = await createRoom();
     const startedAt = Date.now();
     await mx.sendStateEvent(
       chatId,
       MEETING_EVENT_TYPE,
-      { meetingUrl: buildMeetingUrl(meetingId), startedAt },
+      { meetingUrl: url, startedAt },
       meetingId,
     );
     return {
       id: meetingId,
-      url: buildMeetingUrl(meetingId),
+      url,
       organizerId: selfUserId,
       startedAt: new Date(startedAt).toISOString(),
       isOngoing: true,

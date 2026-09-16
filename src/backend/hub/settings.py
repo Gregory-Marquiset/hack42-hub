@@ -230,6 +230,7 @@ class Base(Configuration):
     # Django applications from the highest priority to the lowest
     INSTALLED_APPS = [
         # hub
+        "bots",
         "core",
         "demo",
         "e2e",
@@ -331,6 +332,85 @@ class Base(Configuration):
     EMAIL_USE_TLS = values.BooleanValue(False)
     EMAIL_USE_SSL = values.BooleanValue(False)
     EMAIL_FROM = values.Value("from@example.com")
+
+    # Ariane, the Hub assistant
+    #
+    # She is an Application Service ghost: she exists in Synapse and in neither
+    # MAS nor Keycloak, has no password, and nobody can log into her.
+    # `bin/provision-bot` writes these values to env.d/development/bots.local,
+    # which is git-ignored - this repository is public.
+    MATRIX_HOMESERVER_URL = values.Value(
+        "http://synapse:8008", environ_name="MATRIX_HOMESERVER_URL", environ_prefix=None
+    )
+    MATRIX_REQUEST_TIMEOUT = values.PositiveIntegerValue(
+        30, environ_name="MATRIX_REQUEST_TIMEOUT", environ_prefix=None
+    )
+    MATRIX_BOT_USER_ID = values.Value(
+        "@hub-as_ariane:localhost",
+        environ_name="MATRIX_BOT_USER_ID",
+        environ_prefix=None,
+    )
+    # 🔒️ Hub -> Synapse. Lets Ariane act as herself through `?user_id=`.
+    MATRIX_AS_TOKEN = values.Value(
+        None, environ_name="MATRIX_AS_TOKEN", environ_prefix=None
+    )
+    # 🔒️ Synapse -> Hub. Proves an incoming transaction really comes from
+    # Synapse. Opposite direction from the one above, not a second copy.
+    MATRIX_HS_TOKEN = values.Value(
+        None, environ_name="MATRIX_HS_TOKEN", environ_prefix=None
+    )
+    # 🔒️ Synapse admin rights. The only way into a room nobody invited Ariane
+    # to - the client API answers M_FORBIDDEN there.
+    MATRIX_ADMIN_TOKEN = values.Value(
+        None, environ_name="MATRIX_ADMIN_TOKEN", environ_prefix=None
+    )
+
+    # What counts as a ping. The Hub emits no `m.mentions`, so the message body
+    # is the only signal available.
+    BOTS_PING_NAMES = values.ListValue(
+        ["ariane"], environ_name="BOTS_PING_NAMES", environ_prefix=None
+    )
+    # How far back in the room to read before the thread. Bounded by the Albert
+    # quota (128k tokens/minute for the whole team), not by the model window.
+    BOTS_ROOM_HISTORY = values.PositiveIntegerValue(
+        30, environ_name="BOTS_ROOM_HISTORY", environ_prefix=None
+    )
+    BOTS_MAX_THREAD_EVENTS = values.PositiveIntegerValue(
+        200, environ_name="BOTS_MAX_THREAD_EVENTS", environ_prefix=None
+    )
+
+    # Albert, the French State inference API. Model ids are read from
+    # `GET /v1/models` at runtime; these are ordered preferences, not promises.
+    ALBERT_BASE_URL = values.Value(
+        "https://albert.api.etalab.gouv.fr/v1",
+        environ_name="ALBERT_BASE_URL",
+        environ_prefix=None,
+    )
+    # 🔒️ Never expose: Albert sends no CORS header on purpose, and
+    # /api/v1.0/config/ is AllowAny.
+    ALBERT_API_KEY = values.Value(
+        None, environ_name="ALBERT_API_KEY", environ_prefix=None
+    )
+    ALBERT_MODELS_LARGE = values.ListValue(
+        ["gpt-oss-120b", "mistral-small-3-2-24b-instruct-2506"],
+        environ_name="ALBERT_MODELS_LARGE",
+        environ_prefix=None,
+    )
+    # `ministral-3-8b-instruct-2512` was the first choice here and had to be
+    # demoted: on French prompts it produced answers salted with Cyrillic and
+    # Korean fragments and invented words. Measured, not assumed - see the
+    # thread in the demo room. Small and fast is worthless if it is unreadable.
+    ALBERT_MODELS_SMALL = values.ListValue(
+        ["mistral-small-3-2-24b-instruct-2506", "gemma-4-31b-it", "gpt-oss-120b"],
+        environ_name="ALBERT_MODELS_SMALL",
+        environ_prefix=None,
+    )
+    ALBERT_TIMEOUT = values.PositiveIntegerValue(
+        60, environ_name="ALBERT_TIMEOUT", environ_prefix=None
+    )
+    ALBERT_MAX_TOKENS = values.PositiveIntegerValue(
+        800, environ_name="ALBERT_MAX_TOKENS", environ_prefix=None
+    )
 
     AUTH_USER_MODEL = "core.User"
     INVITATION_VALIDITY_DURATION = 604800  # 7 days, in seconds

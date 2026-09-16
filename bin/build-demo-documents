@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Dev-only: build the documents the demo room is seeded with.
+
+Two files, two code paths on Albert's side:
+
+  `clause-mobilite.pdf`   real text in the PDF, so `/v1/parse-beta` reads it
+                          without OCR;
+  `note-manuscrite.png`   an image with no text layer, which needs `/v1/ocr`.
+
+Written by hand rather than with a library: the repository has no PDF
+dependency, and adding one so a fixture can exist is a poor trade. The PDF below
+is a minimal, valid 1.4 file - enough for a parser, not a typesetting engine.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import sys
+
+OUT = pathlib.Path("data/demo-documents")
+
+CLAUSE_LINES = [
+    "CONTRAT DE TRAVAIL - EXTRAIT",
+    "",
+    "Article 7 - Clause de mobilite",
+    "",
+    "Le salarie exerce ses fonctions au sein de l'etablissement de Nantes.",
+    "Compte tenu de la nature de ses fonctions, il accepte que son lieu de",
+    "travail puisse etre modifie dans un rayon de 100 kilometres autour de",
+    "Nantes, ainsi que sur tout etablissement situe en region Pays de la",
+    "Loire ou en region Bretagne.",
+    "",
+    "Toute modification du lieu de travail sera notifiee par ecrit au",
+    "salarie en respectant un delai de prevenance de trente (30) jours",
+    "calendaires.",
+    "",
+    "Les frais de demenagement engages a cette occasion sont pris en charge",
+    "par l'employeur sur presentation de justificatifs.",
+]
+
+NOTE_LINES = [
+    "Note reunion RH - 12 septembre",
+    "",
+    "- Nantes ferme le 31 janvier",
+    "- 6 personnes concernees",
+    "- 3 ont une clause, 3 non",
+    "- Rennes : 2h de trajet",
+    "- Verifier le delai de prevenance",
+    "- Budget demenagement a valider",
+]
+
+
+def build_pdf(path: pathlib.Path, lines: list[str]) -> None:
+    """Write a minimal one-page PDF whose text a parser can extract."""
+    escaped = [line.replace("\\\\", r"\\\\").replace("(", r"\\(").replace(")", r"\\)") for line in lines]
+    body = "\\n".join(f"({line}) Tj 0 -18 Td" for line in escaped)
+    stream = f"BT /F1 11 Tf 56 760 Td 14 TL\\n{body}\\nET".encode("latin-1", "replace")
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, obj in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + obj + b"\nendobj\n"
+
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode()
+    out += b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref_at}\n%%EOF\n"
+    ).encode()
+
+    path.write_bytes(bytes(out))
+
+
+def build_png(path: pathlib.Path, lines: list[str]) -> None:
+    """Draw the note as an image with no text layer, so it needs OCR."""
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        print("build-demo-documents: Pillow missing, skipping the image", file=sys.stderr)
+        return
+
+    image = Image.new("RGB", (900, 540), "#fdfcf7")
+    draw = ImageDraw.Draw(image)
+    # A faint rule, so it reads as a scanned page rather than a screenshot.
+    for y in range(90, 520, 36):
+        draw.line([(50, y), (850, y)], fill="#e6e2d8")
+    y = 60
+    for line in lines:
+        draw.text((60, y), line, fill="#1d1d22")
+        y += 36
+    image.save(path)
+
+
+def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    pdf = OUT / "clause-mobilite.pdf"
+    png = OUT / "note-manuscrite.png"
+    build_pdf(pdf, CLAUSE_LINES)
+    build_png(png, NOTE_LINES)
+    for path in (pdf, png):
+        if path.is_file():
+            print(f"  {path}  ({path.stat().st_size} octets)")
+
+
+if __name__ == "__main__":
+    main()

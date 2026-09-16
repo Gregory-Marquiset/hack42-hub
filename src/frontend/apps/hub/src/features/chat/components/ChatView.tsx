@@ -28,6 +28,7 @@ import { useEditChatMessage } from "../hooks/useEditChatMessage";
 import { useChatThreads } from "../hooks/useChatThreads";
 import { useSendChatMessage } from "../hooks/useSendChatMessage";
 
+import { useChatMembers } from "../hooks/useChatMembers";
 import { ChatComposer } from "./ChatComposer";
 import { ChatConversation } from "./ChatConversation";
 import { ChatInvitationView } from "./ChatInvitationView";
@@ -98,6 +99,12 @@ export const ChatView = ({
   } = useSendChatMessage(chatRef);
   const { editMessage, isEditing } = useEditChatMessage(chatRef);
   const { users: typingUsers, onTypingActivity } = useChatTyping(chatRef);
+  // Who `@` can suggest. Already cached by react-query and shared with the
+  // members modal, so opening the list costs no extra request.
+  const { present: mentionCandidates } = useChatMembers(
+    chatRef ?? { accountId: "", chatId: "" },
+    Boolean(chatRef),
+  );
   const [editingMessage, setEditingMessage] =
     useState<EditingChatMessage | null>(null);
   const [unreadMessagesBanner, setUnreadMessagesBanner] =
@@ -280,6 +287,7 @@ export const ChatView = ({
                     </ComposerFloatingArea>
                     <ChatComposer
                       conversationId={chatKey ?? undefined}
+                      mentionCandidates={mentionCandidates}
                       placeholder={
                         chatRef && !isCompositionSupported
                           ? t(

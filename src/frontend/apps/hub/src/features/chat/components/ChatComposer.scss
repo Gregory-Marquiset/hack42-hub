@@ -270,3 +270,58 @@
     }
   }
 }
+
+// `@` mention suggestions. Sits directly above the composer rather than in a
+// portal: the composer already owns its stacking context, and a portal would
+// have to track the textarea's position on every resize.
+.hub__chat-composer__mentions {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--c--contextuals--background--semantic--neutral--white, #fff);
+  border: 1px solid
+    var(--c--contextuals--border--semantic--neutral--tertiary, #e2e2e4);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
+}
+
+.hub__chat-composer__mention {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+
+  // Hover and keyboard highlight share one class, so pointer and arrow keys
+  // never disagree about which row is selected.
+  &--active {
+    background: var(
+      --c--contextuals--background--semantic--neutral--secondary,
+      #f2f2f4
+    );
+  }
+}
+
+.hub__chat-composer__mention-name {
+  font-weight: 500;
+  color: var(--c--contextuals--content--semantic--neutral--primary, #16161a);
+}
+
+.hub__chat-composer__mention-id {
+  font-size: 12px;
+  color: var(--c--contextuals--content--semantic--neutral--tertiary, #6b6b74);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

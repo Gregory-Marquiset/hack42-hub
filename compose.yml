@@ -76,7 +76,12 @@ services:
       - env.d/development/postgresql.${ENV_OVERRIDE:-local}
       # Written by bin/provision-bot, git-ignored. Carries the Matrix and
       # Albert secrets, which must never reach the frontend.
-      - env.d/development/bots.local
+      #
+      # Optional on purpose: the file does not exist until someone runs
+      # `make provision-bot`, and a missing one must not stop the stack. CI has
+      # no assistant to configure and would otherwise refuse to start at all.
+      - path: env.d/development/bots.local
+        required: false
     ports:
       - "9801:8000"
     networks:

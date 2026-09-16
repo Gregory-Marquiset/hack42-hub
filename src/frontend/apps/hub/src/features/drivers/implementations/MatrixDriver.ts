@@ -284,6 +284,10 @@ export class MatrixDriver extends Driver {
     if (search) await search.remove?.();
   }
 
+  override backfillMessageSearchRoom(roomId: string): void {
+    this.messageSearch?.backfillRoom(roomId);
+  }
+
   override readonly supportsComposition: boolean = true;
   override readonly supportsThreadComposition: boolean = true;
   override readonly supportsConversationHistoryRemoval: boolean = true;

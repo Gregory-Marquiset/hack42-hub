@@ -98,6 +98,10 @@ export class LazyMatrixDriver extends BaseDriver {
     if (this.target) await this.target.clearMessageSearch();
   }
 
+  override backfillMessageSearchRoom(roomId: string): void {
+    this.target?.backfillMessageSearchRoom(roomId);
+  }
+
   // Static capability the UI reads synchronously (see `useChatCompositionSupport`),
   // before the SDK lazy-loads. It must mirror the real `MatrixDriver`; the actual
   // `sendChatMessage` still routes through `withTarget`, loading the driver on demand.

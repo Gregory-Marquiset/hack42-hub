@@ -257,6 +257,11 @@ export abstract class Driver {
   /** Plaintext-at-rest: erased at explicit Hub logout, same as clearConversationSearch. */
   async clearMessageSearch(): Promise<void> {}
 
+  /** Fetches older history for one room, bounded, so it becomes searchable. */
+  backfillMessageSearchRoom(_roomId: string): void {
+    void _roomId;
+  }
+
   readonly supportsComposition: boolean = false;
   readonly supportsThreadComposition: boolean = false;
   /** Whether the driver can leave and forget a conversation for this account. */

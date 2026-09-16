@@ -272,18 +272,6 @@ export const ChatComposer = ({
         </div>
         <div className="hub__chat-composer__actions">
           <button
-            type="button"
-            className="hub__chat-composer__attach"
-            disabled={disabled}
-          >
-            <span className="material-icons" aria-hidden="true">
-              attach_file
-            </span>
-            <span className="hub__chat-composer__attach-label">
-              {t("Attach a file")}
-            </span>
-          </button>
-          <button
             type="submit"
             className="hub__chat-composer__send"
             aria-label={editDraft ? t("Save changes") : t("Send message")}

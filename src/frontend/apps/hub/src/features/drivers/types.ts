@@ -113,6 +113,13 @@ export type ChatDocument = {
   addedBy: string;
 };
 
+/** Effective document permissions for the current user in one conversation. */
+export type ChatDocumentCapabilities = {
+  canRead: boolean;
+  canAdd: boolean;
+  canManageAdders: boolean;
+};
+
 export type LocalChatSections = {
   favourites: LocalChat[];
   all: LocalChat[];
@@ -181,6 +188,12 @@ export type ChatMember = {
   id: string;
   name: string;
   secondaryText: string;
+  /**
+   * `delegated` is the independently revokable document-contributor grant.
+   * `inherited` means a broader room power level already permits document
+   * writes and must not be changed through this narrow capability control.
+   */
+  documentAddPermission?: "none" | "delegated" | "inherited";
 };
 
 /** Read-only membership snapshot used by the conversation members modal. */

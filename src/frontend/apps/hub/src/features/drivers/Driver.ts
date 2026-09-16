@@ -12,6 +12,7 @@ import {
 import {
   AccountId,
   ChatDocument,
+  ChatDocumentCapabilities,
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMessage,
@@ -85,6 +86,12 @@ export type AddChatDocumentParams = {
   chatId: string;
   address: string;
   title: string;
+};
+
+export type SetChatMemberDocumentAddPermissionParams = {
+  chatId: string;
+  userId: string;
+  canAdd: boolean;
 };
 
 export type EditChatMessageParams = {
@@ -213,6 +220,7 @@ export type ChatEvent =
     }
   | { type: "members:changed"; chatId: string }
   | { type: "documents:changed"; chatId: string }
+  | { type: "document-permissions:changed"; chatId: string }
   | { type: "tags:changed"; chatId: string }
   | { type: "chats:changed" };
 
@@ -296,11 +304,29 @@ export abstract class Driver {
     );
   }
 
+  /** Effective document permissions for the current user. */
+  async getChatDocumentCapabilities(
+    _chatId: string,
+  ): Promise<ChatDocumentCapabilities> {
+    void _chatId;
+    return { canRead: false, canAdd: false, canManageAdders: false };
+  }
+
   /** Adds a document linked to one conversation. */
   async addChatDocument(_params: AddChatDocumentParams): Promise<ChatDocument> {
     void _params;
     throw new Error(
       `${this.constructor.name}.addChatDocument: documents are not supported by this driver.`,
+    );
+  }
+
+  /** Grants or revokes only the delegated document-add capability. */
+  async setChatMemberDocumentAddPermission(
+    _params: SetChatMemberDocumentAddPermissionParams,
+  ): Promise<void> {
+    void _params;
+    throw new Error(
+      `${this.constructor.name}.setChatMemberDocumentAddPermission: document permissions are not supported by this driver.`,
     );
   }
 

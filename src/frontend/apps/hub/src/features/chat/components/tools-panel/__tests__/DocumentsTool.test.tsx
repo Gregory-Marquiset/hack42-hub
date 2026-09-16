@@ -12,6 +12,8 @@ const {
   documentsQuery,
   useChatDocuments,
   useAddChatDocument,
+  useChatDocumentCapabilities,
+  capabilities,
   pending,
 } = vi.hoisted(() => {
   const refetch = vi.fn();
@@ -26,6 +28,7 @@ const {
     refetch,
   };
   const pending = { isAdding: false };
+  const capabilities = { canRead: true, canAdd: true, canManageAdders: false };
   return {
     refetch,
     pending,
@@ -36,11 +39,16 @@ const {
       addDocument,
       isAdding: pending.isAdding,
     })),
+    useChatDocumentCapabilities: vi.fn(() => capabilities),
+    capabilities,
   };
 });
 
 vi.mock("../../../hooks/useChatDocuments", () => ({ useChatDocuments }));
 vi.mock("../../../hooks/useAddChatDocument", () => ({ useAddChatDocument }));
+vi.mock("../../../hooks/useChatDocumentCapabilities", () => ({
+  useChatDocumentCapabilities,
+}));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, values?: { userId: string }) =>
@@ -54,6 +62,7 @@ const renderTool = () => render(<DocumentsTool chatRef={REF} isOpen />);
 describe("DocumentsTool", () => {
   beforeEach(() => {
     pending.isAdding = false;
+    capabilities.canAdd = true;
     documentsQuery.documents = [];
     documentsQuery.isInitialLoading = false;
     documentsQuery.isError = false;
@@ -61,6 +70,42 @@ describe("DocumentsTool", () => {
     addDocument.mockReset();
     useChatDocuments.mockClear();
     useAddChatDocument.mockClear();
+  });
+
+  it("keeps documents readable but hides add controls without permission", () => {
+    capabilities.canAdd = false;
+    documentsQuery.documents = [
+      {
+        address: "https://example.test/visible",
+        title: "Visible",
+        addedBy: "@a:test",
+      },
+    ];
+    renderTool();
+
+    expect(screen.getByRole("link", { name: "Visible" })).toBeTruthy();
+    expect(screen.queryByText("Add document")).toBeNull();
+    expect(useChatDocumentCapabilities).toHaveBeenCalledWith(REF, true);
+  });
+
+  it("closes an open add form when live permission is revoked", () => {
+    const { rerender } = renderTool();
+    fireEvent.click(screen.getByText("Add document"));
+    expect(screen.getByLabelText("Title")).toBeTruthy();
+
+    capabilities.canAdd = false;
+    rerender(<DocumentsTool chatRef={REF} isOpen />);
+    expect(screen.queryByLabelText("Title")).toBeNull();
+  });
+
+  it("shows add controls when live permission is granted", () => {
+    capabilities.canAdd = false;
+    const { rerender } = renderTool();
+    expect(screen.queryByText("Add document")).toBeNull();
+
+    capabilities.canAdd = true;
+    rerender(<DocumentsTool chatRef={REF} isOpen />);
+    expect(screen.getByText("Add document")).toBeTruthy();
   });
 
   it("shows loading, error with retry, and empty states", () => {

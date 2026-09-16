@@ -169,6 +169,10 @@ describe("useChatEvents", () => {
       ["chat-documents", "account-a", "c1"],
     ],
     [
+      { type: "document-permissions:changed", chatId: "c1" },
+      ["chat-document-capabilities", "account-a", "c1"],
+    ],
+    [
       { type: "members:changed", chatId: "c1" },
       ["chat-members", "account-a", "c1"],
     ],

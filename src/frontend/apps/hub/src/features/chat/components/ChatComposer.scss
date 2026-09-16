@@ -192,46 +192,6 @@
     gap: var(--c--globals--spacings--xs, 8px);
   }
 
-  &__attach {
-    appearance: none;
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--c--globals--spacings--xxxs, 4px);
-    height: 24px;
-    padding: 0 var(--c--globals--spacings--xxxs, 4px);
-    border-radius: 4px;
-    color: var(--c--contextuals--content--semantic--neutral--tertiary, #626a80);
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 16px;
-
-    .material-icons {
-      font-size: 16px;
-    }
-
-    &:hover {
-      background: var(
-        --c--contextuals--background--semantic--overlay--primary,
-        rgba(24, 27, 36, 0.05)
-      );
-    }
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
-    }
-
-    &:focus-visible {
-      outline: 2px solid
-        var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
-      outline-offset: 2px;
-    }
-  }
-
   &__send {
     appearance: none;
     border: 0;

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { ChatRef } from "@/features/drivers/types";
 
 import { useAddChatDocument } from "../../hooks/useAddChatDocument";
+import { useChatDocumentCapabilities } from "../../hooks/useChatDocumentCapabilities";
 import { useChatDocuments } from "../../hooks/useChatDocuments";
 
 type DocumentsToolProps = {
@@ -28,17 +29,18 @@ export const DocumentsTool = ({ chatRef, isOpen }: DocumentsToolProps) => {
     isOpen,
   );
   const { addDocument, isAdding } = useAddChatDocument(chatRef);
+  const { canAdd } = useChatDocumentCapabilities(chatRef, isOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState("");
   const [address, setAddress] = useState("");
   const [addError, setAddError] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || !canAdd) {
       setIsEditing(false);
       setAddError(false);
     }
-  }, [isOpen]);
+  }, [canAdd, isOpen]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -113,7 +115,7 @@ export const DocumentsTool = ({ chatRef, isOpen }: DocumentsToolProps) => {
   return (
     <div className="hub__chat-tools-panel__content">
       {renderDocuments()}
-      {isOpen && !isInitialLoading && !isError && (
+      {isOpen && canAdd && !isInitialLoading && !isError && (
         <div className="hub__chat-tools-panel__document-add">
           {!isEditing ? (
             <Button

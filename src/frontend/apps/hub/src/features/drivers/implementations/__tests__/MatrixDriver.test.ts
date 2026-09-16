@@ -311,12 +311,22 @@ describe("MatrixDriver chat documents", () => {
   const clientWithDocuments = (content?: unknown, sendStateEvent = vi.fn()) => {
     const room = {
       roomId: ROOM_ID,
+      getMyMembership: () => KnownMembership.Join,
       currentState: {
-        getStateEvents: vi.fn(() =>
-          content === undefined
+        maySendStateEvent: vi.fn(() => true),
+        getStateEvents: vi.fn((type: string) => {
+          if (type === "m.room.power_levels") {
+            return {
+              getContent: () => ({
+                users: { [SELF_ID]: 100 },
+                events: { "fr.gouv.hub.documents": 1 },
+              }),
+            } as MatrixEvent;
+          }
+          return content === undefined
             ? undefined
-            : ({ getContent: () => content } as MatrixEvent),
-        ),
+            : ({ getContent: () => content } as MatrixEvent);
+        }),
       },
     } as unknown as Room;
     const mx = {
@@ -401,6 +411,186 @@ describe("MatrixDriver chat documents", () => {
       }),
     ).rejects.toThrow("forbidden");
   });
+
+  it("rejects locally when the current member cannot add documents", async () => {
+    const { driver, room, sendStateEvent } = clientWithDocuments({
+      documents: [],
+    });
+    vi.mocked(room.currentState.maySendStateEvent).mockReturnValue(false);
+
+    await expect(
+      driver.addChatDocument({
+        chatId: ROOM_ID,
+        address: "https://docs.example/doc2",
+        title: "Second document",
+      }),
+    ).rejects.toThrow(/cannot add documents/);
+    expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+
+  it("derives read, add and manage capabilities from live room auth", async () => {
+    const { driver, room } = clientWithDocuments({ documents: [] });
+    vi.mocked(room.currentState.maySendStateEvent).mockImplementation(
+      (type: string) => type === "fr.gouv.hub.documents",
+    );
+
+    await expect(driver.getChatDocumentCapabilities(ROOM_ID)).resolves.toEqual({
+      canRead: true,
+      canAdd: true,
+      canManageAdders: false,
+    });
+  });
+
+  it.each([
+    { level: 0, canAdd: false, canManageAdders: false },
+    { level: 1, canAdd: true, canManageAdders: false },
+    { level: 50, canAdd: true, canManageAdders: false },
+    { level: 100, canAdd: true, canManageAdders: true },
+  ])(
+    "maps Matrix level $level to document capabilities",
+    async ({ level, canAdd, canManageAdders }) => {
+      const { driver, room } = clientWithDocuments({ documents: [] });
+      vi.mocked(room.currentState.maySendStateEvent).mockImplementation(
+        (type: string) => level >= (type === "fr.gouv.hub.documents" ? 1 : 100),
+      );
+
+      await expect(
+        driver.getChatDocumentCapabilities(ROOM_ID),
+      ).resolves.toEqual({ canRead: true, canAdd, canManageAdders });
+    },
+  );
+});
+
+describe("MatrixDriver document contributor management", () => {
+  const makeClient = (
+    targetPowerLevel: number,
+    targetExplicitLevel?: number,
+    canManage = true,
+  ) => {
+    const sendStateEvent = vi.fn(async () => ({}));
+    const powerLevelContent = {
+      users: {
+        [SELF_ID]: 100,
+        ...(targetExplicitLevel === undefined
+          ? {}
+          : { [OTHER_ID]: targetExplicitLevel }),
+      },
+      events: { "m.room.name": 50, "m.room.power_levels": 100 },
+      state_default: 50,
+    };
+    const target = {
+      userId: OTHER_ID,
+      membership: KnownMembership.Join,
+      powerLevel: targetPowerLevel,
+    };
+    const room = {
+      roomId: ROOM_ID,
+      getMyMembership: () => KnownMembership.Join,
+      loadMembersIfNeeded: vi.fn(async () => undefined),
+      getMember: (id: string) => (id === OTHER_ID ? target : null),
+      currentState: {
+        maySendStateEvent: (type: string) =>
+          canManage && type === "m.room.power_levels",
+        getStateEvents: () => ({ getContent: () => powerLevelContent }),
+      },
+    } as unknown as Room;
+    const mx = {
+      getRoom: (id: string) => (id === ROOM_ID ? room : null),
+      getUserId: () => SELF_ID,
+      sendStateEvent,
+    } as unknown as MatrixClient;
+    return { driver: driverWithClient(mx), sendStateEvent };
+  };
+
+  it("grants only level 1 while preserving the complete room policy", async () => {
+    const { driver, sendStateEvent } = makeClient(0);
+    await driver.setChatMemberDocumentAddPermission({
+      chatId: ROOM_ID,
+      userId: OTHER_ID,
+      canAdd: true,
+    });
+
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      "m.room.power_levels",
+      expect.objectContaining({
+        users: { [SELF_ID]: 100, [OTHER_ID]: 1 },
+        events: {
+          "m.room.name": 50,
+          "m.room.power_levels": 100,
+          "fr.gouv.hub.documents": 1,
+        },
+        state_default: 50,
+      }),
+      "",
+    );
+  });
+
+  it("revokes only an explicit level-1 grant", async () => {
+    const { driver, sendStateEvent } = makeClient(1, 1);
+    await driver.setChatMemberDocumentAddPermission({
+      chatId: ROOM_ID,
+      userId: OTHER_ID,
+      canAdd: false,
+    });
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      "m.room.power_levels",
+      expect.objectContaining({ users: { [SELF_ID]: 100 } }),
+      "",
+    );
+  });
+
+  it("never downgrades a moderator through the document control", async () => {
+    const { driver, sendStateEvent } = makeClient(50, 50);
+    await expect(
+      driver.setChatMemberDocumentAddPermission({
+        chatId: ROOM_ID,
+        userId: OTHER_ID,
+        canAdd: false,
+      }),
+    ).rejects.toThrow(/only an explicit document-contributor grant/);
+    expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a grant before writing when the caller is not an admin", async () => {
+    const { driver, sendStateEvent } = makeClient(0, undefined, false);
+    await expect(
+      driver.setChatMemberDocumentAddPermission({
+        chatId: ROOM_ID,
+        userId: OTHER_ID,
+        canAdd: true,
+      }),
+    ).rejects.toThrow(/cannot manage document contributors/);
+    expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("MatrixDriver room document policy", () => {
+  it("creates new rooms with the document event at contributor level", async () => {
+    const createRoom = vi.fn(async () => ({ room_id: ROOM_ID }));
+    const mx = {
+      getUserId: () => SELF_ID,
+      getJoinedRooms: vi.fn(async () => ({ joined_rooms: [] })),
+      createRoom,
+    } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+    vi.spyOn(driver, "getChatForUsers").mockResolvedValue(null);
+    vi.spyOn(
+      driver as unknown as { waitForRoom: () => Promise<Room | null> },
+      "waitForRoom",
+    ).mockResolvedValue(null);
+
+    await driver.createChatForUsers([OTHER_ID, "@bob:localhost"]);
+
+    expect(createRoom).toHaveBeenCalledWith(
+      expect.objectContaining({
+        power_level_content_override: {
+          events: { "fr.gouv.hub.documents": 1 },
+        },
+      }),
+    );
+  });
 });
 
 describe("MatrixDriver.sendChatMessage", () => {
@@ -483,27 +673,36 @@ describe("MatrixDriver room metadata", () => {
     const loadMembersIfNeeded = vi.fn(async () => true);
     const room = {
       roomId: ROOM_ID,
+      currentState: {
+        getStateEvents: () => ({
+          getContent: () => ({ users: { [OTHER_ID]: 1 } }),
+        }),
+      },
       loadMembersIfNeeded,
       getMembers: () => [
         {
           userId: OTHER_ID,
           name: "Alice",
           membership: KnownMembership.Join,
+          powerLevel: 1,
         },
         {
           userId: SELF_ID,
           name: "Me",
           membership: KnownMembership.Join,
+          powerLevel: 100,
         },
         {
           userId: "@bob:localhost",
           name: "Bob",
           membership: KnownMembership.Invite,
+          powerLevel: 0,
         },
         {
           userId: "@left:localhost",
           name: "Left",
           membership: KnownMembership.Leave,
+          powerLevel: 0,
         },
       ],
     } as unknown as Room;
@@ -523,6 +722,18 @@ describe("MatrixDriver room metadata", () => {
     expect(members.pendingInvites.map((member) => member.id)).toEqual([
       "@bob:localhost",
     ]);
+    expect(members.present).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: OTHER_ID,
+          documentAddPermission: "delegated",
+        }),
+        expect.objectContaining({
+          id: SELF_ID,
+          documentAddPermission: "inherited",
+        }),
+      ]),
+    );
   });
 });
 

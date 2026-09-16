@@ -25,6 +25,7 @@ import {
   TimelineWindow,
 } from "matrix-js-sdk/lib/matrix";
 import { HttpApiEvent } from "matrix-js-sdk/lib/http-api";
+import type { RoomPowerLevelsEventContent } from "matrix-js-sdk/lib/@types/state_events";
 import {
   type ReactionEventContent,
   type RoomMessageEventContent,
@@ -72,6 +73,7 @@ import {
   SendChatMessageParams,
   SendChatTypingParams,
   SendChatThreadReplyParams,
+  SetChatMemberDocumentAddPermissionParams,
   StartChatThreadParams,
   ToggleChatReactionParams,
   ToggleChatThreadReactionParams,
@@ -79,6 +81,7 @@ import {
 import {
   AccountId,
   ChatDocument,
+  ChatDocumentCapabilities,
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMessage,
@@ -122,6 +125,10 @@ import {
   timelineEventToChatEvent,
 } from "./matrixEventMapping";
 import { matrixDirectoryUserToChatUser } from "./matrixIdentity";
+import {
+  DOCUMENT_CONTRIBUTOR_LEVEL,
+  MATRIX_DOCUMENTS_EVENT_TYPE,
+} from "./matrixDocumentPermissions";
 import { subscribeToIncomingMatrixEvents } from "./matrixIncomingEvents";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
@@ -151,7 +158,6 @@ const DEFAULT_CHAT_PAGE_SIZE = 50;
 const MAX_TIMELINE_PAGINATION_STEPS = 200;
 const TIMELINE_WINDOW_LIMIT = Number.MAX_SAFE_INTEGER;
 const MATRIX_TYPING_TIMEOUT_MS = 30_000;
-const MATRIX_DOCUMENTS_EVENT_TYPE = "fr.gouv.hub.documents";
 
 /** Matrix state content is untrusted, including state restored from sync cache. */
 const documentsFromStateContent = (content: unknown): ChatDocument[] => {
@@ -220,10 +226,18 @@ const toChatUser = (user: MatrixUserInterface): ChatLocalUser => ({
   refreshToken: user.refreshToken,
 });
 
-const toChatMember = (member: RoomMember): ChatMember => ({
+const toChatMember = (
+  member: RoomMember,
+  explicitDocumentContributors: ReadonlySet<string>,
+): ChatMember => ({
   id: member.userId,
   name: member.name || member.userId,
   secondaryText: member.userId,
+  documentAddPermission: explicitDocumentContributors.has(member.userId)
+    ? "delegated"
+    : member.powerLevel >= DOCUMENT_CONTRIBUTOR_LEVEL
+      ? "inherited"
+      : "none",
 });
 
 const sortChatMembers = (
@@ -457,11 +471,41 @@ export class MatrixDriver extends Driver {
 
   async getChatDocuments(chatId: string): Promise<ChatDocument[]> {
     const { room } = this.requireRoom("getChatDocuments", chatId);
+    if (room.getMyMembership() !== KnownMembership.Join) {
+      throw new Error(
+        `MatrixDriver.getChatDocuments: room "${chatId}" is not joined.`,
+      );
+    }
     const event = room.currentState.getStateEvents(
       MATRIX_DOCUMENTS_EVENT_TYPE,
       "",
     );
     return event ? documentsFromStateContent(event.getContent()) : [];
+  }
+
+  async getChatDocumentCapabilities(
+    chatId: string,
+  ): Promise<ChatDocumentCapabilities> {
+    const { mx, room } = this.requireRoom(
+      "getChatDocumentCapabilities",
+      chatId,
+    );
+    const userId = mx.getUserId();
+    const canRead = room.getMyMembership() === KnownMembership.Join;
+    return {
+      canRead,
+      canAdd:
+        canRead &&
+        !!userId &&
+        room.currentState.maySendStateEvent(
+          MATRIX_DOCUMENTS_EVENT_TYPE,
+          userId,
+        ),
+      canManageAdders:
+        canRead &&
+        !!userId &&
+        room.currentState.maySendStateEvent(EventType.RoomPowerLevels, userId),
+    };
   }
 
   async addChatDocument({
@@ -476,6 +520,12 @@ export class MatrixDriver extends Driver {
         "MatrixDriver.addChatDocument: user is not authenticated.",
       );
     }
+    const capabilities = await this.getChatDocumentCapabilities(chatId);
+    if (!capabilities.canAdd) {
+      throw new Error(
+        "MatrixDriver.addChatDocument: user cannot add documents to this room.",
+      );
+    }
     const document = { address, title, addedBy };
     const documents = await this.getChatDocuments(chatId);
     await mx.sendStateEvent(
@@ -485,6 +535,94 @@ export class MatrixDriver extends Driver {
       "",
     );
     return document;
+  }
+
+  async setChatMemberDocumentAddPermission({
+    chatId,
+    userId,
+    canAdd,
+  }: SetChatMemberDocumentAddPermissionParams): Promise<void> {
+    const { mx, room } = this.requireRoom(
+      "setChatMemberDocumentAddPermission",
+      chatId,
+    );
+    const selfUserId = mx.getUserId();
+    if (
+      !selfUserId ||
+      room.getMyMembership() !== KnownMembership.Join ||
+      !room.currentState.maySendStateEvent(
+        EventType.RoomPowerLevels,
+        selfUserId,
+      )
+    ) {
+      throw new Error(
+        "MatrixDriver.setChatMemberDocumentAddPermission: user cannot manage document contributors.",
+      );
+    }
+
+    await room.loadMembersIfNeeded();
+    const target = room.getMember(userId);
+    if (!target || target.membership !== KnownMembership.Join) {
+      throw new Error(
+        "MatrixDriver.setChatMemberDocumentAddPermission: target must be a joined room member.",
+      );
+    }
+
+    const powerLevelsEvent = room.currentState.getStateEvents(
+      EventType.RoomPowerLevels,
+      "",
+    );
+    if (!powerLevelsEvent) {
+      throw new Error(
+        "MatrixDriver.setChatMemberDocumentAddPermission: room power levels are unavailable.",
+      );
+    }
+    const current = powerLevelsEvent.getContent<RoomPowerLevelsEventContent>();
+    const currentUsers =
+      typeof current.users === "object" && current.users !== null
+        ? current.users
+        : {};
+    const explicitLevel = currentUsers[userId];
+    if (explicitLevel !== undefined && typeof explicitLevel !== "number") {
+      throw new Error(
+        "MatrixDriver.setChatMemberDocumentAddPermission: invalid target power level.",
+      );
+    }
+    const effectiveTargetLevel =
+      explicitLevel ??
+      (typeof current.users_default === "number" ? current.users_default : 0);
+
+    if (!canAdd && explicitLevel !== DOCUMENT_CONTRIBUTOR_LEVEL) {
+      throw new Error(
+        "MatrixDriver.setChatMemberDocumentAddPermission: only an explicit document-contributor grant can be revoked.",
+      );
+    }
+
+    const users = { ...currentUsers };
+    if (canAdd) {
+      if (effectiveTargetLevel < DOCUMENT_CONTRIBUTOR_LEVEL) {
+        users[userId] = DOCUMENT_CONTRIBUTOR_LEVEL;
+      }
+    } else {
+      delete users[userId];
+    }
+    const currentEvents =
+      typeof current.events === "object" && current.events !== null
+        ? current.events
+        : {};
+    await mx.sendStateEvent(
+      chatId,
+      EventType.RoomPowerLevels,
+      {
+        ...current,
+        users,
+        events: {
+          ...currentEvents,
+          [MATRIX_DOCUMENTS_EVENT_TYPE]: DOCUMENT_CONTRIBUTOR_LEVEL,
+        },
+      },
+      "",
+    );
   }
 
   async getChatMembers(chatId: string): Promise<ChatMembers> {
@@ -498,18 +636,30 @@ export class MatrixDriver extends Driver {
     await room.loadMembersIfNeeded();
     const currentUserId = mx.getUserId() ?? undefined;
     const members = room.getMembers();
+    const powerLevels = room.currentState
+      .getStateEvents(EventType.RoomPowerLevels, "")
+      ?.getContent<Record<string, unknown>>();
+    const powerLevelUsers =
+      typeof powerLevels?.users === "object" && powerLevels.users !== null
+        ? (powerLevels.users as Record<string, unknown>)
+        : {};
+    const explicitDocumentContributors = new Set(
+      Object.entries(powerLevelUsers)
+        .filter(([, level]) => level === DOCUMENT_CONTRIBUTOR_LEVEL)
+        .map(([userId]) => userId),
+    );
 
     return {
       present: sortChatMembers(
         members
           .filter((member) => member.membership === KnownMembership.Join)
-          .map(toChatMember),
+          .map((member) => toChatMember(member, explicitDocumentContributors)),
         currentUserId,
       ),
       pendingInvites: sortChatMembers(
         members
           .filter((member) => member.membership === KnownMembership.Invite)
-          .map(toChatMember),
+          .map((member) => toChatMember(member, explicitDocumentContributors)),
         currentUserId,
       ),
     };
@@ -682,6 +832,11 @@ export class MatrixDriver extends Driver {
       preset: Preset.PrivateChat,
       is_direct: isDirect,
       invite: participantIds,
+      power_level_content_override: {
+        events: {
+          [MATRIX_DOCUMENTS_EVENT_TYPE]: DOCUMENT_CONTRIBUTOR_LEVEL,
+        },
+      },
     });
 
     const room = await this.waitForRoom(mx, roomId);
@@ -2415,16 +2570,18 @@ export class MatrixDriver extends Driver {
       this.emit({ type: "chat:changed", chatId: member.roomId });
       this.emit({ type: "threads:changed", chatId: member.roomId });
     };
-    const onDocuments = (event: MatrixEvent) => {
-      if (
-        event.getType() !== MATRIX_DOCUMENTS_EVENT_TYPE ||
-        event.getStateKey() !== ""
-      ) {
+    const onStateEvent = (event: MatrixEvent) => {
+      if (event.getStateKey() !== "") {
         return;
       }
       const chatId = event.getRoomId();
-      if (chatId && mx.getRoom(chatId)) {
+      if (!chatId || !mx.getRoom(chatId)) {
+        return;
+      }
+      if (event.getType() === MATRIX_DOCUMENTS_EVENT_TYPE) {
         this.emit({ type: "documents:changed", chatId });
+      } else if (event.getType() === EventType.RoomPowerLevels) {
+        this.emit({ type: "document-permissions:changed", chatId });
       }
     };
     const onMembers = (
@@ -2549,7 +2706,7 @@ export class MatrixDriver extends Driver {
     mx.on(RoomMemberEvent.Typing, onTyping);
     mx.on(RoomMemberEvent.PowerLevel, onPowerLevel);
     mx.on(RoomStateEvent.Members, onMembers);
-    mx.on(RoomStateEvent.Events, onDocuments);
+    mx.on(RoomStateEvent.Events, onStateEvent);
     mx.on(RoomEvent.Name, onName);
     mx.on(RoomEvent.Tags, onTags);
     mx.on(RoomEvent.AccountData, onAccountData);
@@ -2572,7 +2729,7 @@ export class MatrixDriver extends Driver {
       mx.off(RoomMemberEvent.Typing, onTyping);
       mx.off(RoomMemberEvent.PowerLevel, onPowerLevel);
       mx.off(RoomStateEvent.Members, onMembers);
-      mx.off(RoomStateEvent.Events, onDocuments);
+      mx.off(RoomStateEvent.Events, onStateEvent);
       mx.off(RoomEvent.Name, onName);
       mx.off(RoomEvent.Tags, onTags);
       mx.off(RoomEvent.AccountData, onAccountData);

@@ -17,6 +17,7 @@ import {
   type GetChatThreadParams,
   type MarkChatThreadReadParams,
   type RemoveChatFromHistoryResult,
+  type SetChatMemberDocumentAddPermissionParams,
   type SendChatMessageParams,
   type SendChatTypingParams,
   type SendChatThreadReplyParams,
@@ -28,6 +29,7 @@ import type {
   AccountId,
   ChatMainTimelineUnread,
   ChatDocument,
+  ChatDocumentCapabilities,
   ChatMessage,
   ChatMessagesPage,
   ChatMembers,
@@ -202,8 +204,24 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) => driver.getChatDocuments(chatId));
   }
 
+  async getChatDocumentCapabilities(
+    chatId: string,
+  ): Promise<ChatDocumentCapabilities> {
+    return this.withTarget((driver) =>
+      driver.getChatDocumentCapabilities(chatId),
+    );
+  }
+
   async addChatDocument(params: AddChatDocumentParams): Promise<ChatDocument> {
     return this.withTarget((driver) => driver.addChatDocument(params));
+  }
+
+  async setChatMemberDocumentAddPermission(
+    params: SetChatMemberDocumentAddPermissionParams,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.setChatMemberDocumentAddPermission(params),
+    );
   }
 
   async getChatMessages(

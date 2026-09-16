@@ -24,6 +24,8 @@ export const chatKeys = {
     ["chat-threads", ref.accountId, ref.chatId] as const,
   documents: (ref: ChatRef) =>
     ["chat-documents", ref.accountId, ref.chatId] as const,
+  documentCapabilities: (ref: ChatRef) =>
+    ["chat-document-capabilities", ref.accountId, ref.chatId] as const,
   thread: (ref: ChatRef, threadId: string) =>
     ["chat-thread", ref.accountId, ref.chatId, threadId] as const,
   threadDetails: (ref: ChatRef) =>

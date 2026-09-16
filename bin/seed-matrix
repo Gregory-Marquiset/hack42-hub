@@ -5,8 +5,11 @@ Run with `make seed-matrix` after `make run-matrix`.
 
 The seed is intentionally small for this PR:
   - provision Matrix users linked to existing Keycloak users;
-  - create one direct conversation and one multi-user conversation;
-  - add a few plaintext messages and one thread in the group.
+  - create one direct conversation per member of the seeded group, plus the
+    multi-user group conversation itself;
+  - add a few plaintext messages and one thread in the group;
+  - create two espaces (Matrix Spaces), one listing the group room as a
+    child, for the Espaces switcher.
 
 Idempotency is alias-based: each room has a fixed alias, so a later run finds
 the room and does not post the transcript again.
@@ -46,6 +49,14 @@ DIRECT_MESSAGES = [
     ("user-e2e-webkit", "Hello from the WebKit account."),
 ]
 
+# A second direct conversation, with the group room's other member, so the
+# "Direct messages" section reflects people who are actually in that salon.
+DIRECT_2_ALIAS_LOCALPART = "hub-seed-chromium"
+DIRECT_2_MESSAGES = [
+    ("hub", "Salut, on se retrouve aussi ici en direct."),
+    ("user-e2e-chromium", "Yep, plus simple pour les points rapides."),
+]
+
 GROUP_ALIAS_LOCALPART = "hub-seed-group"
 GROUP_NAME = "Local Matrix seed group"
 GROUP_MESSAGES = [
@@ -59,6 +70,16 @@ THREAD_REPLIES = [
     ("user-e2e-webkit", "First seeded reply in the Matrix thread."),
     ("user-e2e-chromium", "Second seeded reply, unread after the baseline receipt."),
 ]
+
+# Two espaces for the Espaces switcher: the first lists the seeded group room
+# as a child, the second is empty (just another entry to switch between).
+# Espace names are uppercase, max 7 characters (UI convention: text-transform
+# uppercase + a name column sized for ~7 chars in LeftPanel.scss).
+SPACE_ALIAS_LOCALPART = "hub-seed-space"
+SPACE_NAME = "DINUM"
+
+SPACE_2_ALIAS_LOCALPART = "hub-seed-space-2"
+SPACE_2_NAME = "PROJETS"
 
 
 def fail(message: str) -> None:
@@ -363,6 +384,79 @@ def ensure_room(
     return room_id
 
 
+def create_space(
+    token: str, alias_localpart: str, name: str, invited_localparts: list[str]
+) -> str:
+    body: dict[str, Any] = {
+        "room_alias_name": alias_localpart,
+        "name": name,
+        "preset": "private_chat",
+        "visibility": "private",
+        "creation_content": {"type": "m.space"},
+        "invite": [f"@{localpart}:{SERVER_NAME}" for localpart in invited_localparts],
+    }
+    return http_json(
+        "POST",
+        f"{HOMESERVER}/_matrix/client/v3/createRoom",
+        token=token,
+        body=body,
+    )["room_id"]
+
+
+def add_space_child(token: str, space_id: str, child_room_id: str) -> None:
+    """Sets the `m.space.child` relation that lists `child_room_id` under
+    `space_id`. Idempotent: PUTting the same state content again is a no-op."""
+    http_json(
+        "PUT",
+        f"{HOMESERVER}/_matrix/client/v3/rooms/{space_id}/state/m.space.child/{child_room_id}",
+        token=token,
+        body={"via": [SERVER_NAME]},
+    )
+
+
+def set_room_name(token: str, room_id: str, name: str) -> None:
+    """Sets `m.room.name`. Idempotent, and re-run safe: renames a room/space
+    created by an earlier version of this script under the same alias."""
+    http_json(
+        "PUT",
+        f"{HOMESERVER}/_matrix/client/v3/rooms/{room_id}/state/m.room.name",
+        token=token,
+        body={"name": name},
+    )
+
+
+def ensure_space(
+    tokens: dict[str, str],
+    owner: str,
+    alias_localpart: str,
+    name: str,
+    invited: list[str],
+    child_room_ids: list[str],
+) -> str:
+    alias = f"#{alias_localpart}:{SERVER_NAME}"
+    space_id = existing_room_id(tokens[owner], alias)
+    if space_id:
+        print(f"seed-matrix: space {alias} already exists ({space_id}).")
+        for localpart in invited:
+            join_room(tokens[localpart], space_id)
+    else:
+        print(f"seed-matrix: creating espace {alias}...")
+        space_id = create_space(tokens[owner], alias_localpart, name, invited)
+        for localpart in invited:
+            join_room(tokens[localpart], space_id)
+
+    # Always (re)apply the name: a re-run with a renamed constant should
+    # rename the already-created espace too, not just new ones.
+    set_room_name(tokens[owner], space_id, name)
+
+    for child_room_id in child_room_ids:
+        add_space_child(tokens[owner], space_id, child_room_id)
+    print(
+        f"seed-matrix: espace {space_id} lists {len(child_room_ids)} child room(s)."
+    )
+    return space_id
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -395,6 +489,15 @@ def main(*, users_only: bool = False) -> None:
         DIRECT_MESSAGES,
         is_direct=True,
     )
+    ensure_room(
+        tokens,
+        "hub",
+        DIRECT_2_ALIAS_LOCALPART,
+        "",
+        ["user-e2e-chromium"],
+        DIRECT_2_MESSAGES,
+        is_direct=True,
+    )
     group_room_id = ensure_room(
         tokens,
         "hub",
@@ -411,6 +514,24 @@ def main(*, users_only: bool = False) -> None:
     if not root_id:
         fail("could not find the seeded group message used as thread root.")
     ensure_thread(tokens, group_room_id, root_id)
+
+    invited_spaces = ["user-e2e-chromium", "user-e2e-webkit"]
+    ensure_space(
+        tokens,
+        "hub",
+        SPACE_ALIAS_LOCALPART,
+        SPACE_NAME,
+        invited_spaces,
+        [group_room_id],
+    )
+    ensure_space(
+        tokens,
+        "hub",
+        SPACE_2_ALIAS_LOCALPART,
+        SPACE_2_NAME,
+        invited_spaces,
+        [],
+    )
     print("seed-matrix: Done.")
 
 

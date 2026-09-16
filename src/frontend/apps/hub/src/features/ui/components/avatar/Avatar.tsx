@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 
 import { AvatarColor, hashAvatarColor } from "./palette";
 
@@ -21,6 +21,11 @@ export type AvatarProps = {
   /** Force a specific palette colour. Defaults to a hash of `label`. */
   color?: AvatarColor;
   className?: string;
+  /**
+   * Photo to show instead of initials/children. Falls back to them
+   * automatically if the image fails to load (removed account, dead link).
+   */
+  src?: string;
 };
 
 export const Avatar = ({
@@ -31,11 +36,17 @@ export const Avatar = ({
   decorative = false,
   color,
   className,
+  src,
 }: AvatarProps) => {
   const resolvedColor = color ?? hashAvatarColor(label);
   const a11yProps = decorative
     ? { "aria-hidden": true }
     : { role: "img", "aria-label": label };
+  const [imageFailed, setImageFailed] = useState(false);
+  // A freshly uploaded photo reuses the same avatar instance with a new
+  // `src` — retry it instead of keeping a stale failure from the old one.
+  useEffect(() => setImageFailed(false), [src]);
+  const showImage = Boolean(src) && !imageFailed;
 
   return (
     <span
@@ -48,7 +59,16 @@ export const Avatar = ({
       )}
       {...a11yProps}
     >
-      {children ?? deriveInitials(label)}
+      {showImage ? (
+        <img
+          className="hub__avatar__image"
+          src={src}
+          alt=""
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        (children ?? deriveInitials(label))
+      )}
     </span>
   );
 };

@@ -27,6 +27,8 @@ import { useRemoveChatFromHistory } from "@/features/chat/hooks/useRemoveChatFro
 import { useSetChatAvatar } from "@/features/chat/hooks/useSetChatAvatar";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import type { Chat, ChatRef } from "@/features/drivers/types";
+import { RoleBadge } from "@/features/roles/RoleBadge";
+import { useUserRoles } from "@/features/roles/useRoles";
 import { ChatPresenceAvatar } from "@/features/ui/components/presence/ChatPresenceAvatar";
 
 import { ChatMembersModal } from "./ChatMembersModal";
@@ -129,6 +131,13 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
   const router = useRouter();
   const { t } = useTranslation();
   const menu = useDropdownMenu();
+  const counterpartId =
+    chat.kind === "direct" ? chat.participantIds[0] : undefined;
+  const roles = useUserRoles(counterpartId ? [counterpartId] : []);
+  const role = counterpartId ? roles[counterpartId] : "";
+  const accessibleName = role
+    ? `${chat.name}, ${t("Role: {{role}}", { role })}`
+    : chat.name;
   const [isMembersOpen, setIsMembersOpen] = useState(false);
   const [isLeaveOpen, setIsLeaveOpen] = useState(false);
   const { setFavourite, isPending } = useChatFavourite(chat.ref);
@@ -248,13 +257,16 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
       size="small"
       className="hub__chat-header__breadcrumb"
       disabled={isInvitation}
-      aria-label={chat.name}
+      // An explicit label replaces the button's content for assistive
+      // technology, so the role is spoken with the name rather than lost.
+      aria-label={accessibleName}
       aria-haspopup={isInvitation ? undefined : "menu"}
       aria-expanded={isInvitation ? undefined : menu.isOpen}
       onClick={() => menu.setIsOpen((open) => !open)}
     >
       <ChatPresenceAvatar chat={chat} />
       <span className="hub__chat-header__breadcrumb__name">{chat.name}</span>
+      <RoleBadge role={role ?? ""} />
       {!isInvitation && <ArrowDropDown aria-hidden="true" />}
     </Button>
   );

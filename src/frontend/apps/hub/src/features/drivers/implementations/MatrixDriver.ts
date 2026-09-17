@@ -896,6 +896,16 @@ export class MatrixDriver extends Driver {
 
   override readonly supportsAvatarUpload: boolean = true;
 
+  override readonly supportsProfileRoles = true;
+
+  override async getProfileIdentityToken(): Promise<string> {
+    const token = this.requireClient(
+      "getProfileIdentityToken",
+    ).getAccessToken();
+    if (!token) throw new Error("The chat account is not connected.");
+    return token;
+  }
+
   async setUserAvatar(file: File): Promise<string> {
     const mx = this.requireClient("setUserAvatar");
     const { content_uri: mxcUrl } = await mx.uploadContent(file);

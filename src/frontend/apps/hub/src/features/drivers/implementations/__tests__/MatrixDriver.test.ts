@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { timelineEventToChatEvent } from "../matrixEventMapping";
+import { LazyMatrixDriver } from "../LazyMatrixDriver";
 import { MatrixDriver } from "../MatrixDriver";
 import { readChatSelfPresencePreference } from "../../presencePreference";
 import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
@@ -268,6 +269,46 @@ describe("MatrixDriver self-presence preference", () => {
     expect(readChatSelfPresencePreference("matrix-local")).toBe("offline");
     expect(consoleInfo).toHaveBeenCalledOnce();
     consoleInfo.mockRestore();
+  });
+});
+
+describe("profile identity", () => {
+  it("uses the live client's token, including after a refresh", async () => {
+    const getAccessToken = vi.fn().mockReturnValue("initial-token");
+    const driver = driverWithClient({
+      getAccessToken,
+    } as unknown as MatrixClient);
+
+    expect(driver.supportsProfileRoles).toBe(true);
+    await expect(driver.getProfileIdentityToken()).resolves.toBe(
+      "initial-token",
+    );
+    getAccessToken.mockReturnValue("refreshed-token");
+    await expect(driver.getProfileIdentityToken()).resolves.toBe(
+      "refreshed-token",
+    );
+  });
+
+  it("rejects when no authenticated chat client is available", async () => {
+    await expect(
+      driverWithClient(null).getProfileIdentityToken(),
+    ).rejects.toThrow();
+    const driver = driverWithClient({
+      getAccessToken: () => null,
+    } as unknown as MatrixClient);
+    await expect(driver.getProfileIdentityToken()).rejects.toThrow();
+  });
+
+  it("exposes profile roles through the lazy driver used by the account registry", async () => {
+    const driver = new LazyMatrixDriver();
+    (driver as unknown as { target: MatrixDriver }).target = driverWithClient({
+      getAccessToken: () => "current-token",
+    } as unknown as MatrixClient);
+
+    expect(driver.supportsProfileRoles).toBe(true);
+    await expect(driver.getProfileIdentityToken()).resolves.toBe(
+      "current-token",
+    );
   });
 });
 

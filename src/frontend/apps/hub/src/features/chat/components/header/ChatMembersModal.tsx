@@ -12,6 +12,7 @@ import { useChatUserPresence } from "@/features/chat/hooks/useChatUserPresence";
 import { useMyAvatarSrc } from "@/features/chat/hooks/useMyAvatarSrc";
 import type { Chat, ChatMember } from "@/features/drivers/types";
 import { useAvatarPortalOverlay } from "@/features/ui/components/avatar/useAvatarPortalOverlay";
+import { useUserRoles } from "@/features/roles/useRoles";
 import { UserPresenceIndicator } from "@/features/ui/components/presence/UserPresenceIndicator";
 
 type ChatMembersModalProps = {
@@ -20,10 +21,6 @@ type ChatMembersModalProps = {
   onClose: () => void;
 };
 
-const READ_ONLY_ROLE = "member";
-const READ_ONLY_ROLES: DropdownMenuOption[] = [
-  { label: "", value: READ_ONLY_ROLE },
-];
 const ignoreSearch = () => {};
 const ignoreInvite = () => {};
 
@@ -108,6 +105,13 @@ export const ChatMembersModal = ({
   const { present, pendingInvites, isInitialLoading, isError, refetch } =
     useChatMembers(chat.ref, isOpen);
   const avatarSrc = useMyAvatarSrc(chat.accountId);
+  const roles = useUserRoles(
+    isOpen ? [...present, ...pendingInvites].map((member) => member.id) : [],
+  );
+  const roleOptions: DropdownMenuOption[] = [
+    { label: "", value: "member" },
+    ...Object.entries(roles).map(([id, role]) => ({ label: role, value: id })),
+  ];
   // `present` always sorts the current user first (see `sortChatMembers` in
   // MatrixDriver), so the member list's own row is reliably the first
   // `.c__share-member-item` in the (portaled) members section, in document
@@ -122,7 +126,7 @@ export const ChatMembersModal = ({
     () =>
       present.map((member) => ({
         id: member.id,
-        role: READ_ONLY_ROLE,
+        role: member.id,
         user: toShareUser(member),
         is_explicit: false,
         can_delete: false,
@@ -133,7 +137,7 @@ export const ChatMembersModal = ({
     () =>
       pendingInvites.map((member) => ({
         id: member.id,
-        role: READ_ONLY_ROLE,
+        role: member.id,
         email: member.secondaryText,
         user: toShareUser(member),
       })),
@@ -159,7 +163,7 @@ export const ChatMembersModal = ({
       searchUsersResult={[]}
       onSearchUsers={ignoreSearch}
       onInviteUser={ignoreInvite}
-      invitationRoles={READ_ONLY_ROLES}
+      invitationRoles={roleOptions}
       accesses={accesses}
       invitations={invitations}
     >

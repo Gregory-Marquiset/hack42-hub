@@ -81,6 +81,7 @@
       "A document cannot be larger than 50 MB.": "Un document ne peut pas dépasser 50 Mo.",
       "A file is too large to be attached (100 KB at most).": "Un fichier est trop volumineux pour être joint (100 Ko au maximum).",
       "A meeting document cannot be larger than 20 MB.": "Un document de réunion ne peut pas dépasser 20 Mo.",
+      "A meeting is in progress": "Une réunion est en cours",
       "Accept": "Accepter",
       "Add": "Ajouter",
       "Add a Docs link": "Ajouter un lien Docs",

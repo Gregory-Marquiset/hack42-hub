@@ -2,6 +2,7 @@ import { Button } from "@gouvfr-lasuite/ui-components";
 import {
   ArrowDropDown,
   Lock,
+  Meet,
   Plus,
   QuestionMark,
 } from "@gouvfr-lasuite/ui-components/icons";
@@ -23,9 +24,12 @@ import { compareChats } from "@/features/chat/chatSorting";
 import { CreateSalonModal } from "@/features/chat/components/CreateSalonModal";
 import { CreateSpaceModal } from "@/features/chat/components/CreateSpaceModal";
 import { formatChatListTimestamp } from "@/features/chat/formatTimestamp";
+import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import { useChatUnread } from "@/features/chat/hooks/useChatUnread";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useSpaces } from "@/features/chat/hooks/useSpaces";
+import { useNow } from "@/features/chat/meetings/useNow";
+import { getConversationMeetingState } from "@/features/drivers/meetingTime";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import type { Chat, ChatUnread, Space } from "@/features/drivers/types";
 import { AccountSelector } from "@/features/layouts/components/AccountSelector/AccountSelector";
@@ -400,6 +404,12 @@ const ChatRow = ({
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const isActive = sameChatRef(readChatRef(router.query), chat.ref);
+  // Read from the room's own state, so this costs no request. Only a call
+  // actually in progress earns a mark here: "starting soon" belongs to the
+  // conversation's own header, where there is room to say it.
+  const { meetings } = useChatMeetings(chat.ref, true);
+  const hasOngoingMeeting =
+    getConversationMeetingState(meetings, useNow()) === "ongoing";
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const timestamp = chat.lastActivityAt
     ? formatChatListTimestamp(chat.lastActivityAt, locale)
@@ -412,6 +422,7 @@ const ChatRow = ({
       ? `${chat.name} ${accountLabel}`
       : chat.name,
     ...(chat.encrypted ? [t("End-to-end encrypted")] : []),
+    ...(hasOngoingMeeting ? [t("A meeting is in progress")] : []),
   ].join(", ");
 
   return (
@@ -425,7 +436,21 @@ const ChatRow = ({
         isActive && "hub__left-panel__chat--active",
       )}
     >
-      <ChatPresenceAvatar chat={chat} />
+      <span className="hub__left-panel__chat__avatar">
+        <ChatPresenceAvatar chat={chat} />
+        {hasOngoingMeeting && (
+          // A corner mark on the avatar: the one thing you want to spot
+          // without opening the room. The link's label already says it; this
+          // is for the eye. Availability owns the opposite corner.
+          <span
+            className="hub__left-panel__chat__meeting"
+            data-testid="ongoing-meeting"
+            aria-hidden="true"
+          >
+            <Meet />
+          </span>
+        )}
+      </span>
       <span className="hub__left-panel__chat__body">
         <span className="hub__left-panel__chat__row">
           <span

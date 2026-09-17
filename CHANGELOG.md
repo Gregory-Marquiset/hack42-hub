@@ -21,6 +21,8 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(frontend) Mark a room whose call is in progress with a camera in the
+  corner of its avatar, so the conversation list says it without being opened.
 - 🌐(frontend) Translate the rest of the interface into French: the composer,
   message actions, search states and every error message a person is likely to
   meet. No key falls back to its English source any more.

@@ -30,11 +30,13 @@ import type {
   ChatMessage,
   ChatMessagesPage,
   ChatMembers,
+  ChatSelfPresencePreference,
   ChatThread,
   ChatThreadDetail,
   ChatThreadMutationResult,
   ChatUnread,
   ChatUser,
+  ChatUserPresence,
   LocalChat,
   LocalChatSections,
   LocalSpace,
@@ -47,6 +49,7 @@ import {
   clearStoredConversationSearch,
   matrixStorageOwner,
 } from "./matrixStorage";
+import { readChatSelfPresencePreference } from "../presencePreference";
 
 /**
  * Keeps `matrix-js-sdk` out of the main Next.js bundle. The real Matrix driver
@@ -191,6 +194,35 @@ export class LazyMatrixDriver extends BaseDriver {
 
   async getChatUsers(filters?: ChatUserFilters): Promise<ChatUser[]> {
     return this.withTarget((driver) => driver.getChatUsers(filters));
+  }
+
+  getUserPresence(userId: string): ChatUserPresence | null {
+    return this.target?.getUserPresence(userId) ?? null;
+  }
+
+  override readonly supportsPresence = true;
+
+  getCurrentUserId(): string | null {
+    return this.target?.getCurrentUserId() ?? null;
+  }
+
+  getSelfPresencePreference(): ChatSelfPresencePreference {
+    return (
+      this.target?.getSelfPresencePreference() ??
+      readChatSelfPresencePreference(this.accountId)
+    );
+  }
+
+  async setSelfPresencePreference(
+    preference: ChatSelfPresencePreference,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.setSelfPresencePreference(preference),
+    );
+  }
+
+  async setUserPresence(state: ChatUserPresence["state"]): Promise<void> {
+    return this.withTarget((driver) => driver.setUserPresence(state));
   }
 
   async getChatMembers(chatId: string): Promise<ChatMembers> {

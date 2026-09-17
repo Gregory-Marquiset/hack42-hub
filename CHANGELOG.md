@@ -8,6 +8,7 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Add real-time Matrix presence and availability controls
 - ✨(frontend) Create a new Espace or Salon from the left panel, alongside
   direct messages: a round "+" next to the espace switcher, and one next
   to the Direct messages/Rooms section titles, Discord-style. Naming a

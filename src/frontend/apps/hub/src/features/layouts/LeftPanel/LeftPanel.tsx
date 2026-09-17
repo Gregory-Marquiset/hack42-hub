@@ -94,10 +94,11 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   const { t } = useTranslation();
   const router = useRouter();
   const { spaces } = useSpaces();
-  const selectedSpaceId = readSpaceId(router.query);
-  // Default to the first joined espace when none is selected in the URL, so
-  // the switcher always has an active bubble once the account has any.
-  const activeSpaceId = selectedSpaceId ?? spaces[0]?.id ?? null;
+  // No espace until one is picked. Falling back to the first one meant that
+  // creating an espace silently narrowed the panel to its children, and every
+  // room the person already had vanished with no way back - a space is a
+  // grouping, not a container rooms have to belong to.
+  const activeSpaceId = readSpaceId(router.query);
 
   // Direct messages are never space-scoped, so they need their own,
   // unfiltered query; rooms are scoped to whichever espace is active.
@@ -583,6 +584,31 @@ const EspacesRow = ({
           bubbles themselves scroll horizontally underneath them. */}
       <div className="hub__left-panel__spaces__bar">
         <div className="hub__left-panel__spaces__row">
+          {/* The way back. A room needs no espace, so the unfiltered list is
+              a destination of its own rather than the absence of one. */}
+          {spaces.length > 0 && (
+            <Link
+              href={spaceHref(null, currentChatRef)}
+              shallow
+              aria-current={activeSpaceId === null ? "true" : undefined}
+              aria-label={t("All conversations")}
+              title={t("All conversations")}
+              className={clsx(
+                "hub__left-panel__spaces__item",
+                activeSpaceId === null &&
+                  "hub__left-panel__spaces__item--active",
+              )}
+            >
+              <span className="hub__left-panel__spaces__name">
+                {t("Everything")}
+              </span>
+              <Avatar label={t("All conversations")} decorative>
+                <span className="material-icons" aria-hidden="true">
+                  forum
+                </span>
+              </Avatar>
+            </Link>
+          )}
           {spaces.map((space) => {
             const isActive = space.id === activeSpaceId;
             return (

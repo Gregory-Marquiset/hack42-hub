@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- 🐛(frontend) Stop a newly created espace from hiding every room outside it:
+  none is active until one is picked, the switcher carries an "everything"
+  entry, and a salon no longer has to belong to an espace.
 - 💄(profiles) Give every role label its own colour instead of one grey for
   everything but PO, PM and DEV: six hues sixty degrees apart, with a custom
   title taking a stable hue from its own text.

@@ -31,6 +31,8 @@ type CreateSalonModalProps = {
 };
 
 const MIN_MEMBERS = 2;
+/** Stands for "no espace" in the picker, which cannot carry a null value. */
+const NO_SPACE = "";
 
 /** Name-and-pick-members dialog for the New menu's "Salon" choice. */
 export const CreateSalonModal = ({
@@ -56,9 +58,9 @@ export const CreateSalonModal = ({
   );
   const { users, isInitialLoading } = useChatUserSearch(query, excludedUserIds);
   const trimmedName = name.trim();
-  const requiresSpace = spaces.length > 0;
+  // An espace is a grouping, not a container: a salon may have none, and
+  // requiring one would strand people who have not organised anything yet.
   const canCreate =
-    (!requiresSpace || spaceId !== null) &&
     trimmedName.length > 0 &&
     selectedUsers.length >= MIN_MEMBERS &&
     !isCreating;
@@ -126,10 +128,10 @@ export const CreateSalonModal = ({
       });
   };
 
-  const spaceOptions = spaces.map((space) => ({
-    value: space.id,
-    label: space.name,
-  }));
+  const spaceOptions = [
+    { value: NO_SPACE, label: t("No space") },
+    ...spaces.map((space) => ({ value: space.id, label: space.name })),
+  ];
 
   return (
     <Modal
@@ -165,14 +167,15 @@ export const CreateSalonModal = ({
       }
     >
       <div className="hub__create-salon">
-        {requiresSpace && (
+        {spaces.length > 0 && (
           <Select
             label={t("Space")}
             options={spaceOptions}
-            value={spaceId ?? undefined}
+            value={spaceId ?? NO_SPACE}
             onChange={(event) =>
               setSpaceId(
-                typeof event.target.value === "string"
+                typeof event.target.value === "string" &&
+                  event.target.value !== NO_SPACE
                   ? event.target.value
                   : null,
               )

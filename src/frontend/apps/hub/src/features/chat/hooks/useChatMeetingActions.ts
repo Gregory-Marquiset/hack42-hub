@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { updateMeeting } from "@/features/chat/api/meetings";
 import { saveMeetingTranscript } from "@/features/chat/api/meetingTranscripts";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
-import type { ChatRef } from "@/features/drivers/types";
+import type { ChatMeetingDocument, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { chatKeys } from "../chatKeys";
@@ -12,7 +12,8 @@ import { chatKeys } from "../chatKeys";
 type MeetingAction =
   | { kind: "end"; meetingId: string; title: string }
   | { kind: "extend"; meetingId: string; minutes: number }
-  | { kind: "rename"; meetingId: string; title: string };
+  | { kind: "rename"; meetingId: string; title: string }
+  | { kind: "addLink"; meetingId: string; document: ChatMeetingDocument };
 
 export type UseChatMeetingActionsResult = {
   /**
@@ -25,6 +26,8 @@ export type UseChatMeetingActionsResult = {
   extendMeeting: (meetingId: string, minutes: number) => Promise<void>;
   /** Renames the meeting for every member (organizer only). */
   renameMeeting: (meetingId: string, title: string) => Promise<void>;
+  /** Lists a link (a Docs document…) with the meeting (organizer only). */
+  addLink: (meetingId: string, document: ChatMeetingDocument) => Promise<void>;
   isPending: boolean;
 };
 
@@ -117,6 +120,13 @@ export const useChatMeetingActions = (
             title: action.title.trim(),
           });
           return;
+        case "addLink":
+          await driver.addChatMeetingDocument(
+            ref.chatId,
+            action.meetingId,
+            action.document,
+          );
+          return;
       }
     },
     onSuccess: invalidate,
@@ -133,6 +143,8 @@ export const useChatMeetingActions = (
       mutateAsync({ kind: "extend", meetingId, minutes }),
     renameMeeting: (meetingId, title) =>
       mutateAsync({ kind: "rename", meetingId, title }),
+    addLink: (meetingId, document) =>
+      mutateAsync({ kind: "addLink", meetingId, document }),
     isPending,
   };
 };

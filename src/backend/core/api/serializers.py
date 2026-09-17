@@ -124,6 +124,24 @@ class MeetingArchiveSerializer(serializers.Serializer):  # pylint: disable=abstr
     documents = MeetingDocumentLinkSerializer(
         many=True, required=False, default=list, max_length=50
     )
+    # The name the member sees for the conversation, to name the archive.
+    chat_name = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default=""
+    )
+
+
+class MeetingMemberSerializer(serializers.Serializer):  # pylint: disable=abstract-method
+    """A member of the meeting's conversation, proven by an OpenID token."""
+
+    openid_token = serializers.CharField(
+        max_length=512, required=False, allow_blank=True, default=""
+    )
+
+
+class MeetingAttachmentUploadSerializer(MeetingMemberSerializer):  # pylint: disable=abstract-method
+    """A document added to a meeting from the member's device."""
+
+    file = serializers.FileField(max_length=255, allow_empty_file=False)
 
 
 class ScribeSegmentSerializer(serializers.Serializer):  # pylint: disable=abstract-method

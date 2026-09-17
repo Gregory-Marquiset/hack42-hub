@@ -8,6 +8,7 @@ import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { saveFile } from "../saveFile";
+import { useChat } from "./useChat";
 
 export type UseMeetingArchiveResult = {
   /** Downloads the archive of a closed meeting of the conversation. */
@@ -25,6 +26,7 @@ export const useMeetingArchive = (
   ref: ChatRef | null,
 ): UseMeetingArchiveResult => {
   const { t } = useTranslation();
+  const { chat } = useChat(ref);
 
   const { mutateAsync, isPending, variables } = useMutation<
     void,
@@ -40,6 +42,7 @@ export const useMeetingArchive = (
         .getOpenIdToken();
       const { blob, fileName } = await fetchMeetingArchive(meeting.id, {
         openIdToken,
+        chatName: chat?.name,
         documents: [
           ...(meeting.summary ? [meeting.summary] : []),
           ...meeting.documents,

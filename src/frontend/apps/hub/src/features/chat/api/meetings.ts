@@ -26,6 +26,99 @@ export const updateMeeting = async (
   );
 };
 
+/** A document the Hub keeps for a meeting. */
+export type MeetingAttachmentInfo = {
+  id: string;
+  name: string;
+  /** Bytes. */
+  size: number;
+  /** ISO 8601. */
+  createdAt: string;
+};
+
+/** What the members can read of a meeting, besides its state. */
+export type MeetingDocuments = {
+  agenda: string;
+  attachments: MeetingAttachmentInfo[];
+  isClosed: boolean;
+};
+
+type RawAttachment = {
+  id: string;
+  name: string;
+  size: number;
+  created_at: string;
+};
+
+const toAttachment = (raw: RawAttachment): MeetingAttachmentInfo => ({
+  id: raw.id,
+  name: raw.name,
+  size: raw.size,
+  createdAt: raw.created_at,
+});
+
+/**
+ * The agenda and the documents of a meeting. A member who is not its
+ * organizer proves their Matrix account with `openIdToken`.
+ */
+export const fetchMeetingDocuments = async (
+  slug: string,
+  openIdToken?: string,
+): Promise<MeetingDocuments> => {
+  const response = await fetchAPI(
+    `${meetingPath(slug)}documents/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ openid_token: openIdToken ?? "" }),
+    },
+    { redirectOn40x: false },
+  );
+  const data = (await response.json()) as {
+    agenda: string;
+    attachments: RawAttachment[];
+    is_closed: boolean;
+  };
+  return {
+    agenda: data.agenda,
+    attachments: data.attachments.map(toAttachment),
+    isClosed: data.is_closed,
+  };
+};
+
+/** Adds a document from the member's device to a meeting that is not closed. */
+export const uploadMeetingDocument = async (
+  slug: string,
+  file: File,
+  openIdToken?: string,
+): Promise<MeetingAttachmentInfo> => {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  body.append("openid_token", openIdToken ?? "");
+  const response = await fetchAPI(
+    `${meetingPath(slug)}attachments/`,
+    { method: "POST", body },
+    { redirectOn40x: false },
+  );
+  return toAttachment((await response.json()) as RawAttachment);
+};
+
+/** The content of one document of a meeting. */
+export const fetchMeetingDocumentFile = async (
+  slug: string,
+  attachmentId: string,
+  openIdToken?: string,
+): Promise<Blob> => {
+  const response = await fetchAPI(
+    `${meetingPath(slug)}attachments/${encodeURIComponent(attachmentId)}/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ openid_token: openIdToken ?? "" }),
+    },
+    { redirectOn40x: false },
+  );
+  return response.blob();
+};
+
 export type MeetingArchive = {
   blob: Blob;
   fileName: string;
@@ -56,7 +149,13 @@ export const fetchMeetingArchive = async (
   {
     openIdToken,
     documents,
-  }: { openIdToken?: string; documents: ChatMeetingDocument[] },
+    chatName,
+  }: {
+    openIdToken?: string;
+    documents: ChatMeetingDocument[];
+    /** The conversation's name as the member sees it, to name the archive. */
+    chatName?: string;
+  },
 ): Promise<MeetingArchive> => {
   const response = await fetchAPI(
     `${meetingPath(slug)}archive/`,
@@ -68,6 +167,7 @@ export const fetchMeetingArchive = async (
         documents: documents
           .filter(({ url }) => /^https?:\/\//i.test(url))
           .map(({ title, url }) => ({ title, url })),
+        chat_name: chatName ?? "",
       }),
     },
     { redirectOn40x: false },

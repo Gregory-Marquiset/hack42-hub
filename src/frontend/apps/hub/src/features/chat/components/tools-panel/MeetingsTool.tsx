@@ -13,11 +13,12 @@ import type {
 } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
+import { MeetingDetails } from "./MeetingDetails";
 import { MeetingHistory } from "./MeetingHistory";
 import { MeetingsList } from "./MeetingsList";
 import { NewMeetingForm } from "./NewMeetingForm";
 
-type MeetingsView = "list" | "new" | "history";
+type MeetingsView = "list" | "new" | "history" | "details";
 
 type MeetingsToolProps = {
   chatRef: ChatRef;
@@ -41,6 +42,9 @@ export const MeetingsTool = ({
 }: MeetingsToolProps) => {
   const { t } = useTranslation();
   const [view, setView] = useState<MeetingsView>("list");
+  // The scheduled meeting shown, as last known: a meeting just created may
+  // not be in the list yet.
+  const [shown, setShown] = useState<ChatMeeting | null>(null);
   const { openMeeting } = useActiveMeeting();
   const now = useNow();
   const { meetings, isInitialLoading } = useChatMeetings(chatRef, isOpen);
@@ -72,15 +76,29 @@ export const MeetingsTool = ({
     return byStatus;
   }, [meetings, now]);
 
-  const join = (meeting: ChatMeeting) =>
-    openMeeting({ url: meeting.url, meetingId: meeting.id, chatRef });
+  const join = (meeting: ChatMeeting, showInvitation = false) =>
+    openMeeting({
+      url: meeting.url,
+      meetingId: meeting.id,
+      chatRef,
+      showInvitation,
+    });
+
+  const openDetails = (meeting: ChatMeeting) => {
+    setShown(meeting);
+    setView("details");
+  };
+  const detailed = shown
+    ? (meetings.find((candidate) => candidate.id === shown.id) ?? shown)
+    : null;
 
   const startNow = (options: StartMeetingOptions) => {
     if (isPending) {
       return;
     }
+    // A new call opens with its invitation link in view.
     void startMeeting(options)
-      .then(join)
+      .then((meeting) => join(meeting, true))
       .catch(() => {
         // useStartChatMeeting already surfaces a toast on failure.
       });
@@ -91,9 +109,10 @@ export const MeetingsTool = ({
       return;
     }
     void startMeeting(options)
-      .then(() => {
+      .then((meeting) => {
         notify.brand(t("Meeting scheduled"));
-        setView("list");
+        // Lands on the meeting, with the link to share.
+        openDetails(meeting);
       })
       .catch(() => {
         // useStartChatMeeting already surfaces a toast on failure.
@@ -112,7 +131,18 @@ export const MeetingsTool = ({
           onClose={onClose}
           onNewMeeting={() => setView("new")}
           onOpenHistory={() => setView("history")}
-          onJoin={join}
+          onJoin={(meeting) => join(meeting)}
+          onOpenDetails={openDetails}
+        />
+      )}
+      {view === "details" && detailed && (
+        <MeetingDetails
+          chatRef={chatRef}
+          meeting={detailed}
+          isOpen={isOpen}
+          onClose={onClose}
+          onBack={() => setView("list")}
+          onJoin={(meeting) => join(meeting)}
         />
       )}
       {view === "new" && (

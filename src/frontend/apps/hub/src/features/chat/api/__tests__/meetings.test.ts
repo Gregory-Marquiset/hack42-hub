@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchMeetingArchive, updateMeeting } from "../meetings";
+import {
+  fetchMeetingArchive,
+  fetchMeetingDocumentFile,
+  fetchMeetingDocuments,
+  updateMeeting,
+  uploadMeetingDocument,
+} from "../meetings";
 
 const fetchAPI = vi.hoisted(() => vi.fn());
 
@@ -59,6 +65,7 @@ describe("fetchMeetingArchive", () => {
     expect(JSON.parse(init.body)).toEqual({
       openid_token: "openid",
       documents: [{ title: "Compte rendu", url: "https://docs.test/docs/1/" }],
+      chat_name: "",
     });
   });
 
@@ -75,5 +82,67 @@ describe("fetchMeetingArchive", () => {
 
     expect(encoded.fileName).toBe("réunion.zip");
     expect(fallback.fileName).toBe("meeting-s.zip");
+  });
+});
+
+describe("meeting documents", () => {
+  afterEach(() => {
+    fetchAPI.mockReset();
+  });
+
+  const RAW = {
+    id: "a1",
+    name: "plan.pdf",
+    size: 3,
+    created_at: "2026-09-17T08:00:00+00:00",
+  };
+  const ATTACHMENT = {
+    id: "a1",
+    name: "plan.pdf",
+    size: 3,
+    createdAt: "2026-09-17T08:00:00+00:00",
+  };
+
+  it("lists the agenda and the documents", async () => {
+    fetchAPI.mockResolvedValue(
+      Response.json({ agenda: "1.", attachments: [RAW], is_closed: false }),
+    );
+
+    await expect(fetchMeetingDocuments("abc", "openid")).resolves.toEqual({
+      agenda: "1.",
+      attachments: [ATTACHMENT],
+      isClosed: false,
+    });
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "meetings/abc/documents/",
+      { method: "POST", body: JSON.stringify({ openid_token: "openid" }) },
+      { redirectOn40x: false },
+    );
+  });
+
+  it("sends a document as a form", async () => {
+    fetchAPI.mockResolvedValue(Response.json(RAW, { status: 201 }));
+    const file = new File(["pdf"], "plan.pdf");
+
+    await expect(uploadMeetingDocument("abc", file)).resolves.toEqual(
+      ATTACHMENT,
+    );
+    const [path, init] = fetchAPI.mock.calls[0];
+    expect(path).toBe("meetings/abc/attachments/");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("openid_token")).toBe("");
+    expect(((init.body as FormData).get("file") as File).name).toBe("plan.pdf");
+  });
+
+  it("downloads a document", async () => {
+    fetchAPI.mockResolvedValue(new Response(new Blob(["pdf"])));
+
+    const blob = await fetchMeetingDocumentFile("abc", "a/1", "openid");
+
+    expect(await blob.text()).toBe("pdf");
+    expect(fetchAPI.mock.calls[0][0]).toBe("meetings/abc/attachments/a%2F1/");
+    expect(JSON.parse(fetchAPI.mock.calls[0][1].body)).toEqual({
+      openid_token: "openid",
+    });
   });
 });

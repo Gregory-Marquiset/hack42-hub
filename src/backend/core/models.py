@@ -182,6 +182,7 @@ class Meeting(BaseModel):
     """
 
     slug = models.CharField(_("slug"), max_length=64, unique=True)
+    url = models.CharField(_("call link"), max_length=500, blank=True)
     livekit_room = models.CharField(
         _("LiveKit room"),
         max_length=64,
@@ -220,6 +221,13 @@ class Meeting(BaseModel):
     transcript_document_id = models.CharField(
         _("transcript document"), max_length=64, null=True, blank=True
     )
+    # When Ariane told the members, so that each message is sent once.
+    scheduled_notified_at = models.DateTimeField(null=True, blank=True)
+    started_notified_at = models.DateTimeField(null=True, blank=True)
+    closed_notified_at = models.DateTimeField(null=True, blank=True)
+    # The whiteboard elements read back when the meeting closed, for the
+    # archive; null until then.
+    board_elements = models.JSONField(_("whiteboard"), null=True, blank=True)
 
     class Meta:
         db_table = "hub_meeting"
@@ -231,14 +239,26 @@ class Meeting(BaseModel):
         return self.slug
 
 
+def meeting_attachment_path(instance, filename):
+    """Each file in its own folder, so that two files never collide."""
+    return f"meetings/{instance.meeting.slug:s}/{uuid.uuid4()!s}/{filename:s}"
+
+
 class MeetingAttachment(BaseModel):
-    """A text file (agenda or document) attached when the meeting was planned."""
+    """
+    A document of a meeting: a text file picked when it was planned (`content`),
+    or any file added since (`file`).
+    """
 
     meeting = models.ForeignKey(
         Meeting, on_delete=models.CASCADE, related_name="attachments"
     )
     name = models.CharField(_("name"), max_length=255)
-    content = models.TextField(_("content"))
+    content = models.TextField(_("content"), blank=True)
+    file = models.FileField(
+        _("file"), upload_to=meeting_attachment_path, max_length=500, blank=True
+    )
+    size = models.PositiveBigIntegerField(_("size"), default=0)
 
     class Meta:
         db_table = "hub_meeting_attachment"
@@ -356,3 +376,18 @@ class MeetingChatMessage(BaseModel):
 
     def __str__(self):
         return f"{self.sender_name or self.sender_identity}: {self.text[:40]}"
+
+
+class AssistantDirectRoom(BaseModel):
+    """The private conversation Ariane keeps with one Matrix account."""
+
+    user_id = models.CharField(_("Matrix account"), max_length=255, unique=True)
+    room_id = models.CharField(_("Matrix room"), max_length=255)
+
+    class Meta:
+        db_table = "hub_assistant_direct_room"
+        verbose_name = _("assistant direct room")
+        verbose_name_plural = _("assistant direct rooms")
+
+    def __str__(self):
+        return self.user_id

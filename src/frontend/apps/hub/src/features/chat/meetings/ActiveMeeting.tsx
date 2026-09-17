@@ -3,6 +3,7 @@ import {
   ExternalLink,
   Maximize,
   Minimize,
+  UserAdd,
   XMark,
 } from "@gouvfr-lasuite/ui-components/icons";
 import {
@@ -11,6 +12,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -29,6 +31,7 @@ import {
 import type { ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
+import { copyMeetingLink } from "./copyMeetingLink";
 import { useMeetingBoardUrl } from "./meetingBoard";
 import { useNow } from "./useNow";
 
@@ -40,6 +43,8 @@ export type ActiveMeetingTarget = {
   url: string;
   meetingId?: string;
   chatRef?: ChatRef;
+  /** Opens with the invitation link shown, as for a call just created. */
+  showInvitation?: boolean;
 };
 
 type ActiveMeetingContextValue = {
@@ -95,6 +100,8 @@ const MeetingWindow = ({
   const [draftTitle, setDraftTitle] = useState<string | null>(null);
   const [isBoardOpen, setIsBoardOpen] = useState(false);
   const [wasBoardOpened, setWasBoardOpened] = useState(false);
+  const [isSharing, setIsSharing] = useState(target.showInvitation ?? false);
+  const shareId = useId();
   const isRenamingRef = useRef(false);
   // The whiteboard follows the meeting, so everyone in the call lands on the
   // same board; a call opened outside a meeting falls back on its own link.
@@ -280,6 +287,23 @@ const MeetingWindow = ({
                 <Whiteboard />
               </button>
             )}
+            <button
+              type="button"
+              className="hub__meeting-window__button"
+              aria-label={t("Invite people from outside")}
+              title={t("Invite people from outside")}
+              aria-expanded={isSharing}
+              aria-controls={shareId}
+              data-active={isSharing || undefined}
+              onClick={() => {
+                if (isMinimized) {
+                  onRestore();
+                }
+                setIsSharing((current) => !current || isMinimized);
+              }}
+            >
+              <UserAdd />
+            </button>
             <a
               className="hub__meeting-window__button"
               href={target.url}
@@ -322,6 +346,37 @@ const MeetingWindow = ({
             </button>
           </span>
         </header>
+        {isSharing && !isMinimized && (
+          <div
+            id={shareId}
+            className="hub__meeting-window__share"
+            role="region"
+            aria-label={t("Invitation link")}
+          >
+            <p className="hub__meeting-window__share-text">
+              {t(
+                "Anyone with this link can join the call, even without an account.",
+              )}
+            </p>
+            <div className="hub__meeting-window__share-row">
+              <input
+                type="text"
+                readOnly
+                className="hub__meeting-window__share-link"
+                value={target.url}
+                aria-label={t("Invitation link")}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button
+                type="button"
+                className="hub__meeting-window__text-button"
+                onClick={() => void copyMeetingLink(target.url, t)}
+              >
+                {t("Copy the link")}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="hub__meeting-window__body">
           <iframe
             className="hub__meeting-window__frame"

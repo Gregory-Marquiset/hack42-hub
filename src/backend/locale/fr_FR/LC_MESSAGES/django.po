@@ -240,6 +240,15 @@ msgid "transcript.md"
 msgstr "transcription.md"
 
 #: core/archives.py
+#, python-format
+msgid "Conversation: %(name)s"
+msgstr "Salon : %(name)s"
+
+#: core/archives.py
+msgid "whiteboard.excalidraw"
+msgstr "tableau-blanc.excalidraw"
+
+#: core/archives.py
 msgid "chat.md"
 msgstr "discussion.md"
 

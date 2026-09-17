@@ -55,6 +55,8 @@ export const chatKeys = {
   meetings: (ref: ChatRef) =>
     ["chat-meetings", ref.accountId, ref.chatId] as const,
   files: (ref: ChatRef) => ["chat-files", ref.accountId, ref.chatId] as const,
+  meetingDocuments: (ref: ChatRef, meetingId: string) =>
+    ["chat-meeting-documents", ref.accountId, ref.chatId, meetingId] as const,
   connection: (
     accountId: AccountId,
     userId: string | null,

@@ -3,7 +3,8 @@ The archive of a closed meeting: one ZIP file with everything the Hub kept.
 
     meeting.md        title, dates, organizer, participants, agenda, documents
     agenda.md         the agenda, when one was written
-    files/…           the text files attached when the meeting was planned
+    files/…           the documents attached to the meeting
+    whiteboard.excalidraw  what was drawn on the board, to open in Excalidraw
     transcript.md     what was said, from the live subtitles
     chat.md           what was written in the chat of the call
 
@@ -11,6 +12,7 @@ File names follow the language of the person downloading the archive.
 """
 
 import io
+import logging
 import re
 import zipfile
 
@@ -18,7 +20,10 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import pgettext
 
+from core.boards import scene_file
 from core.transcripts import transcript_markdown
+
+logger = logging.getLogger(__name__)
 
 MAX_NAME_LENGTH = 100
 
@@ -56,7 +61,9 @@ def _participants(meeting):
     return names
 
 
-def meeting_markdown(meeting, documents, attachment_names):
+def meeting_markdown(  # pylint: disable=too-many-arguments
+    meeting, documents, attachment_names, board_name=None, *, chat_name=""
+):
     """The summary page of the archive."""
     organizer = meeting.organizer
     started_at = meeting.starts_at or meeting.created_at
@@ -68,6 +75,10 @@ def meeting_markdown(meeting, documents, attachment_names):
     lines = [
         f"# {_escape(meeting.title or _('Meeting'))}",
         "",
+    ]
+    if chat_name:
+        lines.append("- " + _("Conversation: %(name)s") % {"name": _escape(chat_name)})
+    lines += [
         "- " + _("Start: %(time)s") % {"time": _time(started_at)},
         "- " + _("End: %(time)s") % {"time": _time(meeting.closed_at)},
         "- "
@@ -91,6 +102,8 @@ def meeting_markdown(meeting, documents, attachment_names):
         f"- [{_escape(document['title'])}](<{document['url']}>)"
         for document in documents
     ] + [f"- {_('files')}/{_escape(name)}" for name in attachment_names]
+    if board_name:
+        entries.append(f"- {_escape(board_name)}")
     lines += entries or [_("No document.")]
     return "\n".join(lines) + "\n"
 
@@ -109,10 +122,23 @@ def chat_markdown(meeting):
     return "\n".join(lines)
 
 
-def build_archive(meeting, documents):
+def _attachment_bytes(attachment):
+    """What a document holds, or `None` when its file cannot be read."""
+    if not attachment.file:
+        return attachment.content.encode()
+    try:
+        with attachment.file.open("rb") as stored:
+            return stored.read()
+    except OSError:
+        logger.warning("attachment %s could not be read", attachment.pk)
+        return None
+
+
+def build_archive(meeting, documents, board_elements=(), chat_name=""):
     """
     The ZIP archive of a closed meeting, as bytes. `documents` are the links
-    listed in the meeting state (`title`, `url`).
+    listed in the meeting state (`title`, `url`), `board_elements` what was
+    drawn on its whiteboard, `chat_name` the name of its conversation.
     """
     buffer = io.BytesIO()
     taken = set()
@@ -120,13 +146,27 @@ def build_archive(meeting, documents):
         attachment_names = []
         folder = _("files")
         for attachment in meeting.attachments.all():
+            content = _attachment_bytes(attachment)
+            if content is None:
+                continue
             name = safe_file_name(attachment.name, taken)
             attachment_names.append(name)
-            archive.writestr(f"{folder}/{name}", attachment.content)
+            archive.writestr(f"{folder}/{name}", content)
+
+        board_name = None
+        if board_elements:
+            board_name = safe_file_name(_("whiteboard.excalidraw"), taken)
+            archive.writestr(board_name, scene_file(list(board_elements)))
 
         archive.writestr(
             _("meeting.md"),
-            meeting_markdown(meeting, documents, attachment_names),
+            meeting_markdown(
+                meeting,
+                documents,
+                attachment_names,
+                board_name,
+                chat_name=chat_name,
+            ),
         )
         if meeting.agenda.strip():
             archive.writestr(_("agenda.md"), meeting.agenda.strip() + "\n")
@@ -139,13 +179,21 @@ def build_archive(meeting, documents):
     return buffer.getvalue()
 
 
-def archive_file_name(meeting):
-    """`meeting-<date>-<title>.zip`, readable and safe."""
+def _name_part(text):
+    return re.sub(r"[^\w-]+", "-", text or "", flags=re.UNICODE).strip("-")[:40]
+
+
+def archive_file_name(meeting, chat_name=""):
+    """
+    `meeting-<title>-<conversation>-<date>-<time>.zip`, readable and safe: the
+    meeting is recognized among the archives of every conversation.
+    """
     started_at = timezone.localtime(meeting.starts_at or meeting.created_at)
-    title = re.sub(r"[^\w-]+", "-", meeting.title or "", flags=re.UNICODE).strip("-")
     parts = [
         pgettext("archive file name", "meeting"),
+        _name_part(meeting.title) or meeting.slug,
+        _name_part(chat_name),
         f"{started_at:%Y-%m-%d}",
-        title[:40] or meeting.slug,
+        f"{started_at:%Hh%M}",
     ]
-    return "-".join(parts) + ".zip"
+    return "-".join(part for part in parts if part) + ".zip"

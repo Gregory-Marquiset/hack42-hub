@@ -89,6 +89,12 @@ const Opener = () => {
       <button type="button" onClick={() => openMeeting({ url: URL_B })}>
         open B
       </button>
+      <button
+        type="button"
+        onClick={() => openMeeting({ url: URL_B, showInvitation: true })}
+      >
+        open new
+      </button>
       <span data-testid="state">{isMinimized ? "minimized" : "expanded"}</span>
     </>
   );
@@ -284,6 +290,60 @@ describe("ActiveMeetingProvider", () => {
 
     expect(renameMeeting).not.toHaveBeenCalled();
     expect(screen.getByText("Point hebdo")).toBeTruthy();
+  });
+
+  it("shows the invitation link to every participant", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    state.meetings = [meetingA({ organizerId: OTHER_ID })];
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+    expect(screen.queryByLabelText("Invitation link")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Invite people from outside"));
+
+    const link = screen.getByRole("textbox", {
+      name: "Invitation link",
+    }) as HTMLInputElement;
+    expect(link.value).toBe(URL_A);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Copy the link"));
+    });
+    expect(writeText).toHaveBeenCalledWith(URL_A);
+    expect(notifyBrand).toHaveBeenCalledWith(
+      "Invitation link copied: anyone with it can join the call.",
+    );
+
+    fireEvent.click(screen.getByLabelText("Invite people from outside"));
+    expect(screen.queryByLabelText("Invitation link")).toBeNull();
+  });
+
+  it("opens a call just created with its invitation link", () => {
+    render(app());
+    fireEvent.click(screen.getByText("open new"));
+
+    const link = screen.getByRole("textbox", {
+      name: "Invitation link",
+    }) as HTMLInputElement;
+    expect(link.value).toBe(URL_B);
+    expect(
+      screen
+        .getByLabelText("Invite people from outside")
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("restores a minimized window to show the invitation link", () => {
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+    fireEvent.click(screen.getByLabelText("Minimize the meeting"));
+
+    fireEvent.click(screen.getByLabelText("Invite people from outside"));
+
+    expect(dialog().hasAttribute("data-minimized")).toBe(false);
+    expect(
+      screen.getByRole("textbox", { name: "Invitation link" }),
+    ).toBeTruthy();
   });
 
   it("hides the organizer actions from the other participants", () => {

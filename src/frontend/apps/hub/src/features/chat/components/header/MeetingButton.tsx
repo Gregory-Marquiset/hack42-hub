@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import { useNow } from "@/features/chat/meetings/useNow";
-import { isMeetingOngoing } from "@/features/drivers/meetingTime";
+import { getConversationMeetingState } from "@/features/drivers/meetingTime";
 import type { ChatRef } from "@/features/drivers/types";
 
 type MeetingButtonProps = {
@@ -18,8 +18,8 @@ type MeetingButtonProps = {
 /**
  * Camera button of the conversation header. It opens the meetings panel rather
  * than placing the call: the call is started from "Start now" inside that
- * panel, so planning a meeting and joining one share the same entry point. The
- * button stays highlighted while a meeting is ongoing in the conversation.
+ * panel, so planning a meeting and joining one share the same entry point. A
+ * dot tells a meeting is about to start (within 15 minutes) or in progress.
  */
 export const MeetingButton = ({
   chatRef,
@@ -29,25 +29,40 @@ export const MeetingButton = ({
   const { t } = useTranslation();
   const { meetings } = useChatMeetings(chatRef, true);
   const now = useNow();
+  const state = getConversationMeetingState(meetings, now);
 
-  const hasOngoingMeeting = meetings.some((meeting) =>
-    isMeetingOngoing(meeting, now),
-  );
+  const label =
+    state === "ongoing"
+      ? t("Meetings: a meeting is in progress")
+      : state === "soon"
+        ? t("Meetings: a meeting starts soon")
+        : t("Meetings");
 
   return (
-    <Button
-      type="button"
-      variant="tertiary"
-      color="neutral"
-      size="small"
-      className="hub__chat-header__icon-button"
-      aria-label={t("Meetings")}
-      aria-pressed={isActive}
-      data-active={isActive || hasOngoingMeeting}
-      active={isActive}
-      disabled={!chatRef}
-      icon={<Meet />}
-      onClick={onToggle}
-    />
+    <span className="hub__chat-header__meeting-button" data-meeting={state}>
+      <Button
+        type="button"
+        variant="tertiary"
+        color="neutral"
+        size="small"
+        className="hub__chat-header__icon-button"
+        aria-label={label}
+        title={label}
+        aria-pressed={isActive}
+        data-active={isActive || state === "ongoing"}
+        active={isActive}
+        disabled={!chatRef}
+        icon={<Meet />}
+        onClick={onToggle}
+      />
+      {state !== "none" && (
+        <span
+          className="hub__chat-header__meeting-dot"
+          data-testid="meeting-indicator"
+          data-state={state}
+          aria-hidden="true"
+        />
+      )}
+    </span>
   );
 };

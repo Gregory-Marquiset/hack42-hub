@@ -34,6 +34,21 @@ urlpatterns = [
         name="meeting-detail",
     ),
     path(
+        "meetings/<str:slug>/documents/",
+        viewsets.MeetingDocumentsView.as_view(),
+        name="meeting-documents",
+    ),
+    path(
+        "meetings/<str:slug>/attachments/",
+        viewsets.MeetingAttachmentsView.as_view(),
+        name="meeting-attachments",
+    ),
+    path(
+        "meetings/<str:slug>/attachments/<uuid:attachment_id>/",
+        viewsets.MeetingAttachmentView.as_view(),
+        name="meeting-attachment",
+    ),
+    path(
         "meetings/<str:slug>/archive/",
         viewsets.MeetingArchiveView.as_view(),
         name="meeting-archive",

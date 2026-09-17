@@ -1,6 +1,7 @@
-import { ChevronRight } from "@gouvfr-lasuite/ui-components/icons";
+import { ChevronRight, Link } from "@gouvfr-lasuite/ui-components/icons";
 import { useTranslation } from "react-i18next";
 
+import { copyMeetingLink } from "@/features/chat/meetings/copyMeetingLink";
 import {
   formatMeetingDuration,
   getMeetingProgress,
@@ -27,6 +28,8 @@ type MeetingsListProps = {
   onNewMeeting: () => void;
   onOpenHistory: () => void;
   onJoin: (meeting: ChatMeeting) => void;
+  /** Shows a scheduled meeting: its invitation link and its documents. */
+  onOpenDetails: (meeting: ChatMeeting) => void;
 };
 
 /**
@@ -44,6 +47,7 @@ export const MeetingsList = ({
   onNewMeeting,
   onOpenHistory,
   onJoin,
+  onOpenDetails,
 }: MeetingsListProps) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
@@ -109,16 +113,19 @@ export const MeetingsList = ({
               {rows.map(({ meeting, isOngoing }) => {
                 const isOverdue =
                   isOngoing && getMeetingProgress(meeting, now).isOverdue;
+                const label = formatMeetingLabel(meeting, t("Meeting"), locale);
                 return (
                   <li key={meeting.id} className="hub__chat-meetings__row">
                     <button
                       type="button"
                       className="hub__chat-meetings__row-button"
-                      onClick={() => onJoin(meeting)}
+                      onClick={() =>
+                        isOngoing ? onJoin(meeting) : onOpenDetails(meeting)
+                      }
                       tabIndex={tabIndex}
                     >
                       <span className="hub__chat-meetings__row-label">
-                        {formatMeetingLabel(meeting, t("Meeting"), locale)}
+                        {label}
                       </span>
                       <span
                         className="hub__chat-meetings__row-badge"
@@ -134,6 +141,20 @@ export const MeetingsList = ({
                         <ChevronRight />
                       </span>
                     </button>
+                    <span className="hub__chat-meetings__row-actions">
+                      <button
+                        type="button"
+                        className="hub__chat-meetings__icon-button"
+                        aria-label={t("Copy the invitation link of {{name}}", {
+                          name: label,
+                        })}
+                        title={t("Copy the invitation link")}
+                        tabIndex={tabIndex}
+                        onClick={() => void copyMeetingLink(meeting.url, t)}
+                      >
+                        <Link />
+                      </button>
+                    </span>
                   </li>
                 );
               })}

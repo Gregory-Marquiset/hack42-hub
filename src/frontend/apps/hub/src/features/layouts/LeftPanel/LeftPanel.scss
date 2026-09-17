@@ -113,6 +113,109 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    // Three fixed lists share the panel; the one taking it over grows and
+    // scrolls on its own, so nothing else has to move out of the way.
+    flex: 0 0 auto;
+    min-height: 0;
+
+    &[data-expanded] {
+      flex: 1 1 auto;
+    }
+
+    &[data-expanded] .hub__left-panel__section__panel {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    &__see-all {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      line-height: 16px;
+      color: var(--c--contextuals--content--semantic--brand--primary, #3e5de7);
+
+      &:hover {
+        background: var(
+          --c--contextuals--background--semantic--overlay--primary,
+          rgba(24, 27, 36, 0.05)
+        );
+      }
+
+      &:focus-visible {
+        outline: 2px solid
+          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
+        outline-offset: 1px;
+      }
+    }
+
+    // One espace chooser per list: narrowing the rooms should not narrow the
+    // direct messages, which belong to no espace at all.
+    &__filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 0 12px 4px;
+    }
+
+    &__filter {
+      appearance: none;
+      border: 1px solid var(--c--contextuals--border--surface--primary, #dfe2ea);
+      background: transparent;
+      border-radius: 10px;
+      padding: 1px 8px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 11px;
+      line-height: 16px;
+      max-width: 12ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(
+        --c--contextuals--content--semantic--neutral--secondary,
+        #555e74
+      );
+
+      &--active {
+        border-color: var(
+          --c--contextuals--border--semantic--brand--primary,
+          #3e5de7
+        );
+        color: var(
+          --c--contextuals--content--semantic--brand--primary,
+          #3e5de7
+        );
+        font-weight: 700;
+      }
+
+      &:focus-visible {
+        outline: 2px solid
+          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
+        outline-offset: 1px;
+      }
+    }
+
+    &__title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: var(
+        --c--contextuals--content--semantic--neutral--secondary,
+        #555e74
+      );
+    }
 
     // Discord-style header row: the title+chevron toggle is content-sized
     // (not full width) so a separate "+" button can sit flush right on
@@ -279,6 +382,13 @@
     }
   }
 
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+  }
+
   &__spaces {
     display: flex;
     flex-direction: column;
@@ -317,12 +427,15 @@
       padding: 4px 2px 8px;
     }
 
+    // Smaller than they were: choosing an espace is now each section's own
+    // business, so this row is an overview and a way in, not the main
+    // control - and it was taking a third of the panel's head.
     &__item {
       appearance: none;
       background: transparent;
       border: 0;
       flex: 0 0 auto;
-      width: 56px;
+      width: 44px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -331,8 +444,8 @@
       border-radius: var(--hub-lp-radius);
 
       .hub__avatar {
-        width: 36px;
-        height: 36px;
+        width: 28px;
+        height: 28px;
         font-size: 14px;
         flex: 0 0 auto;
 

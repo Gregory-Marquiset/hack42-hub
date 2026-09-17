@@ -1,46 +1,31 @@
 import { Button } from "@gouvfr-lasuite/ui-components";
-import {
-  ArrowDropDown,
-  Lock,
-  Meet,
-  Plus,
-  QuestionMark,
-} from "@gouvfr-lasuite/ui-components/icons";
+import { Plus, QuestionMark } from "@gouvfr-lasuite/ui-components/icons";
 import clsx from "clsx";
-import type { TFunction } from "i18next";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { ReactNode, useCallback, useId, useMemo, useState } from "react";
+import { ReactNode, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  chatHref,
-  readChatRef,
-  readSpaceId,
-  sameChatRef,
-  spaceHref,
-} from "@/features/chat/chatRefs";
-import { compareChats } from "@/features/chat/chatSorting";
+import { readChatRef, readSpaceId, spaceHref } from "@/features/chat/chatRefs";
 import { CreateSalonModal } from "@/features/chat/components/CreateSalonModal";
 import { CreateSpaceModal } from "@/features/chat/components/CreateSpaceModal";
-import { formatChatListTimestamp } from "@/features/chat/formatTimestamp";
 import { countUnread, formatUnreadBadge } from "@/features/chat/unreadBadge";
-import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import { useChatUnread } from "@/features/chat/hooks/useChatUnread";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useSpaces } from "@/features/chat/hooks/useSpaces";
-import { useNow } from "@/features/chat/meetings/useNow";
-import { getConversationMeetingState } from "@/features/drivers/meetingTime";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
-import type { Chat, ChatUnread, Space } from "@/features/drivers/types";
+import type { Space } from "@/features/drivers/types";
 import { AccountSelector } from "@/features/layouts/components/AccountSelector/AccountSelector";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
-import { ChatPresenceAvatar } from "@/features/ui/components/presence/ChatPresenceAvatar";
 import { LanguagePickerUserMenu } from "@/features/ui/components/user-profile/LanguagePickerUserMenu";
 
+import { LeftPanelSection } from "./LeftPanelSection";
 import { TchapLogo } from "./TchapLogo";
-
-const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+import {
+  filterChatsBySpace,
+  partitionChats,
+  ChatSectionId,
+} from "./chatSections";
 
 type ActionItem =
   | { id: string; href: string; icon: ReactNode; label: string }
@@ -53,46 +38,16 @@ type ActionItem =
       onClick: () => void;
     };
 
-type Tab = "all" | "unread" | "recent";
-
 /** The row/menu-item second line: "You : ...", "{name} : ..." or the raw text. */
-const formatPreview = (t: TFunction, chat: Chat): string | undefined => {
-  if (!chat.preview) return undefined;
-  if (chat.preview.isOwnMessage) return `${t("You")} : ${chat.preview.text}`;
-  if (chat.preview.senderName)
-    return `${chat.preview.senderName} : ${chat.preview.text}`;
-  return chat.preview.text;
-};
-
-const filterChatsByTab = (
-  chats: Chat[],
-  tab: Tab,
-  unreadLookup: (ref: Chat["ref"]) => ChatUnread,
-): Chat[] => {
-  switch (tab) {
-    case "unread":
-      return chats.filter((chat) => unreadLookup(chat.ref).unread);
-    case "recent":
-      return chats.filter(
-        (chat) =>
-          chat.lastActivityAt &&
-          Date.now() - Date.parse(chat.lastActivityAt) <= RECENT_WINDOW_MS,
-      );
-    default:
-      return chats;
-  }
-};
-
-const buildTabs = (
-  t: TFunction,
-  unreadCount: number,
-): { id: Tab; label: string }[] => [
-  { id: "all", label: t("All") },
-  {
-    id: "unread",
-    label: unreadCount > 0 ? `${t("Unread")} · ${unreadCount}` : t("Unread"),
-  },
-  { id: "recent", label: t("Recent") },
+/** The three lists, in the order the panel shows them. */
+const SECTIONS: ReadonlyArray<{
+  id: ChatSectionId;
+  title: string;
+  add?: string;
+}> = [
+  { id: "favourites", title: "Favourites" },
+  { id: "rooms", title: "Rooms", add: "New room" },
+  { id: "directs", title: "Direct messages" },
 ];
 
 export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
@@ -105,10 +60,10 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   // grouping, not a container rooms have to belong to.
   const activeSpaceId = readSpaceId(router.query);
 
-  // Direct messages are never space-scoped, so they need their own,
-  // unfiltered query; rooms are scoped to whichever espace is active.
+  // One unfiltered query for the whole panel: the sections show every espace
+  // by default, and each narrows itself in memory from the espace's own child
+  // ids rather than asking for a filtered list of its own.
   const unscopedChats = useChats();
-  const scopedChats = useChats(activeSpaceId ?? undefined);
   const unreadLookup = useChatUnread();
   // Totals from what the panel already holds: the espace carries its child
   // ids and the lookup is in memory, so no espace costs a request. A child
@@ -128,13 +83,25 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
     entries.map((entry) => [entry.accountId, entry.label]),
   );
   const showAccountLabels = entries.length > 1;
-  const [tab, setTab] = useState<Tab>("all");
-  const [isRoomsOpen, setIsRoomsOpen] = useState(true);
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
   const [isSalonModalOpen, setIsSalonModalOpen] = useState(false);
-  const roomsReactId = useId();
-  const roomsTitleId = `${roomsReactId}-title`;
-  const roomsPanelId = `${roomsReactId}-panel`;
+  // One section at a time may take the whole panel.
+  const [expanded, setExpanded] = useState<ChatSectionId | null>(null);
+  // Each section narrows itself. The espace picked at the top is where they
+  // all start, so switching espace still moves the whole panel, but a section
+  // can be held on another one without dragging the others along.
+  const [overrides, setOverrides] = useState<
+    Partial<Record<ChatSectionId, string | null>>
+  >({});
+  const spaceOf = (id: ChatSectionId) =>
+    id in overrides ? (overrides[id] ?? null) : activeSpaceId;
+  const setSpaceOf = (id: ChatSectionId, spaceId: string | null) =>
+    setOverrides((current) => ({ ...current, [id]: spaceId }));
+  const chatIdsOf = (spaceId: string | null) => {
+    if (!spaceId) return null;
+    const space = spaces.find((candidate) => candidate.id === spaceId);
+    return space ? new Set(space.chatIds) : new Set<string>();
+  };
 
   // What "everything" is worth: the espace bubbles only cover their own
   // children, and a direct message belongs to no espace at all.
@@ -147,27 +114,9 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
     [unscopedChats.favourites, unscopedChats.all, unreadLookup],
   );
 
-  const directChats = useMemo(
-    () =>
-      [...unscopedChats.favourites, ...unscopedChats.all]
-        .filter((chat) => chat.kind === "direct")
-        .sort(compareChats),
+  const sections = useMemo(
+    () => partitionChats([...unscopedChats.favourites, ...unscopedChats.all]),
     [unscopedChats.favourites, unscopedChats.all],
-  );
-  const groupChats = useMemo(
-    () =>
-      [...scopedChats.favourites, ...scopedChats.all]
-        .filter((chat) => chat.kind === "group")
-        .sort(compareChats),
-    [scopedChats.favourites, scopedChats.all],
-  );
-  const unreadCount = useMemo(
-    () => groupChats.filter((chat) => unreadLookup(chat.ref).unread).length,
-    [groupChats, unreadLookup],
-  );
-  const visibleChats = useMemo(
-    () => filterChatsByTab(groupChats, tab, unreadLookup),
-    [tab, groupChats, unreadLookup],
   );
 
   const canCreateSalon = entries.some(
@@ -191,8 +140,6 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
       onClick: onSearch,
     });
   }
-
-  const tabs = useMemo(() => buildTabs(t, unreadCount), [t, unreadCount]);
 
   return (
     <aside className="hub__left-panel" aria-label={t("Side panel")}>
@@ -220,55 +167,38 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
         />
       </div>
 
-      {/* Direct messages and Rooms used to each scroll internally (a small
-          capped list, and a flex-grow list); they now share one scrollbar
-          for the whole panel body, so long lists in either section scroll
-          the same way instead of fighting each other for space. */}
-      <div className="hub__left-panel__body">
-        <DirectMessagesSection
-          chats={directChats}
-          unreadLookup={unreadLookup}
-          accountLabels={accountLabels}
-          showAccountLabels={showAccountLabels}
-          spaceId={activeSpaceId}
-        />
-
-        <div className="hub__left-panel__section" data-open={isRoomsOpen}>
-          <SectionHeader
-            titleId={roomsTitleId}
-            panelId={roomsPanelId}
-            title={t("Rooms")}
-            isOpen={isRoomsOpen}
-            onToggle={() => setIsRoomsOpen((open) => !open)}
-            addLabel={canCreateSalon ? t("New room") : undefined}
-            onAdd={canCreateSalon ? () => setIsSalonModalOpen(true) : undefined}
-          />
-
-          {isRoomsOpen && <TabsRow tab={tab} tabs={tabs} onChange={setTab} />}
-
-          {isRoomsOpen && (
-            <div
-              id={roomsPanelId}
-              role="region"
-              aria-labelledby={roomsTitleId}
-              className="hub__left-panel__section__panel__inner"
-            >
-              <ul className="hub__left-panel__list">
-                {visibleChats.map((chat) => (
-                  <li key={`${chat.accountId}:${chat.id}`}>
-                    <ChatRow
-                      chat={chat}
-                      accountLabel={accountLabels.get(chat.accountId)}
-                      showAccountLabel={showAccountLabels}
-                      unread={unreadLookup(chat.ref)}
-                      spaceId={activeSpaceId}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+      {/* Three fixed lists, each showing its five most recent. "See all"
+          gives one of them the whole panel and its own scrollbar: three lists
+          sharing one is what made the old panel hard to read. */}
+      <div
+        className="hub__left-panel__body"
+        data-expanded={expanded ?? undefined}
+      >
+        {SECTIONS.filter(({ id }) => expanded === null || expanded === id).map(
+          ({ id, title, add }) => (
+            <LeftPanelSection
+              key={id}
+              title={t(title)}
+              chats={filterChatsBySpace(sections[id], chatIdsOf(spaceOf(id)))}
+              isExpanded={expanded === id}
+              onToggleExpanded={() =>
+                setExpanded((current) => (current === id ? null : id))
+              }
+              spaces={spaces}
+              spaceId={spaceOf(id)}
+              onSpaceChange={(spaceId) => setSpaceOf(id, spaceId)}
+              unreadLookup={unreadLookup}
+              accountLabels={accountLabels}
+              showAccountLabels={showAccountLabels}
+              addLabel={add && canCreateSalon ? t(add) : undefined}
+              onAdd={
+                add && canCreateSalon
+                  ? () => setIsSalonModalOpen(true)
+                  : undefined
+              }
+            />
+          ),
+        )}
       </div>
 
       <div className="hub__left-panel__footer">
@@ -333,282 +263,6 @@ const ActionRow = ({ action }: { action: ActionItem }) => {
  * Discord-style section header: title + chevron are one tight, content-sized
  * toggle button (not a full-width row) so a separate "+" button can sit on
  * the same line, flush to the right, to add straight into this section.
- */
-const SectionHeader = ({
-  titleId,
-  panelId,
-  title,
-  count,
-  isOpen,
-  onToggle,
-  addLabel,
-  onAdd,
-}: {
-  titleId: string;
-  panelId: string;
-  title: string;
-  count?: number;
-  isOpen: boolean;
-  onToggle: () => void;
-  addLabel?: string;
-  onAdd?: () => void;
-}) => (
-  <div className="hub__left-panel__section__header-row">
-    <button
-      type="button"
-      id={titleId}
-      className="hub__left-panel__section__header"
-      aria-expanded={isOpen}
-      aria-controls={panelId}
-      onClick={onToggle}
-    >
-      <span className="hub__left-panel__section__title">
-        {title}
-        {!!count && count > 0 && (
-          <span className="hub__left-panel__section__count">{count}</span>
-        )}
-      </span>
-      <ArrowDropDown
-        aria-hidden="true"
-        className="hub__left-panel__section__chevron"
-      />
-    </button>
-    {onAdd && (
-      <button
-        type="button"
-        className="hub__left-panel__section__add"
-        aria-label={addLabel}
-        title={addLabel}
-        onClick={onAdd}
-      >
-        <Plus size={16} aria-hidden="true" />
-      </button>
-    )}
-  </div>
-);
-
-const TabsRow = ({
-  tab,
-  tabs,
-  onChange,
-}: {
-  tab: Tab;
-  tabs: { id: Tab; label: string }[];
-  onChange: (tab: Tab) => void;
-}) => (
-  <div className="hub__left-panel__tabs" role="tablist">
-    {tabs.map((candidate) => (
-      <button
-        key={candidate.id}
-        type="button"
-        role="tab"
-        aria-selected={tab === candidate.id}
-        className={clsx(
-          "hub__left-panel__tab",
-          tab === candidate.id && "hub__left-panel__tab--active",
-        )}
-        onClick={() => onChange(candidate.id)}
-      >
-        {candidate.label}
-      </button>
-    ))}
-  </div>
-);
-
-const ChatRow = ({
-  chat,
-  accountLabel,
-  showAccountLabel,
-  unread,
-  spaceId,
-}: {
-  chat: Chat;
-  accountLabel?: string;
-  showAccountLabel: boolean;
-  unread: ChatUnread;
-  spaceId: string | null;
-}) => {
-  const { t, i18n } = useTranslation();
-  const router = useRouter();
-  const isActive = sameChatRef(readChatRef(router.query), chat.ref);
-  // Read from the room's own state, so this costs no request. Only a call
-  // actually in progress earns a mark here: "starting soon" belongs to the
-  // conversation's own header, where there is room to say it.
-  const { meetings } = useChatMeetings(chat.ref, true);
-  const hasOngoingMeeting =
-    getConversationMeetingState(meetings, useNow()) === "ongoing";
-  const locale = i18n.resolvedLanguage ?? i18n.language;
-  const timestamp = chat.lastActivityAt
-    ? formatChatListTimestamp(chat.lastActivityAt, locale)
-    : null;
-  const previewText = formatPreview(t, chat);
-  // An explicit label replaces the link's content for assistive technology,
-  // so the lock is spoken here or not at all.
-  const linkLabel = [
-    showAccountLabel && accountLabel
-      ? `${chat.name} ${accountLabel}`
-      : chat.name,
-    ...(chat.encrypted ? [t("End-to-end encrypted")] : []),
-    ...(hasOngoingMeeting ? [t("A meeting is in progress")] : []),
-  ].join(", ");
-
-  return (
-    <Link
-      href={chatHref(chat.ref, spaceId)}
-      shallow
-      aria-label={linkLabel}
-      aria-current={isActive ? "page" : undefined}
-      className={clsx(
-        "hub__left-panel__chat",
-        isActive && "hub__left-panel__chat--active",
-      )}
-    >
-      <span className="hub__left-panel__chat__avatar">
-        <ChatPresenceAvatar chat={chat} />
-        {hasOngoingMeeting && (
-          // A corner mark on the avatar: the one thing you want to spot
-          // without opening the room. The link's label already says it; this
-          // is for the eye. Availability owns the opposite corner.
-          <span
-            className="hub__left-panel__chat__meeting"
-            data-testid="ongoing-meeting"
-            aria-hidden="true"
-          >
-            <Meet />
-          </span>
-        )}
-      </span>
-      <span className="hub__left-panel__chat__body">
-        <span className="hub__left-panel__chat__row">
-          <span
-            className={clsx(
-              "hub__left-panel__chat__name",
-              unread.unread && "hub__left-panel__chat__name--strong",
-            )}
-          >
-            {chat.name}
-            {chat.encrypted && (
-              // Two conversations with the same person, one clear and one
-              // encrypted, are otherwise indistinguishable in this list. The
-              // link's label already says it; the icon is for the eye.
-              <Lock
-                className="hub__left-panel__chat__encrypted"
-                aria-hidden="true"
-              />
-            )}
-            {showAccountLabel && accountLabel && (
-              <span className="hub__left-panel__chat__account">
-                {" "}
-                · {accountLabel}
-              </span>
-            )}
-          </span>
-          {timestamp && (
-            <span className="hub__left-panel__chat__time">{timestamp}</span>
-          )}
-        </span>
-        <span className="hub__left-panel__chat__row">
-          <span className="hub__left-panel__chat__preview">{previewText}</span>
-          {unread.unread && unread.count > 0 && (
-            <span className="hub__left-panel__chat__badge">{unread.count}</span>
-          )}
-        </span>
-      </span>
-      {unread.unread && (
-        <span className="hub__visually-hidden">{t("Unread message")}</span>
-      )}
-    </Link>
-  );
-};
-
-/**
- * Direct (1:1) conversations don't appear in the list below — they live here
- * instead, in their own collapsible section, so the tabs and list only ever
- * deal with groups. The whole header (title, count, chevron) is one plain,
- * borderless button — a hover background is the only affordance.
- */
-const DirectMessagesSection = ({
-  chats,
-  unreadLookup,
-  accountLabels,
-  showAccountLabels,
-  spaceId,
-}: {
-  chats: Chat[];
-  unreadLookup: (ref: Chat["ref"]) => ChatUnread;
-  accountLabels: Map<string, string>;
-  showAccountLabels: boolean;
-  spaceId: string | null;
-}) => {
-  const { t } = useTranslation();
-  const router = useRouter();
-  const [isOpen, setIsOpen] = useState(true);
-  const [tab, setTab] = useState<Tab>("all");
-  const reactId = useId();
-  const titleId = `${reactId}-title`;
-  const panelId = `${reactId}-panel`;
-  const unreadCount = useMemo(
-    () => chats.filter((chat) => unreadLookup(chat.ref).unread).length,
-    [chats, unreadLookup],
-  );
-  const tabs = useMemo(() => buildTabs(t, unreadCount), [t, unreadCount]);
-  const visibleChats = useMemo(
-    () => filterChatsByTab(chats, tab, unreadLookup),
-    [chats, tab, unreadLookup],
-  );
-
-  return (
-    <div className="hub__left-panel__section" data-open={isOpen}>
-      <SectionHeader
-        titleId={titleId}
-        panelId={panelId}
-        title={t("Direct messages")}
-        count={unreadCount}
-        isOpen={isOpen}
-        onToggle={() => setIsOpen((open) => !open)}
-        addLabel={t("New chat")}
-        onAdd={() => void router.push("/chat/new")}
-      />
-      <div
-        id={panelId}
-        role="region"
-        aria-labelledby={titleId}
-        className="hub__left-panel__section__panel"
-        inert={!isOpen}
-      >
-        <div className="hub__left-panel__section__panel__inner">
-          {chats.length > 0 && (
-            <TabsRow tab={tab} tabs={tabs} onChange={setTab} />
-          )}
-          {visibleChats.length > 0 ? (
-            <ul className="hub__left-panel__list">
-              {visibleChats.map((chat) => (
-                <li key={`${chat.accountId}:${chat.id}`}>
-                  <ChatRow
-                    chat={chat}
-                    accountLabel={accountLabels.get(chat.accountId)}
-                    showAccountLabel={showAccountLabels}
-                    unread={unreadLookup(chat.ref)}
-                    spaceId={spaceId}
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="hub__left-panel__section__empty">
-              {t("No direct messages yet")}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/**
- * Horizontal Espaces switcher: every espace shows its name above its bubble;
- * the active one is shown at full strength, the others greyed out and
- * clickable to switch.
  */
 const EspacesRow = ({
   spaces,

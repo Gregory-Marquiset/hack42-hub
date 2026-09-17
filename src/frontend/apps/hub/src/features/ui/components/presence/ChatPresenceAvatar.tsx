@@ -1,3 +1,8 @@
+import { AssistantAvatar } from "@/features/chat/components/UserAvatar";
+import {
+  isAssistantConversation,
+  useAssistant,
+} from "@/features/chat/hooks/useAssistant";
 import { useAvatarSrc } from "@/features/chat/hooks/useAvatarSrc";
 import { useChatUserPresence } from "@/features/chat/hooks/useChatUserPresence";
 import type { Chat } from "@/features/drivers/types";
@@ -13,8 +18,14 @@ export const ChatPresenceAvatar = ({ chat }: { chat: Chat }) => {
       ? chat.participantIds[0]
       : "";
   const presence = useChatUserPresence(chat.accountId, counterpartId);
+  const assistant = useAssistant();
 
   const avatar = (() => {
+    // The assistant keeps one face everywhere a conversation avatar is drawn,
+    // so she is told apart from a person at a glance.
+    if (isAssistantConversation(chat, assistant)) {
+      return <AssistantAvatar label={chat.name} decorative />;
+    }
     if (chat.visual.kind === "image") {
       return <Avatar label={chat.name} src={src} decorative />;
     }

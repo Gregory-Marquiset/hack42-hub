@@ -246,13 +246,13 @@ export const NewChatSearchBar = ({
         </span>
       )}
       {onEncryptedChange && (
-        // The consequence is permanent - no way back - so it stays one hover
-        // away rather than disappearing entirely. The header is a single row
-        // and the paragraph crowded it.
+        // The consequences are permanent - no assistant, no way back - so they
+        // stay one hover away rather than disappearing entirely. The header is
+        // a single row and the paragraph crowded it.
         <label
           className="hub__new-chat-search__encryption"
           title={t(
-            "Messages will be readable only by the participants. This cannot be undone later.",
+            "Messages will be readable only by the participants, and Ariane will not be able to answer here. This cannot be undone later.",
           )}
         >
           <input

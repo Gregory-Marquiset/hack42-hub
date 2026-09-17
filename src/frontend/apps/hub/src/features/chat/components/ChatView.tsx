@@ -22,6 +22,7 @@ import {
   type ChatPanelContextValue,
   type OpenThreadOptions,
 } from "../ChatPanelContext";
+import { useAssistantMention } from "../hooks/useAssistantMention";
 import { useChat } from "../hooks/useChat";
 import { useChatTyping } from "../hooks/useChatTyping";
 import { useEditChatMessage } from "../hooks/useEditChatMessage";
@@ -101,10 +102,19 @@ export const ChatView = ({
   const { editMessage, isEditing } = useEditChatMessage(chatRef);
   const { users: typingUsers, onTypingActivity } = useChatTyping(chatRef);
   // Who `@` can suggest. Already cached by react-query and shared with the
-  // members modal, so opening the list costs no extra request.
-  const { present: mentionCandidates } = useChatMembers(
+  // members modal, so opening the list costs no extra request. The assistant
+  // is offered even before she is in the room: mentioning her invites her.
+  const { present } = useChatMembers(
     chatRef ?? { accountId: "", chatId: "" },
     Boolean(chatRef),
+  );
+  const { candidate: assistantCandidate, ensureInvited } = useAssistantMention(
+    chatRef,
+    chat,
+  );
+  const mentionCandidates = useMemo(
+    () => (assistantCandidate ? [...present, assistantCandidate] : present),
+    [assistantCandidate, present],
   );
   const [editingMessage, setEditingMessage] =
     useState<EditingChatMessage | null>(null);
@@ -135,6 +145,10 @@ export const ChatView = ({
   // `onSent` only for new messages so editing never changes navigation state.
   const handleSubmit = useCallback(
     async (content: string) => {
+      // Before anything is sent, including an edit: an edited body pings her
+      // exactly like a new one, and her invitation has to precede the event
+      // that addresses her for her to read it at all.
+      await ensureInvited(content);
       if (editingMessage) {
         const message = await editMessage(editingMessage.id, content);
         setEditingMessage(null);
@@ -150,7 +164,15 @@ export const ChatView = ({
       onSent?.(chatRef);
       return message;
     },
-    [chatRef, editMessage, editingMessage, onSent, onSubmitDraft, sendMessage],
+    [
+      chatRef,
+      editMessage,
+      editingMessage,
+      ensureInvited,
+      onSent,
+      onSubmitDraft,
+      sendMessage,
+    ],
   );
 
   const [activeTool, setActiveTool] = useState<ChatTool | null>(null);

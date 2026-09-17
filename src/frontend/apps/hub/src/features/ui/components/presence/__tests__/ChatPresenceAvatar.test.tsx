@@ -21,6 +21,9 @@ vi.mock("@/features/chat/hooks/useAvatarSrc", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+  // Telling the assistant apart reads her identity from the API, which pulls
+  // the i18n bootstrap into this module graph. The mock has to cover it.
+  initReactI18next: { type: "3rdParty", init: () => undefined },
 }));
 
 const makeChat = (kind: Chat["kind"]): Chat => ({

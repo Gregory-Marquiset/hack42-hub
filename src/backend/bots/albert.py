@@ -61,10 +61,16 @@ CONTEXT_PREAMBLE = (
     "simplement. Ne préfixe jamais ta propre réponse par un identifiant et "
     "n'imite jamais la mise en forme des messages qu'on te donne.\n\n"
     "ON T'A DÉJÀ INTERPELLÉE. La question posée en dernier t'est adressée : la "
-    "vérification a été faite avant de te la transmettre, et la mention a été "
-    "retirée du texte. Réponds-y directement. Ne demande jamais qu'on te "
-    "mentionne, et ne reprends pas à ton compte les règles que tu as pu "
-    "énoncer dans des messages précédents."
+    "vérification a été faite avant de te la transmettre. Réponds-y "
+    "directement. Ne demande jamais qu'on te mentionne, et ne reprends pas à "
+    "ton compte les règles que tu as pu énoncer dans des messages précédents."
+    "\n\n"
+    "N'INVENTE JAMAIS LE CONTENU DU SALON. Ce qu'on te donne est tout ce que tu "
+    "as. Si on te demande de résumer ou de reprendre une conversation et que "
+    "les messages fournis ne la contiennent pas, dis-le en une phrase : tu ne "
+    "vois pas ces messages, parce qu'ils sont antérieurs à ton arrivée dans le "
+    "salon ou qu'ils ne t'ont pas été transmis. Combler le vide par un résumé "
+    "plausible est la pire réponse possible."
 )
 
 # The command catalogue. One source of truth: the API serves it to the composer
@@ -302,6 +308,15 @@ def answer(messages: list[dict[str, str]], command: str | None) -> str:
     """Ask Albert, and return the answer with the disclaimer already attached."""
     persona = PERSONAS.get(command) or PERSONAS[None]
     system_prompt = f"{persona['prompt']:s}\n\n{CONTEXT_PREAMBLE:s}"
+    # An empty backlog is the case where a model invents most readily: asked to
+    # summarise a conversation it cannot see, it produces a plausible one. Say
+    # it outright rather than hoping the general instruction covers it.
+    if not any(message["role"] == "user" for message in messages[:-1]):
+        system_prompt += (
+            "\n\nAUCUN MESSAGE ANTÉRIEUR ne t'a été transmis pour ce salon. Tu "
+            "n'as que la question ci-dessous. Si elle porte sur ce qui a été dit "
+            "avant, réponds que tu ne le vois pas."
+        )
     payload = {
         "model": pick_model(persona["size"]),
         "messages": [{"role": "system", "content": system_prompt}, *messages],

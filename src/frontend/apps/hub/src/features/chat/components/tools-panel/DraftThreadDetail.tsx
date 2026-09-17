@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ChatRef } from "@/features/drivers/types";
@@ -7,6 +7,9 @@ import type {
   DraftThreadRoot,
   OpenThreadOptions,
 } from "../../ChatPanelContext";
+import { useAssistantMention } from "../../hooks/useAssistantMention";
+import { useChat } from "../../hooks/useChat";
+import { useChatMembers } from "../../hooks/useChatMembers";
 import { useStartChatThread } from "../../hooks/useStartChatThread";
 import { ChatBubble } from "../ChatBubble";
 import { ChatComposer } from "../ChatComposer";
@@ -35,9 +38,22 @@ export const DraftThreadDetail = ({
   const { t } = useTranslation();
   const { startThread, isStarting, isSupported } = useStartChatThread(chatRef);
   const { message, author } = root;
+  // The first reply of a thread is a message like any other: mentioning the
+  // assistant here offers her and brings her in, as in the two other composers.
+  const { chat } = useChat(chatRef);
+  const { present } = useChatMembers(chatRef, true);
+  const { candidate: assistantCandidate, ensureInvited } = useAssistantMention(
+    chatRef,
+    chat,
+  );
+  const mentionCandidates = useMemo(
+    () => (assistantCandidate ? [...present, assistantCandidate] : present),
+    [assistantCandidate, present],
+  );
 
-  const handleSubmit = (content: string) =>
-    startThread(message, content, {
+  const handleSubmit = async (content: string) => {
+    await ensureInvited(content);
+    return startThread(message, content, {
       rootAuthor: author,
       // Stay on the draft until Matrix confirms the real root id. Opening the
       // optimistic id would enable a second composer that could send a reply to
@@ -46,6 +62,7 @@ export const DraftThreadDetail = ({
         onCreated(threadId, { focusComposer: true });
       },
     });
+  };
 
   return (
     <>
@@ -100,6 +117,7 @@ export const DraftThreadDetail = ({
         <div className="hub__thread-detail__composer">
           <ChatComposer
             conversationId={root.message.id}
+            mentionCandidates={mentionCandidates}
             placeholder={
               isSupported
                 ? t("Answer")

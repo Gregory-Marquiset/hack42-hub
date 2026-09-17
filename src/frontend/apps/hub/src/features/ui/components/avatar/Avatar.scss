@@ -60,4 +60,11 @@ $avatar-colors:
     height: 100%;
     object-fit: cover;
   }
+
+  // Sized for the 24px bubble it mostly lives in: any smaller and the
+  // eyes close up.
+  &__glyph {
+    width: 76%;
+    height: 76%;
+  }
 }

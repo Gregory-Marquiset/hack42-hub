@@ -374,8 +374,9 @@ class Base(Configuration):
     MATRIX_HS_TOKEN = values.Value(
         None, environ_name="MATRIX_HS_TOKEN", environ_prefix=None
     )
-    # 🔒️ Synapse admin rights. The only way into a room nobody invited Ariane
-    # to - the client API answers M_FORBIDDEN there.
+    # 🔒️ Synapse admin rights, read-only and for one thing: listing a room's
+    # members so the backend can decide who may download a meeting archive.
+    # It is no longer a way into a room - Ariane enters on invitation only.
     MATRIX_ADMIN_TOKEN = values.Value(
         None, environ_name="MATRIX_ADMIN_TOKEN", environ_prefix=None
     )

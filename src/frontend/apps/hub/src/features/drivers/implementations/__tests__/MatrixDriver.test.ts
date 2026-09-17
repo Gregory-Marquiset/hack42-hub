@@ -1178,7 +1178,8 @@ describe("MatrixDriver.startChatMeeting permissions", () => {
   });
 });
 
-describe("createChatForUsers (encryption)", () => {
+describe("createChatForUsers (encryption and the assistant)", () => {
+  const ASSISTANT_ID = "@hub-as_ariane:localhost";
   const BOB = "@bob:localhost";
   const CAROL = "@carol:localhost";
 
@@ -1292,6 +1293,32 @@ describe("createChatForUsers (encryption)", () => {
     expect(chat.encrypted).toBeUndefined();
     expect(createRoom).not.toHaveBeenCalled();
   });
+
+  it("never encrypts a one-to-one with the assistant", async () => {
+    const opts = await create([ASSISTANT_ID], {
+      assistantUserId: ASSISTANT_ID,
+    });
+    expect(opts.is_direct).toBe(true);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("invites the assistant into a clear group", async () => {
+    const opts = await create([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+      encrypted: false,
+    });
+    expect(opts.invite).toEqual([BOB, CAROL, ASSISTANT_ID]);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("keeps the assistant out of an encrypted group", async () => {
+    const opts = await create([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+      encrypted: true,
+    });
+    expect(opts.invite).toEqual([BOB, CAROL]);
+    expect(encryptionOf(opts)).toBe(true);
+  });
 });
 
 describe("getChatForUsers (encryption-aware lookup)", () => {
@@ -1333,5 +1360,35 @@ describe("getChatForUsers (encryption-aware lookup)", () => {
         encrypted: true,
       }),
     ).toBeNull();
+  });
+});
+
+describe("inviteToChat", () => {
+  it("sends a plain invitation as the current user", async () => {
+    const invite = vi.fn(async () => ({}));
+    const mx = {
+      getUserId: () => SELF_ID,
+      getRoom: () => ({ roomId: ROOM_ID }),
+      invite,
+    } as unknown as MatrixClient;
+
+    await driverWithClient(mx).inviteToChat(
+      ROOM_ID,
+      "@hub-as_ariane:localhost",
+    );
+
+    expect(invite).toHaveBeenCalledWith(ROOM_ID, "@hub-as_ariane:localhost");
+  });
+
+  it("refuses a room the client does not know", async () => {
+    const mx = {
+      getUserId: () => SELF_ID,
+      getRoom: () => null,
+      invite: vi.fn(),
+    } as unknown as MatrixClient;
+
+    await expect(
+      driverWithClient(mx).inviteToChat("!missing:localhost", "@bob:localhost"),
+    ).rejects.toThrow();
   });
 });

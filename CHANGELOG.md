@@ -8,6 +8,16 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Let anyone bring Ariane into a room by mentioning her. She is
+  offered by `@` in every clear group room, member or not; addressing her in a
+  room she has not joined invites her first, she accepts at once and answers.
+  She still reads the room only from her arrival on. Never in an encrypted
+  room, nor in a conversation between two people.
+- ✨(frontend) Give the assistant a face. Wherever a person's avatar appears -
+  message bubbles, people search, thread list, and the header, list and search
+  rows of a conversation with her - Ariane shows a small robot on one fixed
+  colour instead of an initial, so she is told apart from a person at a glance.
+  The members list, drawn by the UI kit, is the one exception.
 - 🔒️(profiles) Stop sending request bodies to Sentry and keep the chat
   identity proof out of tracebacks: saving a role carries a live Matrix access
   token, which error reports were shipping verbatim.
@@ -45,13 +55,19 @@ and this project adheres to
 - ✨(frontend) Name a meeting, plan its duration or schedule it ahead,
   follow its progress in the meeting window, and let its organizer rename,
   extend or close it.
-- ✨(bots) Add Ariane, an assistant reachable from any room with `@Ariane`.
-  She answers only when addressed, reads the thread and the recent room
-  history for context, and changes register with `/juriste`, `/avocat`,
-  `/po` and `/pm`. Answers come from the Albert API, from the server only.
-  The context is cut at the asker's own history horizon, so she never
-  summarises messages they are not allowed to read. `/aide` lists the
-  commands and states what she reads.
+- ✨(bots) Add Ariane, an assistant reachable with `@Ariane` in any room she
+  has been invited to. She answers only when addressed, reads the thread and
+  the room history that followed her arrival, and changes register with
+  `/juriste`, `/avocat`, `/po` and `/pm`. Answers come from the Albert API,
+  from the server only. The context is cut at both her own arrival and the
+  asker's history horizon, so she never reads back what either of them is not
+  entitled to. She cannot work in encrypted rooms, which includes every private
+  message. `/aide` lists the commands and states what she reads.
+- ✨(bots) Put Ariane in every room she can read. A clear group room invites
+  her at creation and she joins at once, so her context starts with the room's
+  first message. A conversation with her alone is not encrypted, and she can
+  be found in the people search. She is kept out of encrypted rooms, which
+  includes every private message between people.
 - ✨(frontend) Suggest room members with `@` and assistant commands with `/`
   in the message composer. The list follows the ARIA combobox pattern and is
   usable with a screen reader.

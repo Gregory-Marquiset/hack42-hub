@@ -12,7 +12,6 @@ Someone who left Ariane's conversation is not invited again.
 """
 
 import logging
-import urllib.parse
 import zoneinfo
 from datetime import timedelta
 
@@ -88,16 +87,6 @@ def direct_room(user_id):
         user_id=user_id, defaults={"room_id": room_id}
     )
     return room_id
-
-
-def hub_meeting_url(meeting):
-    """Where a member joins: the conversation in the Hub, call opened."""
-    # LOGIN_REDIRECT_URL is where the Hub itself answers, in every deployment.
-    base = (settings.LOGIN_REDIRECT_URL or "").rstrip("/")
-    if not base or not meeting.chat_id:
-        return ""
-    chat = urllib.parse.quote(meeting.chat_id, safe="")
-    return f"{base:s}/chat?chat={chat:s}&meeting={meeting.slug:s}"
 
 
 def meeting_invitation(meeting):
@@ -180,15 +169,9 @@ def scheduled_message(meeting):
 def started_message(meeting):
     """The message sent when a meeting starts."""
     title, room = _names(meeting)
-    lines = [f"🎥 La réunion « {title} » commence dans {room}."]
-    # The Hub turns the attached meeting into a button; the addresses stay in
-    # the text, for the clients that show a message as plain text.
-    hub = hub_meeting_url(meeting)
-    if hub:
-        lines.append(f"Ouvrir la conversation et rejoindre la réunion : {hub}")
-    if meeting.url:
-        lines.append(f"Lien de l'appel, à partager hors du salon : {meeting.url}")
-    return "\n".join(lines)
+    # The meeting travels with the message: the Hub turns it into a button
+    # that joins the call in its window, so no address clutters the text.
+    return f"🎥 La réunion « {title} » commence dans {room}."
 
 
 def closed_message(meeting, document=None):

@@ -143,7 +143,8 @@ def test_notify_started_once_with_the_link(homeserver):
     body = homeserver.sent[0][1]
     assert "« Point hebdo »" in body
     assert "« Équipe produit »" in body
-    assert "https://meet.test/abc-defg-hij" in body
+    # The call travels with the message, as the button the Hub shows.
+    assert homeserver.extras[0] == meeting_notifications.meeting_invitation(meeting)
     meeting.refresh_from_db()
     assert meeting.started_notified_at is not None
 
@@ -235,7 +236,7 @@ def test_messages_name_the_espace():
     assert f"de {room} est terminée" in meeting_notifications.closed_message(meeting)
 
 
-@override_settings(**SETTINGS, LOGIN_REDIRECT_URL="https://hub.test/")
+@override_settings(**SETTINGS)
 @pytest.mark.usefixtures("homeserver")
 def test_started_message_carries_the_meeting():
     """The Hub turns the attached meeting into a button joining the call."""
@@ -245,10 +246,8 @@ def test_started_message_carries_the_meeting():
 
     text = meeting_notifications.started_message(meeting)
 
-    assert "Ouvrir la conversation et rejoindre la réunion : " in text
-    # The address stays readable, and is the one to share outside the room.
-    assert "https://meet.test/abc" in text
-    assert f"https://hub.test/chat?chat=%21room%3Ahack42&meeting={meeting.slug}" in text
+    # The button carries the call: no address clutters the message.
+    assert "http" not in text
     assert meeting_notifications.meeting_invitation(meeting) == {
         "io.lasuite.hub.meeting_invite": {
             "chatId": ROOM,
@@ -326,7 +325,9 @@ def test_creating_a_meeting_now_tells_it_starts(homeserver):
 
     [(_, body)] = homeserver.sent
     assert body.startswith("🎥 La réunion « Point hebdo » commence")
-    assert "https://m/abc" in body
+    assert homeserver.extras[-1]["io.lasuite.hub.meeting_invite"]["url"] == (
+        "https://m/abc"
+    )
     meeting = models.Meeting.objects.get()
     assert meeting.url == "https://m/abc"
     assert meeting.scheduled_notified_at is None

@@ -9,8 +9,8 @@ and this project adheres to
 ### Added
 
 - ✨(meetings) Join a meeting from the message Ariane sends about it: her
-  message carries the meeting, so the Hub offers a button opening the call in
-  its own window, and its link opens the conversation and joins the call.
+  message carries the meeting, and the Hub turns it into a button opening the
+  call in its own window. Starting a call closes the meetings panel.
 - ✨(meetings) Name the espace of the conversation in the messages Ariane
   sends about a meeting, and turn the web addresses of a message into links,
   so the invitation to a call is joined in one click.

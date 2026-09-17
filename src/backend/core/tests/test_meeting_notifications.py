@@ -215,6 +215,40 @@ def test_messages():
     assert "Transcription : https://docs.test/docs/d/" in closed
 
 
+@override_settings(**SETTINGS)
+@pytest.mark.usefixtures("homeserver")
+def test_messages_name_the_espace():
+    """The conversation, and the espace it belongs to when there is one."""
+    meeting = factories.MeetingFactory(
+        chat_id=ROOM,
+        title="Point hebdo",
+        space_name="Direction du numérique",
+        url="https://meet.test/abc",
+        starts_at=datetime(2026, 9, 18, 8, 0, tzinfo=dt_timezone.utc),
+    )
+    room = "« Équipe produit » (espace « Direction du numérique »)"
+
+    assert f"programmée dans {room}" in meeting_notifications.scheduled_message(meeting)
+    assert f"commence dans {room}" in meeting_notifications.started_message(meeting)
+    assert f"de {room} est terminée" in meeting_notifications.closed_message(meeting)
+
+
+@override_settings(**SETTINGS)
+@pytest.mark.usefixtures("homeserver")
+def test_messages_without_an_espace():
+    """A conversation outside any espace is named on its own."""
+    meeting = factories.MeetingFactory(
+        chat_id=ROOM,
+        title="Point hebdo",
+        starts_at=datetime(2026, 9, 18, 8, 0, tzinfo=dt_timezone.utc),
+    )
+
+    assert "dans « Équipe produit » :" in meeting_notifications.scheduled_message(
+        meeting
+    )
+    assert "espace" not in meeting_notifications.started_message(meeting)
+
+
 # When the messages are sent
 
 

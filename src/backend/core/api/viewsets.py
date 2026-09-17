@@ -384,6 +384,7 @@ class MeetingView(drf.views.APIView):
                 livekit_room=room["id"],
                 organizer=request.user,
                 chat_id=details["chat_id"],
+                space_name=details["space_name"].strip(),
                 title=details["title"],
                 starts_at=details.get("starts_at"),
                 planned_end_at=details.get("planned_end_at"),

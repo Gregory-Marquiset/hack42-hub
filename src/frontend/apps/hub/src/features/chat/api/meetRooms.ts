@@ -33,6 +33,7 @@ export const createMeetRoom = async (
   const timeZone = browserTimeZone();
   const body = details && {
     chat_id: details.chatId,
+    space_name: details.spaceName ?? "",
     title: details.title ?? "",
     starts_at: details.startsAt.toISOString(),
     planned_end_at: details.plannedEndAt?.toISOString() ?? null,

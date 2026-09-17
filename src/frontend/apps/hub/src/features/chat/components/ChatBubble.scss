@@ -59,6 +59,18 @@
     font-style: italic;
   }
 
+  // A link keeps the colour of its bubble, underlined to be seen as one.
+  &__link {
+    color: inherit;
+    text-decoration: underline;
+    overflow-wrap: anywhere;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration-thickness: 2px;
+    }
+  }
+
   &__edited {
     margin-left: var(--c--globals--spacings--xxs, 6px);
     font-size: 11px;

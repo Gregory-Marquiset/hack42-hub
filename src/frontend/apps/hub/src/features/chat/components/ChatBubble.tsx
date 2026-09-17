@@ -12,6 +12,7 @@ import type {
 } from "@/features/drivers/types";
 
 import { useChatPanel } from "../ChatPanelContext";
+import { MessageText } from "./MessageText";
 import { useChatMessageEdit } from "../ChatMessageEditContext";
 import { copyTextToClipboard } from "../copyTextToClipboard";
 import { formatChatGroupTimestamp } from "../formatTimestamp";
@@ -219,7 +220,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
             </span>
           ) : (
             <>
-              {props.content}
+              <MessageText content={props.content} />
               {props.isEdited && (
                 <span className="hub__chat-bubble__edited">{t("edited")}</span>
               )}
@@ -294,7 +295,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
             </span>
           ) : (
             <>
-              {content}
+              <MessageText content={content} />
               {props.isEdited && (
                 <span className="hub__chat-bubble__edited">{t("edited")}</span>
               )}

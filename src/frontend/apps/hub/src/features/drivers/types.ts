@@ -24,6 +24,8 @@ export type MeetRoomSchedule = {
   startsAt: Date;
   /** Past it, the server closes the meeting once nobody is in the call. */
   plannedEndAt?: Date;
+  /** Espace the conversation belongs to, named in the assistant's messages. */
+  spaceName?: string;
 };
 
 /** A text file attached to a meeting when it is planned. */

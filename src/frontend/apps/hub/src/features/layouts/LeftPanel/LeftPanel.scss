@@ -616,6 +616,11 @@
     &__panel {
       display: grid;
       grid-template-rows: 1fr;
+      // The track is what floored the list at its own min-content width and
+      // pushed every row out of the panel. The list carries `min-width: 0`
+      // now, and this says the same thing one level up: even a future child
+      // that forgets cannot make this column wider than its cell.
+      grid-template-columns: minmax(0, 1fr);
       transition: grid-template-rows 220ms ease;
 
       &__inner {

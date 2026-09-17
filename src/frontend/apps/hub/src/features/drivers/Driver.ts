@@ -352,6 +352,15 @@ export abstract class Driver {
   /** Joined members and pending invitees of one conversation. */
   abstract getChatMembers(chatId: string): Promise<ChatMembers>;
   /**
+   * Invites one user into a conversation. The default refuses: a backend that
+   * cannot invite must not pretend it did.
+   */
+  async inviteToChat(chatId: string, userId: string): Promise<void> {
+    throw new Error(
+      `Driver.inviteToChat: inviting ${userId} into ${chatId} is not supported.`,
+    );
+  }
+  /**
    * Existing conversation for exactly these participants, or `null`. With
    * `options.encrypted`, only a room in that state counts.
    */

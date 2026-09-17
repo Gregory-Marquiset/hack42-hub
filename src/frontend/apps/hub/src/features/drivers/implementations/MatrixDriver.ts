@@ -496,6 +496,14 @@ export class MatrixDriver extends Driver {
       : matrixRoomToLocalChat(room, currentUserId);
   }
 
+  override async inviteToChat(chatId: string, userId: string): Promise<void> {
+    const { mx } = this.requireRoom("inviteToChat", chatId);
+    // A plain invitation, sent as the current user: whoever addresses the
+    // assistant is the one bringing her in, with their own rights and nothing
+    // more. The homeserver decides whether they may.
+    await mx.invite(chatId, userId);
+  }
+
   async getChatMembers(chatId: string): Promise<ChatMembers> {
     const { mx, room } = this.requireRoom("getChatMembers", chatId);
     const joinedRoomIds = await this.getJoinedRoomIds(mx);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isAssistantConversation } from "../useAssistant";
+import { isAssistantConversation, mentionsAssistant } from "../useAssistant";
 
 const ASSISTANT_ID = "@hub-as_ariane:localhost";
 describe("isAssistantConversation", () => {
@@ -34,5 +34,26 @@ describe("isAssistantConversation", () => {
         { userId: "" },
       ),
     ).toBe(false);
+  });
+});
+
+describe("mentionsAssistant", () => {
+  const names = ["ariane"];
+
+  it("matches the bot's own rule: @ then a whole name at a word start", () => {
+    expect(mentionsAssistant("@Ariane /aide", names)).toBe(true);
+    expect(mentionsAssistant("Bonjour @ariane, un avis ?", names)).toBe(true);
+    expect(mentionsAssistant("(@ARIANE)", names)).toBe(true);
+  });
+
+  it("ignores lookalikes the bot would ignore too", () => {
+    expect(mentionsAssistant("ariane sans arobase", names)).toBe(false);
+    expect(mentionsAssistant("@arianes", names)).toBe(false);
+    expect(mentionsAssistant("mail@ariane", names)).toBe(false);
+    expect(mentionsAssistant("@@ariane", names)).toBe(false);
+  });
+
+  it("never matches before her names are known", () => {
+    expect(mentionsAssistant("@Ariane", [])).toBe(false);
   });
 });

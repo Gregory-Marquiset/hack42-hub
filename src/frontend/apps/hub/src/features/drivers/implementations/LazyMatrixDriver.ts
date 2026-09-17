@@ -233,6 +233,10 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) => driver.getChatMembers(chatId));
   }
 
+  override async inviteToChat(chatId: string, userId: string): Promise<void> {
+    return this.withTarget((driver) => driver.inviteToChat(chatId, userId));
+  }
+
   async getChatForUsers(
     userIds: string[],
     options?: ChatLookupOptions,

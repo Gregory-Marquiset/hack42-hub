@@ -8,6 +8,10 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Let anyone bring Ariane into a room by mentioning her. She is
+  offered by `@` in every clear room, member or not; addressing her in a room
+  she has not joined invites her first, she accepts at once, and the message
+  is the first thing she reads. Never in an encrypted room.
 - ✨(frontend) Give the assistant a face. Wherever a person's avatar appears -
   message bubbles, people search, thread list, and the header, list and search
   rows of a conversation with her - Ariane shows a small robot on one fixed

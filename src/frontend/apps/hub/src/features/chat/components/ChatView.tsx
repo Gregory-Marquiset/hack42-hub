@@ -22,6 +22,7 @@ import {
   type ChatPanelContextValue,
   type OpenThreadOptions,
 } from "../ChatPanelContext";
+import { useAssistantMention } from "../hooks/useAssistantMention";
 import { useChat } from "../hooks/useChat";
 import { useChatTyping } from "../hooks/useChatTyping";
 import { useEditChatMessage } from "../hooks/useEditChatMessage";
@@ -101,10 +102,19 @@ export const ChatView = ({
   const { editMessage, isEditing } = useEditChatMessage(chatRef);
   const { users: typingUsers, onTypingActivity } = useChatTyping(chatRef);
   // Who `@` can suggest. Already cached by react-query and shared with the
-  // members modal, so opening the list costs no extra request.
-  const { present: mentionCandidates } = useChatMembers(
+  // members modal, so opening the list costs no extra request. The assistant
+  // is offered even before she is in the room: mentioning her invites her.
+  const { present } = useChatMembers(
     chatRef ?? { accountId: "", chatId: "" },
     Boolean(chatRef),
+  );
+  const { candidate: assistantCandidate, ensureInvited } = useAssistantMention(
+    chatRef,
+    chat,
+  );
+  const mentionCandidates = useMemo(
+    () => (assistantCandidate ? [...present, assistantCandidate] : present),
+    [assistantCandidate, present],
   );
   const [editingMessage, setEditingMessage] =
     useState<EditingChatMessage | null>(null);
@@ -146,11 +156,22 @@ export const ChatView = ({
         }
         return onSubmitDraft(content);
       }
+      // Her invitation must precede the message that addresses her, so it is
+      // the first thing she reads once she has accepted.
+      await ensureInvited(content);
       const message = await sendMessage(content);
       onSent?.(chatRef);
       return message;
     },
-    [chatRef, editMessage, editingMessage, onSent, onSubmitDraft, sendMessage],
+    [
+      chatRef,
+      editMessage,
+      editingMessage,
+      ensureInvited,
+      onSent,
+      onSubmitDraft,
+      sendMessage,
+    ],
   );
 
   const [activeTool, setActiveTool] = useState<ChatTool | null>(null);

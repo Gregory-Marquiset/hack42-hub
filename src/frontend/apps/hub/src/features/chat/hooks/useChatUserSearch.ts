@@ -59,16 +59,15 @@ export const useChatUserSearch = (
     ) {
       return found;
     }
-    const displayName = assistant.names[0];
     return [
       matrixDirectoryUserToChatUser({
         user_id: assistant.userId,
-        display_name:
-          displayName.charAt(0).toUpperCase() + displayName.slice(1),
+        display_name: assistant.displayName,
       }),
       ...found.filter((user) => user.id !== assistant.userId),
     ];
   }, [
+    assistant.displayName,
     assistant.names,
     assistant.userId,
     excludedKey,

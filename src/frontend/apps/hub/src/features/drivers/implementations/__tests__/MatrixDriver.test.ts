@@ -1362,3 +1362,33 @@ describe("getChatForUsers (encryption-aware lookup)", () => {
     ).toBeNull();
   });
 });
+
+describe("inviteToChat", () => {
+  it("sends a plain invitation as the current user", async () => {
+    const invite = vi.fn(async () => ({}));
+    const mx = {
+      getUserId: () => SELF_ID,
+      getRoom: () => ({ roomId: ROOM_ID }),
+      invite,
+    } as unknown as MatrixClient;
+
+    await driverWithClient(mx).inviteToChat(
+      ROOM_ID,
+      "@hub-as_ariane:localhost",
+    );
+
+    expect(invite).toHaveBeenCalledWith(ROOM_ID, "@hub-as_ariane:localhost");
+  });
+
+  it("refuses a room the client does not know", async () => {
+    const mx = {
+      getUserId: () => SELF_ID,
+      getRoom: () => null,
+      invite: vi.fn(),
+    } as unknown as MatrixClient;
+
+    await expect(
+      driverWithClient(mx).inviteToChat("!missing:localhost", "@bob:localhost"),
+    ).rejects.toThrow();
+  });
+});

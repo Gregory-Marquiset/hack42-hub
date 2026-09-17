@@ -89,6 +89,57 @@ def human_token() -> str:
     fail(f"could not issue a token for @{HUMAN}: {issued.stderr.strip()}")
 
 
+HEALTH_URL = "http://localhost:9801/bots/health/"
+ANSWER_TIMEOUT_S = 25
+
+
+def service_up() -> bool:
+    try:
+        with urllib.request.urlopen(HEALTH_URL, timeout=3) as response:
+            return b"ok" in response.read()
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def check_mention_after_invite(owner: str, bot: str, as_token: str) -> int:
+    """Invite her and mention her in the same breath, as the Hub does."""
+    room = call("POST", "/_matrix/client/v3/createRoom", owner,
+                {"name": "check-bot mention (jetable)", "preset": "private_chat"})
+    if "room_id" not in room:
+        print(f"{KO}salon de la 4e verification impossible: {room}")
+        return 1
+    room_id = room["room_id"]
+    failures = 0
+    try:
+        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/invite", owner, {"user_id": bot})
+        txn = f"checkbot-mention{int(time.time() * 1000)}"
+        sent = call("PUT",
+                    f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{txn}",
+                    owner, {"msgtype": "m.text", "body": "@Ariane /aide"})
+        if "event_id" not in sent:
+            print(f"{KO}mention refusee: {sent}")
+            return 1
+        deadline = time.time() + ANSWER_TIMEOUT_S
+        answered = None
+        while time.time() < deadline and answered is None:
+            time.sleep(1)
+            page = call("GET", f"/_matrix/client/v3/rooms/{quote(room_id)}/messages?dir=b&limit=20", owner)
+            for event in page.get("chunk", []):
+                if event.get("sender") == bot and event.get("type") == "m.room.message":
+                    answered = event
+                    break
+        if answered:
+            print(f"{OK}invitee et mentionnee dans la foulee, elle repond ({answered['event_id'][:24]}...)")
+        else:
+            print(f"{KO}invitee et mentionnee, pas de reponse en {ANSWER_TIMEOUT_S} s")
+            failures += 1
+    finally:
+        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave?user_id={quote(bot)}", as_token, {})
+        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave", owner, {})
+        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/forget", owner, {})
+    return failures
+
+
 def main() -> None:
     env = read_env()
     bot = env["MATRIX_BOT_USER_ID"]
@@ -138,12 +189,20 @@ def main() -> None:
     call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave?user_id={quote(bot)}", as_token, {})
     call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave", owner, {})
     call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/forget", owner, {})
+
+    # 4. Mentioning her is how she gets in: the Hub invites her and sends the
+    #    message right behind. She must accept, read it and answer - which
+    #    needs the assistant service itself, not just the homeserver.
+    if not service_up():
+        print(f"  --  service absent ({HEALTH_URL}): la 4e verification est sautee")
+    else:
+        failures += check_mention_after_invite(owner, bot, as_token)
     print("  salon jetable quitte et oublie")
 
     if failures:
         print(f"\n{failures} verification(s) en echec.")
         sys.exit(1)
-    print("\nles 3 verifications passent.")
+    print("\ntoutes les verifications passent.")
 
 
 if __name__ == "__main__":

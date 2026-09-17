@@ -74,11 +74,11 @@ def help_message() -> str:
         "",
         "Sans commande, je réponds sur un ton normal.",
         "",
-        "Où je travaille : dans chaque salon de groupe non chiffré, où l'on "
-        "m'invite automatiquement à la création, et en conversation directe "
-        "avec moi. Jamais dans un salon chiffré — je ne peux pas y lire les "
-        "messages — ni dans un message privé entre deux personnes, qui l'est "
-        "toujours.",
+        "Où je travaille : dans chaque salon de groupe non chiffré — on m'y "
+        "invite à la création, ou dès que quelqu'un m'y mentionne — et en "
+        "conversation directe avec moi. Jamais dans un salon chiffré — je ne "
+        "peux pas y lire les messages — ni dans un message privé entre deux "
+        "personnes, qui l'est toujours.",
         "",
         "Ce que je lis : les messages du salon postérieurs à mon arrivée et, "
         "quand vous me pinguez dans un fil, ce fil. Jamais ce qui a été dit "

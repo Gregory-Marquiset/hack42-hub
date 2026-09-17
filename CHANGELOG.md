@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- 💄(frontend) Replace the SDK's multi-line decryption diagnostic with a short
+  tombstone - a padlock and one line - for a message this device holds no key
+  for, and skip those events in the conversation list preview.
 - ✨(frontend) Offer the encryption choice when a salon is created from the
   left panel, not only from New Chat - Matrix has no way back, so a choice
   missing at creation is lost for good. A clear salon created this way also

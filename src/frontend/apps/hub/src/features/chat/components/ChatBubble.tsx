@@ -1,4 +1,4 @@
-import { Trash } from "@gouvfr-lasuite/ui-components/icons";
+import { Lock, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { UserRoleBadge } from "@/features/roles/RoleBadge";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -38,6 +38,7 @@ type ChatBubbleReceivedProps = {
   timestamp: string;
   reactions: ChatReaction[];
   isDeleted?: boolean;
+  isUndecryptable?: boolean;
   isEdited?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
@@ -61,6 +62,7 @@ type ChatBubbleSentProps = {
   timestamp: string;
   reactions: ChatReaction[];
   isDeleted?: boolean;
+  isUndecryptable?: boolean;
   isEdited?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
@@ -142,6 +144,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
       reactions,
       thread,
       isDeleted: props.isDeleted,
+      isUndecryptable: props.isUndecryptable,
       isEdited: props.isEdited,
       canEdit: props.canEdit,
       canDelete: props.canDelete,
@@ -217,12 +220,17 @@ export const ChatBubble = (props: ChatBubbleProps) => {
       >
         <div
           className="hub__chat-bubble__body"
-          data-deleted={props.isDeleted || undefined}
+          data-deleted={props.isDeleted || props.isUndecryptable || undefined}
         >
           {props.isDeleted ? (
             <span className="hub__chat-bubble__tombstone">
               <Trash size={16} aria-hidden="true" />
               {t("Message deleted")}
+            </span>
+          ) : props.isUndecryptable ? (
+            <span className="hub__chat-bubble__tombstone">
+              <Lock size={16} aria-hidden="true" />
+              {t("Message unreadable on this device")}
             </span>
           ) : (
             <>
@@ -298,12 +306,17 @@ export const ChatBubble = (props: ChatBubbleProps) => {
         )}
         <div
           className="hub__chat-bubble__body"
-          data-deleted={props.isDeleted || undefined}
+          data-deleted={props.isDeleted || props.isUndecryptable || undefined}
         >
           {props.isDeleted ? (
             <span className="hub__chat-bubble__tombstone">
               <Trash size={16} aria-hidden="true" />
               {t("Message deleted")}
+            </span>
+          ) : props.isUndecryptable ? (
+            <span className="hub__chat-bubble__tombstone">
+              <Lock size={16} aria-hidden="true" />
+              {t("Message unreadable on this device")}
             </span>
           ) : (
             <>

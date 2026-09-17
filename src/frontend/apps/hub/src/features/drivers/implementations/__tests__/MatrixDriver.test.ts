@@ -10,7 +10,11 @@ import {
 } from "matrix-js-sdk/lib/matrix";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { timelineEventToChatEvent } from "../matrixEventMapping";
+import {
+  lastMainTimelinePreview,
+  matrixEventToChatMessage,
+  timelineEventToChatEvent,
+} from "../matrixEventMapping";
 import { LazyMatrixDriver } from "../LazyMatrixDriver";
 import { MatrixDriver } from "../MatrixDriver";
 import { readChatSelfPresencePreference } from "../../presencePreference";
@@ -51,6 +55,8 @@ const makeReactionEvent = (
   ({
     getType: () => "m.reaction",
     isRedacted: () => false,
+    // Read for every message: an undecryptable one gets its own tombstone.
+    isDecryptionFailure: () => false,
     getId: () => reaction.id ?? `$reaction-${reaction.sender}`,
     getSender: () => reaction.sender,
     getRelation: () => ({
@@ -73,10 +79,13 @@ const makeMessageEvent = (opts: {
   status?: string | null;
   transactionId?: string;
   txnId?: string;
+  undecryptable?: boolean;
 }): MatrixEvent =>
   ({
     getType: () => opts.type ?? "m.room.message",
     isRedacted: () => false,
+    // Read for every message: an undecryptable one gets its own tombstone.
+    isDecryptionFailure: () => opts.undecryptable ?? false,
     getId: () => opts.id ?? "$ev:localhost",
     getSender: () => opts.sender,
     getTs: () => 1_700_000_000_000,
@@ -177,6 +186,43 @@ beforeEach(() => {
   localStorage.clear();
   startClientMock.mockReset();
   startClientMock.mockResolvedValue(undefined);
+});
+
+describe("an undecryptable message", () => {
+  it("is flagged and stripped of the SDK's diagnostic", () => {
+    // The SDK puts its whole English explanation in the body. It is neither
+    // readable nor translatable, so the UI must never receive it.
+    const event = makeMessageEvent({
+      sender: OTHER_ID,
+      body: "** Unable to decrypt: DecryptionError: no key backup **",
+      undecryptable: true,
+    });
+
+    const message = matrixEventToChatMessage(event, makeRoom(), SELF_ID);
+
+    expect(message.isUndecryptable).toBe(true);
+    expect(message.content).toBe("");
+  });
+
+  it("is skipped by the conversation list preview, like a deleted one", () => {
+    // The newest event is the unreadable one; the row falls back to the last
+    // message it can actually show rather than printing the diagnostic.
+    const events = [
+      makeMessageEvent({ sender: OTHER_ID, body: "lisible", id: "$a" }),
+      makeMessageEvent({
+        sender: OTHER_ID,
+        body: "** Unable to decrypt **",
+        id: "$b",
+        undecryptable: true,
+      }),
+    ];
+    const room = {
+      getLiveTimeline: () => ({ getEvents: () => events }),
+      getMember: (id: string) => ({ name: id }),
+    } as unknown as Room;
+
+    expect(lastMainTimelinePreview(room, SELF_ID)?.text).toBe("lisible");
+  });
 });
 
 describe("MatrixDriver.getUserPresence", () => {

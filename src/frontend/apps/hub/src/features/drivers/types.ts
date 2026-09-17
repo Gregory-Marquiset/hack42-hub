@@ -467,6 +467,13 @@ export type ChatMessage = {
   reactions: ChatReaction[];
   /** Matrix redaction rendered as a stable tombstone rather than a removed row. */
   isDeleted?: boolean;
+  /**
+   * The message is encrypted and this device holds no key for it - it predates
+   * the session and there is no key backup. Rendered as its own short
+   * tombstone: the SDK puts its whole English diagnostic in the body, which is
+   * neither readable nor translatable.
+   */
+  isUndecryptable?: boolean;
   /** Whether the visible body comes from an `m.replace` relation. */
   isEdited?: boolean;
   /** Server-derived permissions for the connected user. */

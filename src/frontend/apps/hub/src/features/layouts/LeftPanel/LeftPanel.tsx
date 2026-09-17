@@ -1,8 +1,15 @@
-import { Button } from "@gouvfr-lasuite/ui-components";
+import {
+  Button,
+  DropdownMenu,
+  type DropdownMenuItem,
+  useDropdownMenu,
+} from "@gouvfr-lasuite/ui-components";
 import {
   ArrowDropDown,
   Plus,
   QuestionMark,
+  Shapes,
+  UserSearch,
 } from "@gouvfr-lasuite/ui-components/icons";
 import clsx from "clsx";
 import type { TFunction } from "i18next";
@@ -19,6 +26,8 @@ import {
   spaceHref,
 } from "@/features/chat/chatRefs";
 import { compareChats } from "@/features/chat/chatSorting";
+import { CreateSalonModal } from "@/features/chat/components/CreateSalonModal";
+import { CreateSpaceModal } from "@/features/chat/components/CreateSpaceModal";
 import { formatChatListTimestamp } from "@/features/chat/formatTimestamp";
 import { useAvatarSrc } from "@/features/chat/hooks/useAvatarSrc";
 import { useChatUnread } from "@/features/chat/hooks/useChatUnread";
@@ -107,6 +116,10 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   );
   const showAccountLabels = entries.length > 1;
   const [tab, setTab] = useState<Tab>("all");
+  const [isRoomsOpen, setIsRoomsOpen] = useState(true);
+  const roomsReactId = useId();
+  const roomsTitleId = `${roomsReactId}-title`;
+  const roomsPanelId = `${roomsReactId}-panel`;
 
   const directChats = useMemo(
     () =>
@@ -131,14 +144,14 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
     [tab, groupChats, unreadLookup],
   );
 
-  const actions: ActionItem[] = [
-    {
-      id: "new",
-      href: "/chat/new",
-      icon: <Plus size={16} />,
-      label: t("New"),
-    },
-  ];
+  const canCreateSalon = entries.some(
+    ({ driver }) => driver.supportsConversationCreation,
+  );
+  const canCreateSpace = entries.some(
+    ({ driver }) => driver.supportsSpaceCreation,
+  );
+
+  const actions: ActionItem[] = [];
   if (entries.some(({ driver }) => driver.supportsConversationSearch)) {
     actions.push({
       id: "search",
@@ -160,20 +173,31 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
       <div className="hub__left-panel__top">
         <div className="hub__left-panel__logo">
           <TchapLogo />
-          <span className="hub__left-panel__logo__label">{t("Messaging")}</span>
         </div>
 
         <nav
           className="hub__left-panel__actions"
           aria-label={t("Quick actions")}
         >
+          <NewActionMenu
+            spaces={spaces}
+            activeSpaceId={activeSpaceId}
+            canCreateSalon={canCreateSalon}
+            canCreateSpace={canCreateSpace}
+          />
           {actions.map((action) => (
             <ActionRow key={action.id} action={action} />
           ))}
         </nav>
 
         <EspacesRow spaces={spaces} activeSpaceId={activeSpaceId} />
+      </div>
 
+      {/* Direct messages and Rooms used to each scroll internally (a small
+          capped list, and a flex-grow list); they now share one scrollbar
+          for the whole panel body, so long lists in either section scroll
+          the same way instead of fighting each other for space. */}
+      <div className="hub__left-panel__body">
         <DirectMessagesSection
           chats={directChats}
           unreadLookup={unreadLookup}
@@ -182,25 +206,49 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
           spaceId={activeSpaceId}
         />
 
-        <span className="hub__left-panel__rooms-title">{t("Rooms")}</span>
+        <div className="hub__left-panel__section" data-open={isRoomsOpen}>
+          <button
+            type="button"
+            id={roomsTitleId}
+            className="hub__left-panel__section__header"
+            aria-expanded={isRoomsOpen}
+            aria-controls={roomsPanelId}
+            onClick={() => setIsRoomsOpen((open) => !open)}
+          >
+            <span className="hub__left-panel__section__title">
+              {t("Rooms")}
+            </span>
+            <ArrowDropDown
+              aria-hidden="true"
+              className="hub__left-panel__section__chevron"
+            />
+          </button>
 
-        <TabsRow tab={tab} tabs={tabs} onChange={setTab} />
-      </div>
+          {isRoomsOpen && <TabsRow tab={tab} tabs={tabs} onChange={setTab} />}
 
-      <div className="hub__left-panel__scroll">
-        <ul className="hub__left-panel__list">
-          {visibleChats.map((chat) => (
-            <li key={`${chat.accountId}:${chat.id}`}>
-              <ChatRow
-                chat={chat}
-                accountLabel={accountLabels.get(chat.accountId)}
-                showAccountLabel={showAccountLabels}
-                unread={unreadLookup(chat.ref)}
-                spaceId={activeSpaceId}
-              />
-            </li>
-          ))}
-        </ul>
+          {isRoomsOpen && (
+            <div
+              id={roomsPanelId}
+              role="region"
+              aria-labelledby={roomsTitleId}
+              className="hub__left-panel__section__panel__inner"
+            >
+              <ul className="hub__left-panel__list">
+                {visibleChats.map((chat) => (
+                  <li key={`${chat.accountId}:${chat.id}`}>
+                    <ChatRow
+                      chat={chat}
+                      accountLabel={accountLabels.get(chat.accountId)}
+                      showAccountLabel={showAccountLabels}
+                      unread={unreadLookup(chat.ref)}
+                      spaceId={activeSpaceId}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="hub__left-panel__footer">
@@ -247,6 +295,90 @@ const ActionRow = ({ action }: { action: ActionItem }) => {
     >
       {body}
     </button>
+  );
+};
+
+/**
+ * The "New" button opens a menu of what to start: a direct message (same
+ * search-bar flow as before), a new Espace, or a new Salon — each of the
+ * latter two behind its own small "name it" modal.
+ */
+const NewActionMenu = ({
+  spaces,
+  activeSpaceId,
+  canCreateSalon,
+  canCreateSpace,
+}: {
+  spaces: Space[];
+  activeSpaceId: string | null;
+  canCreateSalon: boolean;
+  canCreateSpace: boolean;
+}) => {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const menu = useDropdownMenu();
+  const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
+  const [isSalonModalOpen, setIsSalonModalOpen] = useState(false);
+
+  const options: DropdownMenuItem[] = [
+    {
+      id: "direct-message",
+      label: t("Direct message"),
+      icon: <UserSearch aria-hidden="true" />,
+      // Stable, language-independent hook: the popover is portaled to
+      // <body> by the shared DropdownMenu component, so LeftPanel.scss
+      // can't reach it via an ancestor selector — it scopes its width/
+      // position override to this testId instead (see LeftPanel.scss).
+      testId: "hub-new-menu-direct-message",
+      callback: () => void router.push("/chat/new"),
+    },
+    {
+      id: "espace",
+      label: t("Space"),
+      icon: (
+        <span className="material-icons" aria-hidden="true">
+          workspaces
+        </span>
+      ),
+      isDisabled: !canCreateSpace,
+      callback: () => setIsSpaceModalOpen(true),
+    },
+    {
+      id: "salon",
+      label: t("Room"),
+      icon: <Shapes aria-hidden="true" />,
+      isDisabled: !canCreateSalon,
+      callback: () => setIsSalonModalOpen(true),
+    },
+  ];
+
+  return (
+    <>
+      <DropdownMenu options={options} {...menu} onOpenChange={menu.setIsOpen}>
+        <button
+          type="button"
+          className="hub__left-panel__action"
+          aria-haspopup="menu"
+          aria-expanded={menu.isOpen}
+          onClick={() => menu.setIsOpen((open) => !open)}
+        >
+          <span className="hub__left-panel__action__icon" aria-hidden="true">
+            <Plus size={16} />
+          </span>
+          <span className="hub__left-panel__action__label">{t("New")}</span>
+        </button>
+      </DropdownMenu>
+      <CreateSpaceModal
+        isOpen={isSpaceModalOpen}
+        onClose={() => setIsSpaceModalOpen(false)}
+      />
+      <CreateSalonModal
+        isOpen={isSalonModalOpen}
+        onClose={() => setIsSalonModalOpen(false)}
+        spaces={spaces}
+        defaultSpaceId={activeSpaceId}
+      />
+    </>
   );
 };
 
@@ -410,36 +542,36 @@ const DirectMessagesSection = ({
   );
 
   return (
-    <div className="hub__left-panel__dm-section" data-open={isOpen}>
+    <div className="hub__left-panel__section" data-open={isOpen}>
       <button
         type="button"
         id={titleId}
-        className="hub__left-panel__dm-section__header"
+        className="hub__left-panel__section__header"
         aria-expanded={isOpen}
         aria-controls={panelId}
         onClick={() => setIsOpen((open) => !open)}
       >
-        <span className="hub__left-panel__dm-section__title">
+        <span className="hub__left-panel__section__title">
           {t("Direct messages")}
           {unreadCount > 0 && (
-            <span className="hub__left-panel__dm-section__count">
+            <span className="hub__left-panel__section__count">
               {unreadCount}
             </span>
           )}
         </span>
         <ArrowDropDown
           aria-hidden="true"
-          className="hub__left-panel__dm-section__chevron"
+          className="hub__left-panel__section__chevron"
         />
       </button>
       <div
         id={panelId}
         role="region"
         aria-labelledby={titleId}
-        className="hub__left-panel__dm-section__panel"
+        className="hub__left-panel__section__panel"
         inert={!isOpen}
       >
-        <div className="hub__left-panel__dm-section__panel__inner">
+        <div className="hub__left-panel__section__panel__inner">
           {chats.length > 0 && (
             <TabsRow tab={tab} tabs={tabs} onChange={setTab} />
           )}
@@ -458,7 +590,7 @@ const DirectMessagesSection = ({
               ))}
             </ul>
           ) : (
-            <p className="hub__left-panel__dm-section__empty">
+            <p className="hub__left-panel__section__empty">
               {t("No direct messages yet")}
             </p>
           )}

@@ -24,7 +24,10 @@ import {
   type Thread,
   ThreadEvent,
 } from "matrix-js-sdk/lib/matrix";
-import { HttpApiEvent } from "matrix-js-sdk/lib/http-api";
+import {
+  HttpApiEvent,
+  TokenRefreshLogoutError,
+} from "matrix-js-sdk/lib/http-api";
 import {
   type ReactionEventContent,
   type RoomMessageEventContent,
@@ -199,6 +202,11 @@ const SYNC_STORE_DB_NAME = "matrix-web-sync-store";
 const CRYPTO_STORE_DB_NAME = "crypto-store";
 
 const isMatrixSessionInvalidError = (error: unknown): boolean => {
+  // The identity provider refused the refresh token (expired, revoked, or
+  // already rotated by another tab): the stored session is over.
+  if (error instanceof TokenRefreshLogoutError) {
+    return true;
+  }
   if (!(error instanceof MatrixError)) {
     return false;
   }

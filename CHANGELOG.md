@@ -147,6 +147,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Send the user back to sign in when the identity provider
+  refuses the Matrix refresh token, instead of failing on a runtime error.
 - 🐛(frontend) Let every member start a meeting in conversations created by
   the Hub, and explain the refusal before creating a Meet room elsewhere.
 - 🐛(frontend) Restore unread navigation in conversations without a read marker

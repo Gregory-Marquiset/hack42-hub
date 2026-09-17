@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(bots) Have Ariane answer in a thread hanging off the message that asked,
+  rather than in the room: a room where several people ask her things no longer
+  buries its own conversation under her replies.
 - ✨(frontend) Say why Ariane cannot be mentioned in an encrypted room instead
   of offering an empty suggestion list, which read as a bug rather than a rule.
 - 🐛(frontend) Show the availability dot for someone who has been offline for

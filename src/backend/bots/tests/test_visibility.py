@@ -170,3 +170,32 @@ def test_a_forgotten_event_can_be_handled_again():
 
     assert seen.add_if_new("$transient") is True
     seen.forget("$transient")
+
+
+def test_she_always_answers_in_a_thread():
+    """A question put to her is between her and the person asking.
+
+    Letting answers run down the main timeline pushes the room's own
+    conversation off the screen, and a room where several people ask her
+    things becomes unreadable.
+    """
+    from_room = {
+        "event_id": "$asked",
+        "content": {"msgtype": "m.text", "body": "@Ariane bonjour"},
+    }
+
+    assert handlers.aside_root(from_room) == "$asked"
+
+
+def test_a_question_from_a_thread_stays_in_that_thread():
+    """She never opens a second thread on top of the one being used."""
+    from_thread = {
+        "event_id": "$asked",
+        "content": {
+            "msgtype": "m.text",
+            "body": "@Ariane et ensuite ?",
+            "m.relates_to": {"rel_type": "m.thread", "event_id": "$root"},
+        },
+    }
+
+    assert handlers.aside_root(from_thread) == "$root"

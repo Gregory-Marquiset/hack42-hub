@@ -225,6 +225,68 @@ describe("an undecryptable message", () => {
   });
 });
 
+describe("MatrixDriver.resolveAvatarUrl", () => {
+  const clientFor = (thumbnail: number, download: number) => {
+    const mxcUrlToHttp = vi.fn((_mxc: string, width?: number) =>
+      width ? "https://hs/thumbnail" : "https://hs/download",
+    );
+    // Typed rather than taking an unused `init` parameter: the assertions
+    // below read the headers off the recorded call.
+    const fetchMock = vi.fn<
+      (
+        url: string,
+        init?: { headers?: Record<string, string> },
+      ) => Promise<{ ok: boolean; blob: () => Promise<Blob> }>
+    >(async (url) => ({
+      ok: (url === "https://hs/thumbnail" ? thumbnail : download) < 400,
+      blob: async () => new Blob(["x"]),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:avatar"),
+    });
+    const mx = {
+      mxcUrlToHttp,
+      getAccessToken: () => "token",
+    } as unknown as MatrixClient;
+    return { mx, fetchMock, mxcUrlToHttp };
+  };
+
+  it("asks for a thumbnail first, authenticated", async () => {
+    const { mx, fetchMock } = clientFor(200, 200);
+
+    await expect(
+      driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
+    ).resolves.toBe("blob:avatar");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://hs/thumbnail");
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      headers: { Authorization: "Bearer token" },
+    });
+  });
+
+  it("falls back to the file when the homeserver cannot thumbnail it", async () => {
+    // Synapse answers 400 "Cannot find any thumbnails for the requested
+    // media" for an SVG, which used to leave the avatar permanently blank.
+    const { mx, fetchMock } = clientFor(400, 200);
+
+    await expect(
+      driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
+    ).resolves.toBe("blob:avatar");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://hs/download");
+  });
+
+  it("hands back the mxc url when neither answers, so the row falls back", async () => {
+    const { mx } = clientFor(400, 404);
+
+    await expect(
+      driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
+    ).resolves.toBe("mxc://hs/a");
+  });
+});
+
 describe("MatrixDriver.getUserPresence", () => {
   it("reads the current presence from the Matrix client store", () => {
     const getUser = vi.fn((userId: string) =>

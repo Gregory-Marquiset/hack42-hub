@@ -1124,19 +1124,40 @@ export class MatrixDriver extends Driver {
    */
   async resolveAvatarUrl(mxcUrl: string): Promise<string> {
     const mx = this.requireClient("resolveAvatarUrl");
-    const httpUrl = mx.mxcUrlToHttp(mxcUrl, 96, 96, "crop", false, false, true);
-    if (!httpUrl) return mxcUrl;
-    try {
-      const token = mx.getAccessToken();
-      const response = await fetch(httpUrl, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!response.ok) return mxcUrl;
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
-    } catch {
-      return mxcUrl;
-    }
+    const token = mx.getAccessToken();
+    const asBlobUrl = async (httpUrl: string | null) => {
+      if (!httpUrl) return undefined;
+      try {
+        const response = await fetch(httpUrl, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!response.ok) return undefined;
+        return URL.createObjectURL(await response.blob());
+      } catch {
+        return undefined;
+      }
+    };
+    // A thumbnail keeps the transfer small, but the homeserver cannot
+    // thumbnail every format it accepts: an SVG avatar answers 400 "Cannot
+    // find any thumbnails for the requested media", which left the picture
+    // permanently blank. So the file itself is the second try.
+    return (
+      (await asBlobUrl(
+        mx.mxcUrlToHttp(mxcUrl, 96, 96, "crop", false, false, true),
+      )) ??
+      (await asBlobUrl(
+        mx.mxcUrlToHttp(
+          mxcUrl,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          true,
+          true,
+        ),
+      )) ??
+      mxcUrl
+    );
   }
 
   private async resolveOrCreateChatForUsers(

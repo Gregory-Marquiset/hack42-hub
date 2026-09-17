@@ -80,6 +80,7 @@ import {
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMeeting,
+  ChatMeetingDocument,
   ChatMessage,
   ChatMember,
   ChatMembers,
@@ -96,6 +97,7 @@ import {
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  MeetRoomSchedule,
   StartMeetingOptions,
   User,
 } from "../types";
@@ -542,7 +544,7 @@ export class MatrixDriver extends Driver {
 
   async startChatMeeting(
     chatId: string,
-    createRoom: () => Promise<MeetRoom>,
+    createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     options: StartMeetingOptions = {},
   ): Promise<ChatMeeting> {
     const { mx, room } = this.requireRoom("startChatMeeting", chatId);
@@ -565,16 +567,23 @@ export class MatrixDriver extends Driver {
     }
     const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
     // The Meet slug is unique per room: it doubles as the state key.
-    const { slug: meetingId, url } = await createRoom();
+    const startedAt = isScheduled ? scheduledStart : now;
+    const planned = options.plannedDurationMinutes;
+    const { slug: meetingId, url } = await createRoom({
+      startsAt: new Date(startedAt),
+      ...(planned
+        ? { plannedEndAt: new Date(startedAt + planned * 60_000) }
+        : {}),
+    });
     const title = options.title?.trim() || undefined;
+    const documents = options.documents ?? [];
     const content: MeetingStateEventContent = {
       meetingUrl: url,
-      startedAt: isScheduled ? scheduledStart : now,
+      startedAt,
       organizerId: selfUserId,
       ...(title ? { title } : {}),
-      ...(options.plannedDurationMinutes
-        ? { plannedDurationMinutes: options.plannedDurationMinutes }
-        : {}),
+      ...(planned ? { plannedDurationMinutes: planned } : {}),
+      ...(documents.length > 0 ? { documents } : {}),
     };
     await mx.sendStateEvent(chatId, MEETING_EVENT_TYPE, content, meetingId);
     return {
@@ -586,13 +595,14 @@ export class MatrixDriver extends Driver {
       ...(content.plannedDurationMinutes
         ? { plannedDurationMinutes: content.plannedDurationMinutes }
         : {}),
-      documents: [],
+      documents,
     };
   }
 
   async endChatMeeting(chatId: string, meetingId: string): Promise<void> {
     await this.updateOwnMeeting("endChatMeeting", chatId, meetingId, () => ({
       endedAt: Date.now(),
+      endedBy: "organizer",
     }));
   }
 
@@ -614,6 +624,37 @@ export class MatrixDriver extends Driver {
           plannedDurationMinutes:
             (content.plannedDurationMinutes ?? elapsedMinutes) + minutes,
         };
+      },
+    );
+  }
+
+  async getOpenIdToken(): Promise<string> {
+    const mx = this.requireClient("getOpenIdToken");
+    const { access_token: token } = await mx.getOpenIdToken();
+    return token;
+  }
+
+  async addChatMeetingDocument(
+    chatId: string,
+    meetingId: string,
+    document: ChatMeetingDocument,
+  ): Promise<void> {
+    await this.updateOwnMeeting(
+      "addChatMeetingDocument",
+      chatId,
+      meetingId,
+      (content) => {
+        // Unknown entries are kept as they are; the same document replaces
+        // its older version.
+        const others = Array.isArray(content.documents)
+          ? content.documents.filter(
+              (entry) =>
+                typeof entry !== "object" ||
+                entry === null ||
+                (entry as { id?: unknown }).id !== document.id,
+            )
+          : [];
+        return { documents: [...others, document] };
       },
     );
   }
@@ -651,7 +692,11 @@ export class MatrixDriver extends Driver {
 
   /** Rewrites one meeting's state, only for its organizer. */
   private async updateOwnMeeting(
-    method: "endChatMeeting" | "extendChatMeeting" | "renameChatMeeting",
+    method:
+      | "addChatMeetingDocument"
+      | "endChatMeeting"
+      | "extendChatMeeting"
+      | "renameChatMeeting",
     chatId: string,
     meetingId: string,
     change: (

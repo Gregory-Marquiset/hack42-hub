@@ -1,9 +1,14 @@
 import { Button } from "@gouvfr-lasuite/ui-components";
-import { Plus, QuestionMark } from "@gouvfr-lasuite/ui-components/icons";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  QuestionMark,
+} from "@gouvfr-lasuite/ui-components/icons";
 import clsx from "clsx";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { ReactNode, useCallback, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { readChatRef, readSpaceId, spaceHref } from "@/features/chat/chatRefs";
@@ -41,6 +46,9 @@ type ActionItem =
     };
 
 /** The row/menu-item second line: "You : ...", "{name} : ..." or the raw text. */
+/** Where the panel remembers whether it was pushed aside. */
+const COLLAPSED_KEY = "hub.left-panel.collapsed";
+
 /** The three lists, in the order the panel shows them. */
 const SECTIONS: ReadonlyArray<{
   id: ChatSectionId;
@@ -87,6 +95,31 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   const showAccountLabels = entries.length > 1;
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
   const [isSalonModalOpen, setIsSalonModalOpen] = useState(false);
+  // Pushed aside, the panel keeps the espaces and hands the conversation the
+  // rest of the window. Read after mount rather than during render: the
+  // server has no `window`, and a hydration mismatch is worse than one frame
+  // of an open panel.
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setIsCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === "true");
+    } catch {
+      // A browser refusing storage is not a reason to render nothing.
+    }
+  }, []);
+  const toggleCollapsed = useCallback(
+    () =>
+      setIsCollapsed((current) => {
+        const next = !current;
+        try {
+          window.localStorage.setItem(COLLAPSED_KEY, String(next));
+        } catch {
+          // Then it simply reopens next time.
+        }
+        return next;
+      }),
+    [],
+  );
   // One section at a time may take the whole panel.
   const [expanded, setExpanded] = useState<ChatSectionId | null>(null);
   // The rail is the only espace chooser: one place decides where the panel's
@@ -136,11 +169,39 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   }
 
   return (
-    <aside className="hub__left-panel" aria-label={t("Side panel")}>
+    <aside
+      className="hub__left-panel"
+      data-collapsed={isCollapsed || undefined}
+      aria-label={t("Side panel")}
+    >
       {/* The brand sits in the corner and everything else hangs below it,
-          rail included: it names the product once, and belongs to no list. */}
+          rail included: it names the product once, and belongs to no list.
+          The arrow beside it pushes the whole list of conversations away and
+          leaves the espaces, so the conversation gets the window. */}
       <div className="hub__left-panel__brand">
-        <TchapLogo />
+        {!isCollapsed && <TchapLogo />}
+        <button
+          type="button"
+          className="hub__left-panel__collapse"
+          aria-label={
+            isCollapsed
+              ? t("Show the conversations")
+              : t("Hide the conversations")
+          }
+          title={
+            isCollapsed
+              ? t("Show the conversations")
+              : t("Hide the conversations")
+          }
+          aria-expanded={!isCollapsed}
+          onClick={toggleCollapsed}
+        >
+          {isCollapsed ? (
+            <ChevronRight aria-hidden="true" />
+          ) : (
+            <ChevronLeft aria-hidden="true" />
+          )}
+        </button>
       </div>
       <div className="hub__left-panel__main">
         <SpacesRail

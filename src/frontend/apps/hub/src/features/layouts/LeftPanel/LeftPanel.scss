@@ -4,10 +4,52 @@
     flex: 0 0 auto;
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     height: 56px;
-    padding: 0 12px;
+    padding: 0 8px 0 12px;
     border-bottom: 1px solid
       var(--c--contextuals--border--surface--primary, #dfe2ea);
+  }
+
+  // The arrow that pushes the conversations aside. It stays put when the
+  // panel is closed - it is the only way back - so it lives in the corner
+  // rather than inside the part that goes away.
+  &__collapse {
+    appearance: none;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    color: var(
+      --c--contextuals--content--semantic--neutral--secondary,
+      #555e74
+    );
+
+    svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    &:hover {
+      background: var(
+        --c--contextuals--background--surface--secondary,
+        #eef0f5
+      );
+      color: var(--c--contextuals--content--semantic--brand--primary, #3e5de7);
+    }
+
+    &:focus-visible {
+      outline: 2px solid
+        var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
+      outline-offset: 1px;
+    }
   }
 
   &__main {
@@ -210,6 +252,25 @@
   font-family: var(--c--globals--font--families--base, "Marianne", sans-serif);
   color: var(--c--contextuals--content--semantic--neutral--primary, #222631);
   position: relative;
+
+  // Closed: the espaces and the arrow back, nothing else. The rail is 53px
+  // and the panel is exactly that - no leftover strip beside it.
+  &[data-collapsed] {
+    width: 53px;
+
+    .hub__left-panel__brand {
+      justify-content: center;
+      padding: 0;
+    }
+
+    .hub__left-panel__column {
+      display: none;
+    }
+
+    .hub__left-panel__rail {
+      border-right: 0;
+    }
+  }
 
   &__top {
     flex: 0 0 auto;

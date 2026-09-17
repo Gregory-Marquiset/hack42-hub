@@ -593,6 +593,19 @@ export abstract class Driver {
     );
   }
 
+  /**
+   * Whether this driver can prove the signed-in person's chat identity.
+   *
+   * Off by default so drivers opt in; gates the role editor, which cannot
+   * link a label to an identity the driver is unable to vouch for.
+   */
+  readonly supportsProfileRoles: boolean = false;
+
+  /** Current proof of chat identity, sent to Hub only when saving a role. */
+  async getProfileIdentityToken(): Promise<string> {
+    throw new Error("Profile identity is not supported by this driver.");
+  }
+
   // --- Avatars -------------------------------------------------------------
   // Unsupported by default so drivers opt in; gates the photo-change actions
   // on the account menu and the group chat header.

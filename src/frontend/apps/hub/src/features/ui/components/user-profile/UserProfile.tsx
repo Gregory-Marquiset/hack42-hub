@@ -1,9 +1,11 @@
 import { UserMenu } from "@gouvfr-lasuite/ui-components";
+import { useState } from "react";
 
 import { useAuth } from "@/features/auth/Auth";
 import { LoginButton } from "@/features/auth/components/LoginButton";
 import { useMyAvatarSrc } from "@/features/chat/hooks/useMyAvatarSrc";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import { RoleProfileAction } from "@/features/roles/RoleProfileAction";
 
 import { useAvatarPortalOverlay } from "../avatar/useAvatarPortalOverlay";
 import { ChangeProfilePhotoAction } from "./ChangeProfilePhotoAction";
@@ -15,6 +17,7 @@ import {
 
 export const UserProfile = () => {
   const { user } = useAuth();
+  const [menuVersion, setMenuVersion] = useState(0);
   // `UserMenu`'s own avatar only ever renders initials — there's no prop to
   // give it a photo — so the real photo is layered on top as a plain `<img>`
   // absolutely positioned over its trigger button (see UserProfile.scss).
@@ -42,6 +45,9 @@ export const UserProfile = () => {
   return (
     <div className="hub__user-profile">
       <UserMenu
+        // The UI kit menu is uncontrolled. Remount it closed before the role
+        // dialog opens so its popover does not trap focus behind the dialog.
+        key={menuVersion}
         user={user}
         // Not using `UserMenu`'s own `logout` prop: it always renders in a
         // fixed slot above `actions`; keeping it here lets presence, photo and
@@ -50,6 +56,9 @@ export const UserProfile = () => {
           <>
             <UserPresenceActions />
             <ChangeProfilePhotoAction />
+            <RoleProfileAction
+              onOpen={() => setMenuVersion((version) => version + 1)}
+            />
             <LogoutAction />
           </>
         }

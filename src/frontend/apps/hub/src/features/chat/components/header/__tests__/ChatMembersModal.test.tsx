@@ -11,6 +11,9 @@ import { ChatMembersModal } from "../ChatMembersModal";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+  // The modal now reads role labels, which pulls `fetchAPI` and with it the
+  // i18n bootstrap into this module graph. The mock has to cover it.
+  initReactI18next: { type: "3rdParty", init: () => undefined },
 }));
 
 const members: ChatMember[] = [

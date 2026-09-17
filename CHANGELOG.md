@@ -8,6 +8,9 @@ and this project adheres to
 
 ### Added
 
+- ✨(profile) Add optional global role labels (PO, PM, DEV or a custom title),
+  editable or removable at any time from the account menu and displayed beside
+  people in conversations. Verify chat identity when saving a role.
 - ✨(bots) Answer `@Ariane` in the chat of a meeting call, from what was said
   and written in the call since the person asking arrived.
 - ✨(meetings) Close a meeting on its own once its planned end has passed

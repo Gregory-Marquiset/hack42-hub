@@ -44,6 +44,8 @@ vi.mock("@gouvfr-lasuite/ui-components", () => ({
   UserMenu: ({ actions }: { actions: ReactNode }) => (
     <div aria-label="User menu">{actions}</div>
   ),
+  // The account menu now carries a role entry, which draws its own item.
+  UserMenuItem: ({ label }: { label: string }) => <button>{label}</button>,
 }));
 
 describe("UserProfile", () => {

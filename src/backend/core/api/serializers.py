@@ -141,6 +141,12 @@ class MeetingMemberSerializer(serializers.Serializer):  # pylint: disable=abstra
     )
 
 
+class MeetingDocumentCreateSerializer(MeetingMemberSerializer):  # pylint: disable=abstract-method
+    """A new Docs document, created for a meeting by one of its members."""
+
+    title = serializers.CharField(max_length=200, trim_whitespace=True)
+
+
 class MeetingAttachmentUploadSerializer(MeetingMemberSerializer):  # pylint: disable=abstract-method
     """A document added to a meeting from the member's device."""
 

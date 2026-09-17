@@ -45,6 +45,8 @@ export const MeetingDetails = ({
   const linkId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isAddingLink, setIsAddingLink] = useState(false);
+  const [isNaming, setIsNaming] = useState(false);
+  const [newDocTitle, setNewDocTitle] = useState("");
   const [linkTitle, setLinkTitle] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
 
@@ -61,6 +63,7 @@ export const MeetingDetails = ({
     ? meeting.startedAt
     : start.toLocaleString(locale, { dateStyle: "full", timeStyle: "short" });
   const title = formatMeetingLabel(meeting, t("Meeting"), locale);
+  const defaultDocumentTitle = meeting.title?.trim() || title;
 
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(event.target.files ?? []);
@@ -89,6 +92,21 @@ export const MeetingDetails = ({
       .catch(() => {
         // useChatMeetingActions already surfaces a toast.
       });
+  };
+
+  /** A new Docs document, listed with the meeting once it exists. */
+  const createDocument = () => {
+    const title = newDocTitle.trim() || defaultDocumentTitle;
+    void documents.createDocsDocument(title).then((document) => {
+      if (!document) {
+        return;
+      }
+      setIsNaming(false);
+      setNewDocTitle("");
+      void addLink(meeting.id, document).catch(() => {
+        // useChatMeetingActions already surfaces a toast.
+      });
+    });
   };
 
   const links = meeting.documents.filter((doc) => isWebLink(doc.url));
@@ -270,8 +288,52 @@ export const MeetingDetails = ({
             </>
           )}
 
-          {isOrganizer &&
-            canAdd &&
+          {canAdd &&
+            (isNaming ? (
+              <div className="hub__chat-meetings__document-draft">
+                <input
+                  type="text"
+                  className="hub__chat-meetings__input"
+                  value={newDocTitle}
+                  placeholder={defaultDocumentTitle}
+                  aria-label={t("Name of the new document")}
+                  tabIndex={tabIndex}
+                  onChange={(event) => setNewDocTitle(event.target.value)}
+                />
+                <div className="hub__chat-meetings__document-draft-actions">
+                  <button
+                    type="button"
+                    className="hub__chat-meetings__action"
+                    tabIndex={tabIndex}
+                    onClick={() => setIsNaming(false)}
+                  >
+                    {t("Cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="hub__chat-meetings__action"
+                    data-primary="true"
+                    disabled={documents.isCreatingDocument}
+                    aria-busy={documents.isCreatingDocument || undefined}
+                    tabIndex={tabIndex}
+                    onClick={createDocument}
+                  >
+                    {t("Create")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="hub__chat-meetings__add-document"
+                tabIndex={tabIndex}
+                onClick={() => setIsNaming(true)}
+              >
+                {t("New Docs document")}
+              </button>
+            ))}
+
+          {canAdd &&
             (isAddingLink ? (
               <div className="hub__chat-meetings__document-draft">
                 <input
@@ -292,6 +354,11 @@ export const MeetingDetails = ({
                   tabIndex={tabIndex}
                   onChange={(event) => setLinkUrl(event.target.value)}
                 />
+                <p className="hub__chat-meetings__details-text">
+                  {t(
+                    "Share the document in Docs too: a link alone opens for nobody else.",
+                  )}
+                </p>
                 <div className="hub__chat-meetings__document-draft-actions">
                   <button
                     type="button"

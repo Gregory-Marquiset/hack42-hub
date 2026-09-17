@@ -71,6 +71,8 @@ const documents = (
   retry: vi.fn(),
   addFiles: vi.fn(async () => {}),
   isAdding: false,
+  createDocsDocument: vi.fn(async () => null),
+  isCreatingDocument: false,
   download: vi.fn(async () => {}),
   pendingAttachmentId: null,
   ...overrides,
@@ -182,10 +184,47 @@ describe("MeetingDetails", () => {
     expect(screen.queryByLabelText("Link")).toBeNull();
   });
 
-  it("keeps the links to the organizer", () => {
+  it("lets any member list a link and create a Docs document", async () => {
+    const current = documents();
+    const created = {
+      id: "doc-1",
+      title: "Compte rendu",
+      url: "https://docs.test/docs/doc-1/",
+    };
+    current.createDocsDocument = vi.fn(async () => created);
+    mocks.useMeetingDocuments.mockReturnValue(current);
+    // Not the organizer: adding documents is open to the whole conversation.
     renderDetails({ ...MEETING, organizerId: "@alice:localhost" });
 
-    expect(screen.queryByLabelText("Add a Docs link")).toBeNull();
+    fireEvent.click(screen.getByText("New Docs document"));
+    fireEvent.change(screen.getByLabelText("Name of the new document"), {
+      target: { value: "Compte rendu" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("Create"));
+    });
+
+    expect(current.createDocsDocument).toHaveBeenCalledWith("Compte rendu");
+    expect(mocks.addLink).toHaveBeenCalledWith(MEETING.id, created);
+    expect(screen.getByLabelText("Add a Docs link")).toBeTruthy();
+  });
+
+  it("recalls that a link alone gives no access", () => {
+    renderDetails();
+
+    fireEvent.click(screen.getByLabelText("Add a Docs link"));
+
+    expect(
+      screen.getByText(
+        "Share the document in Docs too: a link alone opens for nobody else.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("keeps adding documents out of a closed meeting", () => {
+    renderDetails({ ...MEETING, organizerId: "@alice:localhost" });
+
+    expect(screen.getByLabelText("Add a Docs link")).toBeTruthy();
     expect(
       screen.getByLabelText("Add documents from your device"),
     ).toBeTruthy();

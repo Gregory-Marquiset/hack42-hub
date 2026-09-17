@@ -772,6 +772,8 @@ describe("MatrixDriver.startChatMeeting", () => {
   ): Room =>
     ({
       roomId: ROOM_ID,
+      // A conversation, not an espace: it is never its own parent.
+      isSpaceRoom: () => false,
       currentState: {
         getStateEvents: (_type: string, stateKey?: string) =>
           stateKey === undefined
@@ -802,6 +804,8 @@ describe("MatrixDriver.startChatMeeting", () => {
       getRoom: () => room,
       getUserId: () => SELF_ID,
       getJoinedRooms: async () => ({ joined_rooms: [ROOM_ID] }),
+      // The espace of a conversation is looked for among the joined rooms.
+      getRooms: () => [room],
       sendStateEvent,
     } as unknown as MatrixClient;
     return { mx, sendStateEvent };
@@ -835,6 +839,39 @@ describe("MatrixDriver.startChatMeeting", () => {
       id: MEET_ROOM.slug,
       url: MEET_ROOM.url,
       organizerId: SELF_ID,
+    });
+  });
+
+  it("tells the Hub which espace the conversation belongs to", async () => {
+    const room = makeMeetingRoom();
+    const espace = {
+      roomId: "!espace:localhost",
+      name: "Direction du numérique",
+      isSpaceRoom: () => true,
+      currentState: {
+        getStateEvents: () => [
+          {
+            getStateKey: () => ROOM_ID,
+            getContent: () => ({ via: ["localhost"] }),
+          },
+        ],
+      },
+    } as unknown as Room;
+    const { mx } = makeClient(room);
+    // The espaces list their children; a room does not name its parent.
+    (mx as unknown as { getRooms: () => Room[] }).getRooms = () => [
+      room,
+      espace,
+    ];
+    const createRoom = vi.fn<(schedule: MeetRoomSchedule) => Promise<MeetRoom>>(
+      async () => MEET_ROOM,
+    );
+
+    await driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom);
+
+    expect(createRoom).toHaveBeenCalledWith({
+      startsAt: expect.any(Date),
+      spaceName: "Direction du numérique",
     });
   });
 

@@ -91,21 +91,26 @@ const MeetingWindow = ({
   onLeave,
 }: MeetingWindowProps) => {
   const { t } = useTranslation();
-  const { chatUser } = useAuth();
+  const { user, chatUser } = useAuth();
   const now = useNow(15_000);
   const chatRef = target.chatRef ?? null;
   const { meetings } = useChatMeetings(chatRef, chatRef !== null);
-  const { endMeeting, extendMeeting, renameMeeting, isPending } =
+  const { endMeeting, extendMeeting, renameMeeting, setBoard, isPending } =
     useChatMeetingActions(chatRef);
   const [draftTitle, setDraftTitle] = useState<string | null>(null);
-  const [isBoardOpen, setIsBoardOpen] = useState(false);
+  // What the others see, and what this window shows until they answer: the
+  // whiteboard is opened for the whole meeting, not for one participant.
+  const [ownBoard, setOwnBoard] = useState<boolean | null>(null);
   const [wasBoardOpened, setWasBoardOpened] = useState(false);
   const [isSharing, setIsSharing] = useState(target.showInvitation ?? false);
   const shareId = useId();
   const isRenamingRef = useRef(false);
   // The whiteboard follows the meeting, so everyone in the call lands on the
   // same board; a call opened outside a meeting falls back on its own link.
-  const boardUrl = useMeetingBoardUrl(target.meetingId ?? target.url);
+  const boardUrl = useMeetingBoardUrl(
+    target.meetingId ?? target.url,
+    user?.full_name || user?.short_name || undefined,
+  );
 
   const meeting = target.meetingId
     ? meetings.find((candidate) => candidate.id === target.meetingId)
@@ -114,6 +119,27 @@ const MeetingWindow = ({
   const progress = meeting ? getMeetingProgress(meeting, now) : undefined;
   const isOrganizer =
     meeting !== undefined && meeting.organizerId === chatUser?.userId;
+  const sharedBoard = meeting?.isBoardOpen ?? false;
+  const isBoardOpen = ownBoard ?? sharedBoard;
+
+  // Someone else opened or closed the board: follow them.
+  useEffect(() => {
+    setOwnBoard(null);
+    if (sharedBoard) {
+      setWasBoardOpened(true);
+    }
+  }, [sharedBoard]);
+
+  const toggleBoard = () => {
+    const next = !isBoardOpen;
+    setWasBoardOpened(true);
+    setOwnBoard(next);
+    if (meeting) {
+      void setBoard(meeting.id, next).catch(() => {
+        // The room refuses the change: the board stays open here only.
+      });
+    }
+  };
 
   // Closed by its organizer (here or on another device), or by the server
   // once it was over and empty: leave the call.
@@ -279,10 +305,7 @@ const MeetingWindow = ({
                     : t("Show the whiteboard")
                 }
                 aria-pressed={isBoardOpen}
-                onClick={() => {
-                  setWasBoardOpened(true);
-                  setIsBoardOpen((open) => !open);
-                }}
+                onClick={toggleBoard}
               >
                 <Whiteboard />
               </button>

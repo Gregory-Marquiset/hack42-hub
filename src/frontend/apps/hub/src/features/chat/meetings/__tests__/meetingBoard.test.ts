@@ -39,6 +39,33 @@ describe("buildBoardUrl", () => {
     );
   });
 
+  it("names the participant on the board", () => {
+    const url = buildBoardUrl(
+      "https://board.example.com",
+      {
+        roomId: "0123456789abcdef0123",
+        roomKey: "AAAAAAAAAAAAAAAAAAAAAA",
+      },
+      "  Grégory Marquiset  ",
+    );
+
+    // The name is a query, before the fragment: our image reads it there.
+    expect(url).toBe(
+      "https://board.example.com/?u=Gr%C3%A9gory%20Marquiset#room=0123456789abcdef0123,AAAAAAAAAAAAAAAAAAAAAA",
+    );
+  });
+
+  it("leaves the name out when there is none", () => {
+    const room = {
+      roomId: "0123456789abcdef0123",
+      roomKey: "AAAAAAAAAAAAAAAAAAAAAA",
+    };
+
+    expect(buildBoardUrl("https://board.example.com", room, "  ")).toBe(
+      buildBoardUrl("https://board.example.com", room),
+    );
+  });
+
   it("does not double the slash of a base URL that ends with one", () => {
     const url = buildBoardUrl("https://board.example.com/", {
       roomId: "0123456789abcdef0123",

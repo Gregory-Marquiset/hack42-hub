@@ -490,6 +490,20 @@ export abstract class Driver {
   }
 
   /** Adds a document to a meeting, for every member. Only its organizer may do it. */
+  /** Opens or closes the whiteboard of a meeting, for every participant. */
+  async setChatMeetingBoard(
+    _chatId: string,
+    _meetingId: string,
+    _isOpen: boolean,
+  ): Promise<void> {
+    void _chatId;
+    void _meetingId;
+    void _isOpen;
+    throw new Error(
+      `${this.constructor.name}.setChatMeetingBoard: meetings are not supported by this driver.`,
+    );
+  }
+
   async addChatMeetingDocument(
     _chatId: string,
     _meetingId: string,

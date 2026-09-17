@@ -472,6 +472,20 @@ export class MatrixDriver extends Driver {
     return matrixRoomToLocalSpace(room);
   }
 
+  /**
+   * The espace a conversation belongs to, or `undefined`. A room does not
+   * carry its parent: the espaces list their children, so they are the ones
+   * asked. A room listed in several espaces answers the first one.
+   */
+  private spaceNameOf(mx: MatrixClient, chatId: string): string | undefined {
+    const space = mx
+      .getRooms()
+      .find(
+        (room) => room.isSpaceRoom() && spaceChildRoomIds(room).has(chatId),
+      );
+    return space?.name?.trim() || undefined;
+  }
+
   /** Room ids listed as children of `spaceId`'s `m.space.child` state, if joined. */
   private getSpaceChildRoomIds(mx: MatrixClient, spaceId: string): Set<string> {
     const spaceRoom = mx.getRoom(spaceId);
@@ -597,11 +611,13 @@ export class MatrixDriver extends Driver {
     // The Meet slug is unique per room: it doubles as the state key.
     const startedAt = isScheduled ? scheduledStart : now;
     const planned = options.plannedDurationMinutes;
+    const spaceName = this.spaceNameOf(mx, chatId);
     const { slug: meetingId, url } = await createRoom({
       startsAt: new Date(startedAt),
       ...(planned
         ? { plannedEndAt: new Date(startedAt + planned * 60_000) }
         : {}),
+      ...(spaceName ? { spaceName } : {}),
     });
     const title = options.title?.trim() || undefined;
     const documents = options.documents ?? [];
@@ -678,6 +694,18 @@ export class MatrixDriver extends Driver {
     return token;
   }
 
+  async setChatMeetingBoard(
+    chatId: string,
+    meetingId: string,
+    isOpen: boolean,
+  ): Promise<void> {
+    // Anybody in the call may open the board, not just the organizer: it is
+    // the shared surface of the meeting, like the call itself.
+    await this.updateMeeting("setChatMeetingBoard", chatId, meetingId, () => ({
+      boardOpen: isOpen,
+    }));
+  }
+
   async addChatMeetingDocument(
     chatId: string,
     meetingId: string,
@@ -747,6 +775,19 @@ export class MatrixDriver extends Driver {
       content: MeetingStateEventContent,
     ) => Partial<MeetingStateEventContent>,
   ): Promise<void> {
+    await this.updateMeeting(method, chatId, meetingId, change, true);
+  }
+
+  /** Rewrites one meeting's state, for anyone the room lets write it. */
+  private async updateMeeting(
+    method: string,
+    chatId: string,
+    meetingId: string,
+    change: (
+      content: MeetingStateEventContent,
+    ) => Partial<MeetingStateEventContent>,
+    organizerOnly = false,
+  ): Promise<void> {
     const { mx, room } = this.requireRoom(method, chatId);
     const content = getMeetingStateContent(room, meetingId);
     if (!content) {
@@ -755,7 +796,7 @@ export class MatrixDriver extends Driver {
       );
     }
     const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
-    if (content.organizerId !== selfUserId) {
+    if (organizerOnly && content.organizerId !== selfUserId) {
       throw new MeetingNotAllowedError(chatId);
     }
     await mx.sendStateEvent(

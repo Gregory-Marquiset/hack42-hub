@@ -23,17 +23,22 @@ const BOARD_URL = "https://board.example.com/#room=abc,key";
 const state = vi.hoisted(() => ({
   meetings: [] as ChatMeeting[],
   boardUrl: null as string | null,
+  boardName: undefined as string | undefined,
 }));
 const endMeeting = vi.hoisted(() => vi.fn(async () => undefined));
 const extendMeeting = vi.hoisted(() => vi.fn(async () => undefined));
 const renameMeeting = vi.hoisted(() => vi.fn(async () => undefined));
+const setBoard = vi.hoisted(() => vi.fn(async () => undefined));
 const notifyBrand = vi.hoisted(() => vi.fn());
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock("@/features/auth/Auth", () => ({
-  useAuth: () => ({ chatUser: { userId: SELF_ID } }),
+  useAuth: () => ({
+    chatUser: { userId: SELF_ID },
+    user: { full_name: "Greg Marquiset" },
+  }),
 }));
 vi.mock("@/features/chat/hooks/useChatMeetings", () => ({
   useChatMeetings: () => ({
@@ -47,13 +52,17 @@ vi.mock("@/features/chat/hooks/useChatMeetingActions", () => ({
     endMeeting,
     extendMeeting,
     renameMeeting,
+    setBoard,
     isPending: false,
   }),
 }));
 // The board URL derivation needs Web Crypto, which jsdom does not provide;
 // it has its own unit test.
 vi.mock("../meetingBoard", () => ({
-  useMeetingBoardUrl: () => state.boardUrl,
+  useMeetingBoardUrl: (seed: string | undefined, name?: string) => {
+    state.boardName = name;
+    return state.boardUrl;
+  },
 }));
 vi.mock("@/features/ui/components/toast", () => ({
   notify: { brand: notifyBrand, error: vi.fn() },
@@ -226,6 +235,49 @@ describe("ActiveMeetingProvider", () => {
     expect(board.hidden).toBe(false);
     // The call must survive the split: a remounted frame would drop the user.
     expect(frame()).toBe(call);
+  });
+
+  it("opens the whiteboard for every participant", () => {
+    state.boardUrl = BOARD_URL;
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    fireEvent.click(screen.getByLabelText("Show the whiteboard"));
+
+    expect(setBoard).toHaveBeenCalledWith("abc-defg-hij", true);
+    // The participant's name travels with the board link.
+    expect(state.boardName).toBe("Greg Marquiset");
+
+    fireEvent.click(screen.getByLabelText("Hide the whiteboard"));
+    expect(setBoard).toHaveBeenLastCalledWith("abc-defg-hij", false);
+  });
+
+  it("follows a whiteboard another participant opened", () => {
+    state.boardUrl = BOARD_URL;
+    const { rerender } = render(app());
+    fireEvent.click(screen.getByText("open A"));
+    expect(screen.queryByTestId("meeting-board")).toBeNull();
+
+    state.meetings = [meetingA({ isBoardOpen: true })];
+    rerender(app());
+
+    const board = screen.getByTestId("meeting-board") as HTMLIFrameElement;
+    expect(board.hidden).toBe(false);
+    expect(setBoard).not.toHaveBeenCalled();
+  });
+
+  it("keeps the whiteboard open here when the room refuses the change", async () => {
+    state.boardUrl = BOARD_URL;
+    setBoard.mockRejectedValueOnce(new Error("forbidden"));
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Show the whiteboard"));
+    });
+
+    const board = screen.getByTestId("meeting-board") as HTMLIFrameElement;
+    expect(board.hidden).toBe(false);
   });
 
   it("keeps the whiteboard mounted when it is hidden again", () => {

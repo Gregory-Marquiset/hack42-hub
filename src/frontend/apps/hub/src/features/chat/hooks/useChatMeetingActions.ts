@@ -13,7 +13,8 @@ type MeetingAction =
   | { kind: "end"; meetingId: string; title: string }
   | { kind: "extend"; meetingId: string; minutes: number }
   | { kind: "rename"; meetingId: string; title: string }
-  | { kind: "addLink"; meetingId: string; document: ChatMeetingDocument };
+  | { kind: "addLink"; meetingId: string; document: ChatMeetingDocument }
+  | { kind: "board"; meetingId: string; isOpen: boolean };
 
 export type UseChatMeetingActionsResult = {
   /**
@@ -28,6 +29,8 @@ export type UseChatMeetingActionsResult = {
   renameMeeting: (meetingId: string, title: string) => Promise<void>;
   /** Lists a link (a Docs document…) with the meeting (organizer only). */
   addLink: (meetingId: string, document: ChatMeetingDocument) => Promise<void>;
+  /** Opens or closes the whiteboard for every participant. */
+  setBoard: (meetingId: string, isOpen: boolean) => Promise<void>;
   isPending: boolean;
 };
 
@@ -127,11 +130,21 @@ export const useChatMeetingActions = (
             action.document,
           );
           return;
+        case "board":
+          await driver.setChatMeetingBoard(
+            ref.chatId,
+            action.meetingId,
+            action.isOpen,
+          );
+          return;
       }
     },
     onSuccess: invalidate,
-    onError: () => {
-      notify.error(t("The meeting could not be updated. Please try again."));
+    onError: (_error, action) => {
+      // The whiteboard falls back on the local view; no need to alarm.
+      if (action.kind !== "board") {
+        notify.error(t("The meeting could not be updated. Please try again."));
+      }
     },
     meta: { noGlobalError: true },
   });
@@ -145,6 +158,8 @@ export const useChatMeetingActions = (
       mutateAsync({ kind: "rename", meetingId, title }),
     addLink: (meetingId, document) =>
       mutateAsync({ kind: "addLink", meetingId, document }),
+    setBoard: (meetingId, isOpen) =>
+      mutateAsync({ kind: "board", meetingId, isOpen }),
     isPending,
   };
 };

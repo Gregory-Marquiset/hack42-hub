@@ -53,16 +53,30 @@ export const deriveBoardRoom = async (seed: string): Promise<BoardRoom> => {
   };
 };
 
-/** The Excalidraw link opening `room`, which joins its collaboration. */
-export const buildBoardUrl = (baseUrl: string, room: BoardRoom): string =>
-  `${baseUrl.replace(/\/+$/, "")}/#room=${room.roomId},${room.roomKey}`;
+/**
+ * The Excalidraw link opening `room`, which joins its collaboration. `name`
+ * is the participant's name: our image reads it and shows it on the board,
+ * instead of the random one Excalidraw gives ("Arctic Dragonfly").
+ */
+export const buildBoardUrl = (
+  baseUrl: string,
+  room: BoardRoom,
+  name?: string,
+): string => {
+  const trimmed = name?.trim();
+  const query = trimmed ? `?u=${encodeURIComponent(trimmed)}` : "";
+  return `${baseUrl.replace(/\/+$/, "")}/${query}#room=${room.roomId},${room.roomKey}`;
+};
 
 /**
  * The whiteboard URL of a meeting, or `null` while it is being derived, when
  * the deployment configures no whiteboard, or when the browser exposes no Web
  * Crypto (an insecure context): the meeting window then shows the call alone.
  */
-export const useMeetingBoardUrl = (seed: string | undefined): string | null => {
+export const useMeetingBoardUrl = (
+  seed: string | undefined,
+  name?: string,
+): string | null => {
   const { data: config } = useApiConfig();
   const baseUrl = config?.MEETING_BOARD_BASE_URL ?? null;
   const [room, setRoom] = useState<BoardRoom | null>(null);
@@ -83,5 +97,5 @@ export const useMeetingBoardUrl = (seed: string | undefined): string | null => {
     };
   }, [seed, baseUrl]);
 
-  return baseUrl && room ? buildBoardUrl(baseUrl, room) : null;
+  return baseUrl && room ? buildBoardUrl(baseUrl, room, name) : null;
 };

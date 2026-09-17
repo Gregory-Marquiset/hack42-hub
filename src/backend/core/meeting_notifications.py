@@ -109,7 +109,14 @@ def _names(meeting):
             room = matrix.room_name(meeting.chat_id)
         except matrix.MatrixError:
             room = None
-    return title, room or "votre conversation"
+    return title, _room_and_space(meeting, room or "votre conversation")
+
+
+def _room_and_space(meeting, room):
+    """« Salon » (espace « Espace »), when the conversation is in one."""
+    if not meeting.space_name:
+        return f"« {room:s} »"
+    return f"« {room:s} » (espace « {meeting.space_name:s} »)"
 
 
 def _local(value, meeting):
@@ -135,7 +142,7 @@ def scheduled_message(meeting):
     title, room = _names(meeting)
     start = _local(meeting.starts_at or meeting.created_at, meeting)
     return (
-        f"📅 Réunion programmée dans « {room} » : « {title} », "
+        f"📅 Réunion programmée dans {room} : « {title} », "
         f"le {start:%d/%m} à {start:%H:%M}{_duration(meeting)}.\n"
         "Je vous préviendrai quand elle commencera."
     )
@@ -144,7 +151,7 @@ def scheduled_message(meeting):
 def started_message(meeting):
     """The message sent when a meeting starts."""
     title, room = _names(meeting)
-    text = f"🎥 La réunion « {title} » commence dans « {room} »."
+    text = f"🎥 La réunion « {title} » commence dans {room}."
     if meeting.url:
         text += f"\nRejoignez-la depuis la conversation, ou par ce lien : {meeting.url}"
     return text
@@ -154,7 +161,7 @@ def closed_message(meeting, document=None):
     """The message sent when a meeting is closed."""
     title, room = _names(meeting)
     how = " (clôturée automatiquement)" if meeting.auto_closed else ""
-    lines = [f"✅ La réunion « {title} » de « {room} » est terminée{how}."]
+    lines = [f"✅ La réunion « {title} » de {room} est terminée{how}."]
     if document:
         lines.append(f"Transcription : {document['url']}")
     lines.append(

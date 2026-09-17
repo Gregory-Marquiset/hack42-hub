@@ -8,6 +8,7 @@ const endChatMeetingMock = vi.hoisted(() => vi.fn());
 const extendChatMeetingMock = vi.hoisted(() => vi.fn());
 const renameChatMeetingMock = vi.hoisted(() => vi.fn());
 const addChatMeetingDocumentMock = vi.hoisted(() => vi.fn());
+const setChatMeetingBoardMock = vi.hoisted(() => vi.fn());
 const getOpenIdTokenMock = vi.hoisted(() => vi.fn());
 const getChatFilesMock = vi.hoisted(() => vi.fn());
 const uploadChatFileMock = vi.hoisted(() => vi.fn());
@@ -30,6 +31,7 @@ vi.mock("../MatrixDriver", () => ({
     extendChatMeeting = extendChatMeetingMock;
     renameChatMeeting = renameChatMeetingMock;
     addChatMeetingDocument = addChatMeetingDocumentMock;
+    setChatMeetingBoard = setChatMeetingBoardMock;
     getOpenIdToken = getOpenIdTokenMock;
     getChatFiles = getChatFilesMock;
     uploadChatFile = uploadChatFileMock;
@@ -87,6 +89,20 @@ describe("LazyMatrixDriver meetings", () => {
       ROOM_ID,
       meeting.id,
       "Point hebdo",
+    );
+  });
+
+  it("forwards opening the whiteboard", async () => {
+    await new LazyMatrixDriver("matrix").setChatMeetingBoard(
+      ROOM_ID,
+      "abc-defg-hij",
+      true,
+    );
+
+    expect(setChatMeetingBoardMock).toHaveBeenCalledWith(
+      ROOM_ID,
+      "abc-defg-hij",
+      true,
     );
   });
 

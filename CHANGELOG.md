@@ -8,6 +8,14 @@ and this project adheres to
 
 ### Added
 
+- 🔒️(profiles) Stop sending request bodies to Sentry and keep the chat
+  identity proof out of tracebacks: saving a role carries a live Matrix access
+  token, which error reports were shipping verbatim.
+- ♿️(profiles) Make the role label and its editor usable without a mouse: the
+  badge truncates with an ellipsis instead of cutting mid-word and no longer
+  crowds out the conversation name, the field and preset borders meet the 3:1
+  contrast a control needs, and the length limit and save failure are announced
+  with the field instead of stranding the focus.
 - ✨(frontend) Encrypt conversations end to end. A private message is always
   encrypted; a group room carries the choice, made once at creation because
   Matrix offers no way back. Encrypted conversations are marked with a lock in

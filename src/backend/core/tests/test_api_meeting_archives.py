@@ -49,6 +49,7 @@ def fixture_homeserver(monkeypatch):
 
     monkeypatch.setattr(matrix, "openid_user_id", openid_user_id)
     monkeypatch.setattr(matrix, "joined_members", joined_members)
+    monkeypatch.setattr(matrix, "room_name", lambda room_id: None)
     return calls
 
 
@@ -130,7 +131,7 @@ def test_api_meeting_archive_organizer(homeserver):
     assert response.status_code == HTTP_200_OK
     assert response["Content-Type"] == "application/zip"
     assert "attachment" in response["Content-Disposition"]
-    assert "2026-09-17-Point-hebdo.zip" in response["Content-Disposition"]
+    assert "meeting-Point-hebdo-2026-09-17-10h00.zip" in response["Content-Disposition"]
     assert homeserver == []
 
     files = _files(response)
@@ -288,4 +289,53 @@ def test_api_meeting_archive_in_french():
     assert set(files) == {"reunion.md", "ordre-du-jour.md", "transcription.md"}
     assert "## Ordre du jour" in files["reunion.md"]
     assert "Début : 17/09/2026 10:00" in files["reunion.md"]
-    assert "reunion-2026-09-17-Point-hebdo.zip" in response["Content-Disposition"]
+    assert "reunion-Point-hebdo-2026-09-17-10h00.zip" in response["Content-Disposition"]
+
+
+def test_api_meeting_archive_named_after_the_conversation():
+    """The member's name for the conversation names the archive."""
+    meeting = _closed_meeting()
+
+    response = _archive(
+        _client(meeting.organizer), meeting, chat_name="Équipe produit / Q3"
+    )
+
+    assert response.status_code == HTTP_200_OK
+    disposition = response["Content-Disposition"]
+    assert "meeting-Point-hebdo-%C3%89quipe-produit-Q3-2026-09-17-10h00.zip" in (
+        disposition
+    )
+    assert "- Conversation: Équipe produit / Q3\n" in _files(response)["meeting.md"]
+
+
+@override_settings(**MATRIX_SETTINGS)
+@pytest.mark.usefixtures("homeserver")
+def test_api_meeting_archive_named_after_the_matrix_room(monkeypatch):
+    """Without a name from the member, the room's name is asked to Matrix."""
+    monkeypatch.setattr(matrix, "room_name", lambda room_id: "Support")
+    meeting = _closed_meeting()
+
+    response = _archive(_client(meeting.organizer), meeting)
+
+    assert (
+        "meeting-Point-hebdo-Support-2026-09-17-10h00.zip"
+        in (response["Content-Disposition"])
+    )
+
+
+@override_settings(**MATRIX_SETTINGS)
+@pytest.mark.usefixtures("homeserver")
+def test_api_meeting_archive_matrix_room_name_unavailable(monkeypatch):
+    """A room name Matrix cannot give is left out."""
+
+    def fail(room_id):
+        raise matrix.MatrixError("down")
+
+    monkeypatch.setattr(matrix, "room_name", fail)
+    meeting = _closed_meeting()
+
+    response = _archive(_client(meeting.organizer), meeting)
+
+    assert (
+        "meeting-Point-hebdo-2026-09-17-10h00.zip" in (response["Content-Disposition"])
+    )

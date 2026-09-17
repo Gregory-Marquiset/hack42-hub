@@ -34,6 +34,8 @@ MEDIA_BASE_URL=http://localhost:9803
 
 # Meeting whiteboard (self-hosted Excalidraw, see compose.yml)
 MEETING_BOARD_BASE_URL=http://localhost:9814
+# Scene store the Excalidraw image is built with, read for the archive
+MEETING_BOARD_SCENES_URL=https://firestore.googleapis.com/v1/projects/excalidraw-room-persistence/databases/(default)/documents/scenes
 
 # OIDC
 OIDC_OP_JWKS_ENDPOINT=http://nginx:9803/realms/hub/protocol/openid-connect/certs

@@ -201,6 +201,21 @@ export type ChatMeeting = {
   summary?: ChatMeetingDocument;
 };
 
+/** A document shared in a conversation. */
+export type ChatFile = {
+  id: string;
+  name: string;
+  /** Bytes. */
+  size?: number;
+  mimeType?: string;
+  senderId: string;
+  senderName?: string;
+  /** ISO 8601. */
+  sentAt: string;
+  /** Encrypted in the browser before it was uploaded. */
+  isEncrypted: boolean;
+};
+
 /** How a meeting is created from the meetings panel. */
 export type StartMeetingOptions = {
   title?: string;

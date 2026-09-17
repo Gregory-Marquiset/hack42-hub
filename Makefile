@@ -246,7 +246,7 @@ run-backend-e2e: ## Start the backend with the e2e DB; always reset the postgres
 run: ## start the wsgi (production) and development server
 run:
 	@$(MAKE) run-backend
-	@$(COMPOSE) up --force-recreate -d frontend-development
+	@$(COMPOSE) up --force-recreate -d frontend-development excalidraw
 .PHONY: run
 
 run-matrix: ## Start the local Matrix stack (Synapse + MAS + Element) beside the base stack

@@ -10,15 +10,17 @@ closes the call window and lists the meeting in the history.
 
 import logging
 import threading
+import time
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import close_old_connections, transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import override
 
 from bots import matrix
-from core import docs, models, transcripts
+from core import boards, docs, meeting_notifications, models, transcripts
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,35 @@ def close(meeting, *, auto=False):
             pk=meeting.pk, closed_at__isnull=True
         ).update(closed_at=timezone.now(), auto_closed=auto)
     meeting.refresh_from_db(fields=["closed_at", "auto_closed"])
+    if updated and boards.is_board_configured():
+        run_in_background(save_board, meeting.pk)
     return bool(updated)
+
+
+def save_board(meeting_pk):
+    """Keep the whiteboard of a closed meeting for its archive."""
+    # The boards still open save their last strokes as the call windows close.
+    time.sleep(settings.MEETING_BOARD_SAVE_DELAY)
+    meeting = models.Meeting.objects.get(pk=meeting_pk)
+    try:
+        elements = boards.fetch_elements(meeting.slug)
+    except boards.BoardError as error:
+        logger.warning("meeting %s: whiteboard not saved (%s)", meeting.slug, error)
+        return
+    models.Meeting.objects.filter(pk=meeting_pk).update(board_elements=elements)
+
+
+def board_elements(meeting):
+    """The whiteboard of a meeting: as saved at its closing, or read now."""
+    if meeting.board_elements is not None:
+        return meeting.board_elements
+    if not boards.is_board_configured():
+        return []
+    try:
+        return boards.fetch_elements(meeting.slug)
+    except boards.BoardError as error:
+        logger.warning("meeting %s: whiteboard unavailable (%s)", meeting.slug, error)
+        return []
 
 
 def is_due(meeting, now):
@@ -50,6 +80,8 @@ def record_presence(meeting, participants):
     Answers whether the meeting is (now) closed.
     """
     now = timezone.now()
+    if meeting_notifications.is_starting(meeting, now):
+        run_in_background(meeting_notifications.notify_started, meeting.pk)
     for participant in participants:
         record, created = models.MeetingParticipant.objects.get_or_create(
             meeting=meeting,
@@ -104,6 +136,8 @@ def finish_auto_close(meeting_pk):
         except docs.DocsError:
             logger.warning("meeting %s: transcript not saved", meeting.slug)
     publish_closed(meeting, document)
+    if meeting.chat_id and meeting_notifications.is_enabled():
+        meeting_notifications.notify_closed(meeting.pk, document)
 
 
 def publish_closed(meeting, document=None):

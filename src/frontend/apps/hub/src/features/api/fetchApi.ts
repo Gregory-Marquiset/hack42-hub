@@ -49,7 +49,10 @@ export const fetchAPI = async (
     credentials: "include",
     headers: {
       ...init?.headers,
-      "Content-Type": "application/json",
+      // The browser sets a form's own type, with its boundary.
+      ...(!(init?.body instanceof FormData) && {
+        "Content-Type": "application/json",
+      }),
       ...(csrfToken && { "X-CSRFToken": csrfToken }),
     },
   });

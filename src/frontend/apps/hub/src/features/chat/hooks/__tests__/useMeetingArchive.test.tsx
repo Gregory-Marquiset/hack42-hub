@@ -31,6 +31,9 @@ vi.mock("@/features/drivers/DriverRegistry", () => ({
     get: () => ({ getOpenIdToken: mocks.getOpenIdToken }),
   }),
 }));
+vi.mock("../useChat", () => ({
+  useChat: () => ({ chat: { name: "Équipe produit" } }),
+}));
 vi.mock("@/features/chat/api/meetings", () => ({
   fetchMeetingArchive: mocks.fetchMeetingArchive,
 }));
@@ -94,6 +97,7 @@ describe("useMeetingArchive", () => {
 
     expect(mocks.fetchMeetingArchive).toHaveBeenCalledWith("abc-defg-hij", {
       openIdToken: "openid",
+      chatName: "Équipe produit",
       documents: [SUMMARY, LINK],
     });
     expect(click).toHaveBeenCalledOnce();

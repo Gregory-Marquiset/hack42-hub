@@ -313,6 +313,11 @@ class Base(Configuration):
                 environ_name="API_MEETING_ARCHIVE_THROTTLE_RATE",
                 environ_prefix=None,
             ),
+            "meeting_documents": values.Value(
+                default="60/minute",
+                environ_name="API_MEETING_DOCUMENTS_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
         },
     }
     MONITORED_THROTTLE_FAILURE_CALLBACK = (
@@ -517,6 +522,11 @@ class Base(Configuration):
     MEETING_SCRIBE_MAX_AGE_HOURS = values.PositiveIntegerValue(
         24, environ_name="MEETING_SCRIBE_MAX_AGE_HOURS", environ_prefix=None
     )
+    # Ariane tells the members when a meeting is scheduled, starts and ends,
+    # in a private message (needs her Matrix tokens).
+    MEETING_NOTIFICATIONS_ENABLED = values.BooleanValue(
+        True, environ_name="MEETING_NOTIFICATIONS_ENABLED", environ_prefix=None
+    )
     DOCS_BASE_URL = values.Value(
         None, environ_name="DOCS_BASE_URL", environ_prefix=None
     )
@@ -532,6 +542,30 @@ class Base(Configuration):
     # this setting the meeting window shows the call alone.
     MEETING_BOARD_BASE_URL = values.Value(
         None, environ_name="MEETING_BOARD_BASE_URL", environ_prefix=None
+    )
+    # Where that Excalidraw keeps the scenes of its rooms (a Firestore
+    # collection), to put the board in the archive. Without it, the archive
+    # has no whiteboard.
+    MEETING_BOARD_SCENES_URL = values.Value(
+        None, environ_name="MEETING_BOARD_SCENES_URL", environ_prefix=None
+    )
+    MEETING_BOARD_TIMEOUT = values.PositiveIntegerValue(
+        15, environ_name="MEETING_BOARD_TIMEOUT", environ_prefix=None
+    )
+    # The boards still open save their last strokes when the call window
+    # closes: the scene is read back that many seconds after the closing.
+    MEETING_BOARD_SAVE_DELAY = values.PositiveIntegerValue(
+        15, environ_name="MEETING_BOARD_SAVE_DELAY", environ_prefix=None
+    )
+
+    # Documents added to a meeting, kept by the Hub for its members and archive.
+    MEETING_ATTACHMENT_MAX_BYTES = values.PositiveIntegerValue(
+        20 * 1024 * 1024,
+        environ_name="MEETING_ATTACHMENT_MAX_BYTES",
+        environ_prefix=None,
+    )
+    MEETING_ATTACHMENTS_MAX = values.PositiveIntegerValue(
+        30, environ_name="MEETING_ATTACHMENTS_MAX", environ_prefix=None
     )
 
     OIDC_AUTHENTICATE_CLASS = values.Value(
@@ -880,6 +914,13 @@ class Test(Base):
     STATIC_ROOT = None
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+
+    # No real Matrix in tests: the notification tests turn it back on with
+    # a fake homeserver.
+    MEETING_NOTIFICATIONS_ENABLED = False
+    MEETING_BOARD_SAVE_DELAY = 0
+    # No real scene store either; the board tests set their own.
+    MEETING_BOARD_SCENES_URL = None
 
     def __init__(self):
         # pylint: disable=invalid-name

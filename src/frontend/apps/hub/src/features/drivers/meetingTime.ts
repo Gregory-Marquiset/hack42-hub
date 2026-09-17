@@ -80,3 +80,27 @@ export const formatMeetingDuration = (ms: number): string => {
     ? `${hours} h`
     : `${hours} h ${String(minutes).padStart(2, "0")}`;
 };
+
+/** A scheduled meeting counts as "soon" this long before its start. */
+export const MEETING_SOON_MS = 15 * MINUTE;
+
+export type ConversationMeetingState = "ongoing" | "soon" | "none";
+
+/**
+ * What the meeting icon of a conversation shows: a call in progress wins over
+ * one about to start.
+ */
+export const getConversationMeetingState = (
+  meetings: ChatMeeting[],
+  now: number = Date.now(),
+): ConversationMeetingState => {
+  if (meetings.some((meeting) => isMeetingOngoing(meeting, now))) {
+    return "ongoing";
+  }
+  const isSoon = meetings.some(
+    (meeting) =>
+      getMeetingStatus(meeting, now) === "upcoming" &&
+      startOf(meeting) - now <= MEETING_SOON_MS,
+  );
+  return isSoon ? "soon" : "none";
+};

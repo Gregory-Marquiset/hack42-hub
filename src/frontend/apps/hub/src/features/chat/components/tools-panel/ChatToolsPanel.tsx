@@ -9,7 +9,6 @@ import type {
 import { DocumentsTool } from "./DocumentsTool";
 import { MeetingsTool } from "./MeetingsTool";
 import { ThreadsTool } from "./ThreadsTool";
-import { ToolsPanelHeader } from "./ToolsPanelHeader";
 
 export type ChatTool = "meetings" | "threads" | "files";
 
@@ -51,14 +50,7 @@ export const ChatToolsPanel = ({
         <MeetingsTool chatRef={chatRef} isOpen={isOpen} onClose={onClose} />
       )}
       {tool === "files" && (
-        <>
-          <ToolsPanelHeader
-            title={t("Documents")}
-            isOpen={isOpen}
-            onClose={onClose}
-          />
-          <DocumentsTool />
-        </>
+        <DocumentsTool chatRef={chatRef} isOpen={isOpen} onClose={onClose} />
       )}
       {tool === "threads" && (
         <ThreadsTool

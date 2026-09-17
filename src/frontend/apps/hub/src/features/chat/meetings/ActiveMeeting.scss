@@ -148,6 +148,13 @@
       color: var(--c--contextuals--content--semantic--error--primary, #ce0500);
     }
 
+    &[data-active] {
+      background: var(
+        --c--contextuals--background--semantic--overlay--primary,
+        rgba(24, 27, 36, 0.08)
+      );
+    }
+
     svg {
       width: 18px;
       height: 18px;
@@ -163,6 +170,46 @@
     @media (max-width: 720px) {
       flex-direction: column;
     }
+  }
+
+  // Invitation link, for people outside the conversation.
+  &__share {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--xxxs, 4px);
+    padding: var(--c--globals--spacings--xs, 8px);
+    background: var(--c--contextuals--background--surface--secondary, #f6f7f9);
+    border-bottom: 1px solid
+      var(--c--contextuals--border--surface--primary, #dfe2ea);
+  }
+
+  &__share-text {
+    margin: 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(
+      --c--contextuals--content--semantic--neutral--secondary,
+      #3a3f4c
+    );
+  }
+
+  &__share-row {
+    display: flex;
+    gap: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__share-link {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    padding: 0 var(--c--globals--spacings--xs, 8px);
+    border: 1px solid var(--c--contextuals--border--surface--primary, #dfe2ea);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--c--contextuals--content--semantic--neutral--primary, #222631);
+    background: var(--c--contextuals--background--surface--primary, #fff);
   }
 
   &__frame {

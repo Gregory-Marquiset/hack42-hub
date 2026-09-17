@@ -20,7 +20,15 @@ from rest_framework import viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from bots import matrix
-from core import archives, docs, meet, meeting_closing, models, transcripts
+from core import (
+    archives,
+    docs,
+    meet,
+    meeting_closing,
+    meeting_notifications,
+    models,
+    transcripts,
+)
 from core.api.filters import remove_accents
 
 from . import permissions, serializers
@@ -372,6 +380,7 @@ class MeetingView(drf.views.APIView):
         with transaction.atomic():
             meeting = models.Meeting.objects.create(
                 slug=room["slug"],
+                url=room["url"],
                 livekit_room=room["id"],
                 organizer=request.user,
                 chat_id=details["chat_id"],
@@ -385,6 +394,10 @@ class MeetingView(drf.views.APIView):
                 models.MeetingAttachment(meeting=meeting, **attachment)
                 for attachment in details["attachments"]
             )
+        # Ariane tells the members: scheduled for later, or starting now.
+        notify = meeting_notifications.on_created(meeting)
+        if notify:
+            meeting_closing.run_in_background(notify, meeting.pk)
         return drf.response.Response(
             {"url": room["url"], "slug": room["slug"]},
             status=drf.status.HTTP_201_CREATED,
@@ -448,23 +461,206 @@ class MeetingTranscriptView(drf.views.APIView):
             meeting.save(update_fields=["title", "updated_at"])
         meeting_closing.close(meeting)
 
+        document = None
         if not docs.is_docs_configured():
-            return drf.response.Response(
+            response = drf.response.Response(
                 {"detail": "Docs is not configured."},
                 status=drf.status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+        else:
+            try:
+                document = transcripts.transcript_document(meeting, title)
+                response = drf.response.Response(
+                    document, status=drf.status.HTTP_201_CREATED
+                )
+            except transcripts.NoTranscriptError:
+                response = drf.response.Response(status=drf.status.HTTP_204_NO_CONTENT)
+            except docs.DocsError:
+                response = drf.response.Response(
+                    {"detail": "Docs could not save the transcript."},
+                    status=drf.status.HTTP_502_BAD_GATEWAY,
+                )
 
-        try:
-            document = transcripts.transcript_document(meeting, title)
-        except transcripts.NoTranscriptError:
-            return drf.response.Response(status=drf.status.HTTP_204_NO_CONTENT)
-        except docs.DocsError:
-            return drf.response.Response(
-                {"detail": "Docs could not save the transcript."},
-                status=drf.status.HTTP_502_BAD_GATEWAY,
+        # Once, whatever became of the transcript.
+        if meeting.chat_id and meeting_notifications.is_enabled():
+            meeting_closing.run_in_background(
+                meeting_notifications.notify_closed, meeting.pk, document
             )
+        return response
 
-        return drf.response.Response(document, status=drf.status.HTTP_201_CREATED)
+
+def _is_member(request, meeting, openid_token):
+    """The organizer, or a member of the meeting's conversation."""
+    if meeting.organizer_id == request.user.pk:
+        return True
+    if not openid_token or not meeting.chat_id or not matrix.can_write_rooms():
+        return False
+    user_id = matrix.openid_user_id(openid_token)
+    return bool(user_id) and user_id in matrix.joined_members(meeting.chat_id)
+
+
+class MatrixUnavailable(Exception):
+    """Matrix could not say whether someone is a member."""
+
+
+def _member_meeting(request, slug, openid_token):
+    """
+    The meeting, for its organizer or a member of its conversation; the same
+    404 as for an unknown meeting otherwise.
+    """
+    meeting = (
+        models.Meeting.objects.select_related("organizer").filter(slug=slug).first()
+    )
+    if meeting is None:
+        raise Http404
+    try:
+        allowed = _is_member(request, meeting, openid_token)
+    except matrix.MatrixError as error:
+        raise MatrixUnavailable from error
+    if not allowed:
+        raise Http404
+    return meeting
+
+
+def _matrix_unavailable():
+    return drf.response.Response(
+        {"detail": "Matrix could not confirm the membership."},
+        status=drf.status.HTTP_502_BAD_GATEWAY,
+    )
+
+
+def _attachment_data(attachment):
+    return {
+        "id": str(attachment.pk),
+        "name": attachment.name,
+        "size": attachment.size or len(attachment.content.encode()),
+        "created_at": attachment.created_at.isoformat(),
+    }
+
+
+class MeetingDocumentsView(drf.views.APIView):
+    """API view listing what the members can read of a meeting."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "meeting_documents"
+
+    def post(self, request, slug):
+        """
+        POST /api/v1.0/meetings/<slug>/documents/
+            Answer the agenda and the documents kept for the meeting. Members
+            prove their Matrix account with `openid_token`.
+        """
+        serializer = serializers.MeetingMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            meeting = _member_meeting(
+                request, slug, serializer.validated_data["openid_token"]
+            )
+        except MatrixUnavailable:
+            return _matrix_unavailable()
+        return drf.response.Response(
+            {
+                "agenda": meeting.agenda,
+                "attachments": [
+                    _attachment_data(attachment)
+                    for attachment in meeting.attachments.all()
+                ],
+                "is_closed": meeting.closed_at is not None,
+            }
+        )
+
+
+class MeetingAttachmentsView(drf.views.APIView):
+    """API view adding a document to a meeting that is not closed."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "meeting_documents"
+
+    def post(self, request, slug):
+        """
+        POST /api/v1.0/meetings/<slug>/attachments/  (multipart)
+            Keep `file` with the meeting, for its members and its archive.
+        """
+        serializer = serializers.MeetingAttachmentUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            meeting = _member_meeting(
+                request, slug, serializer.validated_data["openid_token"]
+            )
+        except MatrixUnavailable:
+            return _matrix_unavailable()
+
+        if meeting.closed_at is not None:
+            return drf.response.Response(
+                {"detail": "The meeting is closed."},
+                status=drf.status.HTTP_409_CONFLICT,
+            )
+        upload = serializer.validated_data["file"]
+        if upload.size > settings.MEETING_ATTACHMENT_MAX_BYTES:
+            return drf.response.Response(
+                {"file": ["The file is too large."]},
+                status=drf.status.HTTP_400_BAD_REQUEST,
+            )
+        if meeting.attachments.count() >= settings.MEETING_ATTACHMENTS_MAX:
+            return drf.response.Response(
+                {"file": ["The meeting has too many documents."]},
+                status=drf.status.HTTP_400_BAD_REQUEST,
+            )
+        attachment = models.MeetingAttachment.objects.create(
+            meeting=meeting, name=upload.name, file=upload, size=upload.size
+        )
+        return drf.response.Response(
+            _attachment_data(attachment), status=drf.status.HTTP_201_CREATED
+        )
+
+
+class MeetingAttachmentView(drf.views.APIView):
+    """API view downloading one document of a meeting."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "meeting_documents"
+
+    def post(self, request, slug, attachment_id):
+        """
+        POST /api/v1.0/meetings/<slug>/attachments/<id>/
+            Answer the document. A POST, so that the OpenID token of a member
+            travels in the body rather than in the address.
+        """
+        serializer = serializers.MeetingMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            meeting = _member_meeting(
+                request, slug, serializer.validated_data["openid_token"]
+            )
+        except MatrixUnavailable:
+            return _matrix_unavailable()
+        attachment = meeting.attachments.filter(pk=attachment_id).first()
+        if attachment is None:
+            raise Http404
+
+        if attachment.file:
+            try:
+                content = attachment.file.open("rb")
+            except OSError as error:
+                raise Http404 from error
+        else:
+            content = io.BytesIO(attachment.content.encode())
+        return FileResponse(
+            content,
+            as_attachment=True,
+            filename=attachment.name,
+            content_type="application/octet-stream",
+        )
+
+
+def _room_name(meeting):
+    """The conversation's name as Matrix knows it, when Ariane can ask."""
+    if not meeting.chat_id or not matrix.can_write_rooms():
+        return ""
+    try:
+        return matrix.room_name(meeting.chat_id) or ""
+    except matrix.MatrixError:
+        return ""
 
 
 class MeetingArchiveView(drf.views.APIView):
@@ -472,16 +668,6 @@ class MeetingArchiveView(drf.views.APIView):
 
     permission_classes = [IsAuthenticated]
     throttle_scope = "meeting_archive"
-
-    @staticmethod
-    def _may_download(request, meeting, openid_token):
-        """The organizer, or a member of the meeting's conversation."""
-        if meeting.organizer_id == request.user.pk:
-            return True
-        if not openid_token or not meeting.chat_id or not matrix.can_write_rooms():
-            return False
-        user_id = matrix.openid_user_id(openid_token)
-        return bool(user_id) and user_id in matrix.joined_members(meeting.chat_id)
 
     def post(self, request, slug):
         """
@@ -492,23 +678,12 @@ class MeetingArchiveView(drf.views.APIView):
         """
         serializer = serializers.MeetingArchiveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        meeting = (
-            models.Meeting.objects.select_related("organizer").filter(slug=slug).first()
-        )
-        if meeting is None:
-            raise Http404
-
         try:
-            allowed = self._may_download(
-                request, meeting, serializer.validated_data["openid_token"]
+            meeting = _member_meeting(
+                request, slug, serializer.validated_data["openid_token"]
             )
-        except matrix.MatrixError:
-            return drf.response.Response(
-                {"detail": "Matrix could not confirm the membership."},
-                status=drf.status.HTTP_502_BAD_GATEWAY,
-            )
-        if not allowed:
-            raise Http404
+        except MatrixUnavailable:
+            return _matrix_unavailable()
 
         if meeting.closed_at is None:
             return drf.response.Response(
@@ -516,11 +691,17 @@ class MeetingArchiveView(drf.views.APIView):
                 status=drf.status.HTTP_409_CONFLICT,
             )
 
+        chat_name = serializer.validated_data["chat_name"].strip() or _room_name(
+            meeting
+        )
         with timezone.override(meeting.time_zone):
             content = archives.build_archive(
-                meeting, serializer.validated_data["documents"]
+                meeting,
+                serializer.validated_data["documents"],
+                meeting_closing.board_elements(meeting),
+                chat_name,
             )
-            file_name = archives.archive_file_name(meeting)
+            file_name = archives.archive_file_name(meeting, chat_name)
         return FileResponse(
             io.BytesIO(content),
             as_attachment=True,

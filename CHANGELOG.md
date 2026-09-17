@@ -8,6 +8,22 @@ and this project adheres to
 
 ### Added
 
+- ✨(meetings) Show on the meeting icon of a conversation when a meeting
+  starts within 15 minutes or is in progress, and let Ariane tell every
+  member in a private message when a meeting is scheduled, starts and ends.
+- ✨(meetings) Show the invitation link of a call, in the meeting window and
+  the meetings panel, to invite people from outside the conversation.
+- ✨(frontend) Share documents from the device in the Documents tab of a
+  conversation with its "+" button, list them and download them. They are
+  encrypted in the browser when the conversation is.
+- ✨(meetings) Put the whiteboard in the archive of a closed meeting: the Hub
+  reads the board back from its scene store when the meeting closes, as an
+  `.excalidraw` file (`MEETING_BOARD_SCENES_URL`). The archive is named after
+  the meeting, its conversation, and the day and time it started.
+- ✨(meetings) Show a scheduled meeting in the meetings panel, with its
+  invitation link, its agenda and documents, and let every member add files
+  from their device until it closes; they go in the archive. A new call
+  opens with its invitation link, a scheduled one on this view.
 - ✨(frontend) Open a whiteboard next to the call in the meeting window. The
   Excalidraw room is derived from the meeting, so every participant lands on
   the same board, and it is self-hosted alongside its collaboration server
@@ -147,6 +163,11 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Let the whiteboard collaborate inside the meeting window:
+  Excalidraw turned collaboration off in a frame, so each participant drew
+  alone on the board kept from the previous meeting, and nothing was saved.
+- 🐛(frontend) Send the user back to sign in when the identity provider
+  refuses the Matrix refresh token, instead of failing on a runtime error.
 - 🐛(frontend) Let every member start a meeting in conversations created by
   the Hub, and explain the refusal before creating a Meet room elsewhere.
 - 🐛(frontend) Restore unread navigation in conversations without a read marker

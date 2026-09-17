@@ -355,4 +355,56 @@
     justify-content: flex-end;
     gap: var(--c--globals--spacings--xxs, 6px);
   }
+
+  // A scheduled meeting.
+  &__details-when {
+    margin: 0;
+    padding: 0 var(--c--globals--spacings--xxs, 6px);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 18px;
+    &::first-letter {
+      text-transform: uppercase;
+    }
+  }
+
+  &__details-text {
+    margin: 0;
+    padding: 0 var(--c--globals--spacings--xxs, 6px);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--c--contextuals--content--semantic--neutral--tertiary, #75758a);
+  }
+
+  &__invite-row {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xxs, 6px);
+
+    .hub__chat-meetings__input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+  }
+
+  &__invite-copy {
+    flex: 0 0 auto;
+  }
+
+  &__agenda {
+    padding: 0 var(--c--globals--spacings--xxs, 6px);
+    font-size: 14px;
+    line-height: 18px;
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    p {
+      margin: var(--c--globals--spacings--xxs, 6px) 0 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
 }

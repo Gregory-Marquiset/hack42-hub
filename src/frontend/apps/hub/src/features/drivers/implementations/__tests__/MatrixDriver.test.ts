@@ -1043,7 +1043,8 @@ describe("MatrixDriver.startChatMeeting", () => {
   it("extends a meeting without planned duration from the time spent", async () => {
     const content = {
       meetingUrl: MEET_ROOM.url,
-      startedAt: Date.now() - 20 * 60 * 1000,
+      // 19 min 30 s: rounded up to 20 whatever the milliseconds of the run.
+      startedAt: Date.now() - 20 * 60 * 1000 + 30_000,
       organizerId: SELF_ID,
     };
     const { mx, sendStateEvent } = makeClient(

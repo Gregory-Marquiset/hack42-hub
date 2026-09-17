@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatMeetingDuration,
   getMeetingProgress,
+  getConversationMeetingState,
   getMeetingStatus,
   MEETING_MAX_OVERTIME_MS,
   UNPLANNED_MEETING_WINDOW_MS,
@@ -97,5 +98,29 @@ describe("formatMeetingDuration", () => {
     [150 * MINUTE, "2 h 30"],
   ])("formats %d ms as %s", (ms, expected) => {
     expect(formatMeetingDuration(ms)).toBe(expected);
+  });
+});
+
+describe("getConversationMeetingState", () => {
+  const at = (minutesFromNow: number, overrides: Partial<ChatMeeting> = {}) =>
+    meeting({
+      startedAt: new Date(NOW + minutesFromNow * MINUTE).toISOString(),
+      plannedDurationMinutes: 30,
+      ...overrides,
+    });
+
+  it("shows a meeting in progress first", () => {
+    expect(getConversationMeetingState([at(5), at(-10)], NOW)).toBe("ongoing");
+  });
+
+  it("shows a meeting starting within 15 minutes", () => {
+    expect(getConversationMeetingState([at(15)], NOW)).toBe("soon");
+    expect(getConversationMeetingState([at(16)], NOW)).toBe("none");
+  });
+
+  it("ignores closed meetings", () => {
+    const closed = at(-10, { endedAt: new Date(NOW).toISOString() });
+    expect(getConversationMeetingState([closed], NOW)).toBe("none");
+    expect(getConversationMeetingState([], NOW)).toBe("none");
   });
 });

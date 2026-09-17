@@ -9,6 +9,9 @@ const extendChatMeetingMock = vi.hoisted(() => vi.fn());
 const renameChatMeetingMock = vi.hoisted(() => vi.fn());
 const addChatMeetingDocumentMock = vi.hoisted(() => vi.fn());
 const getOpenIdTokenMock = vi.hoisted(() => vi.fn());
+const getChatFilesMock = vi.hoisted(() => vi.fn());
+const uploadChatFileMock = vi.hoisted(() => vi.fn());
+const downloadChatFileMock = vi.hoisted(() => vi.fn());
 
 // The real driver pulls in matrix-js-sdk: only the meeting calls matter here.
 vi.mock("../MatrixDriver", () => ({
@@ -28,6 +31,9 @@ vi.mock("../MatrixDriver", () => ({
     renameChatMeeting = renameChatMeetingMock;
     addChatMeetingDocument = addChatMeetingDocumentMock;
     getOpenIdToken = getOpenIdTokenMock;
+    getChatFiles = getChatFilesMock;
+    uploadChatFile = uploadChatFileMock;
+    downloadChatFile = downloadChatFileMock;
   },
 }));
 
@@ -90,5 +96,29 @@ describe("LazyMatrixDriver meetings", () => {
     await expect(new LazyMatrixDriver("matrix").getOpenIdToken()).resolves.toBe(
       "openid-token",
     );
+  });
+});
+
+describe("LazyMatrixDriver documents", () => {
+  it("advertises document support before the SDK loads", () => {
+    expect(new LazyMatrixDriver("matrix").supportsChatFiles).toBe(true);
+  });
+
+  it("forwards document calls to the real Matrix driver", async () => {
+    const shared = { id: "$file", name: "cr.pdf" };
+    const file = new File(["x"], "cr.pdf");
+    const blob = new Blob(["x"]);
+    getChatFilesMock.mockResolvedValue([shared]);
+    uploadChatFileMock.mockResolvedValue(shared);
+    downloadChatFileMock.mockResolvedValue(blob);
+    const driver = new LazyMatrixDriver("matrix");
+
+    await expect(driver.getChatFiles(ROOM_ID)).resolves.toEqual([shared]);
+    await expect(driver.uploadChatFile(ROOM_ID, file)).resolves.toBe(shared);
+    await expect(driver.downloadChatFile(ROOM_ID, "$file")).resolves.toBe(blob);
+
+    expect(getChatFilesMock).toHaveBeenCalledWith(ROOM_ID);
+    expect(uploadChatFileMock).toHaveBeenCalledWith(ROOM_ID, file);
+    expect(downloadChatFileMock).toHaveBeenCalledWith(ROOM_ID, "$file");
   });
 });

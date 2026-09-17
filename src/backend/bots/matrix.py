@@ -306,12 +306,15 @@ def can_write_rooms() -> bool:
 
 def _admin(method: str, path: str) -> dict[str, Any]:
     """Call the Synapse admin API. Read-only by convention - see `joined_members`."""
-    response = requests.request(
-        method,
-        f"{settings.MATRIX_HOMESERVER_URL:s}{path:s}",
-        headers={"Authorization": f"Bearer {settings.MATRIX_ADMIN_TOKEN:s}"},
-        timeout=settings.MATRIX_REQUEST_TIMEOUT,
-    )
+    try:
+        response = requests.request(
+            method,
+            f"{settings.MATRIX_HOMESERVER_URL:s}{path:s}",
+            headers={"Authorization": f"Bearer {settings.MATRIX_ADMIN_TOKEN:s}"},
+            timeout=settings.MATRIX_REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise MatrixError(f"{method:s} {path:s} failed: {exc!s}") from exc
     if response.status_code >= 400:
         raise MatrixError(f"{method:s} {path:s} -> {response.status_code:d}")
     return response.json() or {}
@@ -378,3 +381,38 @@ def openid_user_id(openid_token: str) -> str | None:
     except ValueError:
         return None
     return user_id if isinstance(user_id, str) and user_id else None
+
+
+def create_direct_room(user_id: str) -> str:
+    """A new private conversation between Ariane and one account."""
+    created = _as(
+        "POST",
+        f"{CLIENT_API:s}/createRoom",
+        json={
+            "is_direct": True,
+            "preset": "trusted_private_chat",
+            "invite": [user_id],
+        },
+    )
+    return created["room_id"]
+
+
+def membership(room_id: str, user_id: str) -> str | None:
+    """Someone's membership in a room Ariane is in, or `None` if unknown."""
+    try:
+        state = _as(
+            "GET",
+            _state_path(room_id, "m.room.member", user_id),
+        )
+    except MatrixError as exc:
+        if exc.errcode in ("M_NOT_FOUND", "M_FORBIDDEN"):
+            return None
+        raise
+    return state.get("membership")
+
+
+def room_name(room_id: str) -> str | None:
+    """A room's name, through the admin API: Ariane need not be there."""
+    details = _admin("GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe=''):s}")
+    name = details.get("name")
+    return name if isinstance(name, str) and name.strip() else None

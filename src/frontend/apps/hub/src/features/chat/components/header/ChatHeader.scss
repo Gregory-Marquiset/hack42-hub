@@ -191,6 +191,43 @@
     }
   }
 
+  &__meeting-button {
+    position: relative;
+    display: inline-flex;
+  }
+
+  // Meeting about to start (orange) or in progress (green, pulsing).
+  &__meeting-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid
+      var(--c--contextuals--background--surface--primary, #fff);
+    pointer-events: none;
+
+    &[data-state="soon"] {
+      background: var(
+        --c--contextuals--content--semantic--warning--primary,
+        #b34000
+      );
+    }
+
+    &[data-state="ongoing"] {
+      background: var(
+        --c--contextuals--content--semantic--success--primary,
+        #18753c
+      );
+      animation: hub-meeting-dot-pulse 2s ease-in-out infinite;
+
+      @media (prefers-reduced-motion: reduce) {
+        animation: none;
+      }
+    }
+  }
+
   &__separator {
     flex: 0 0 auto;
     width: 1px;
@@ -213,4 +250,15 @@
   width: 16px;
   height: 16px;
   color: var(--c--contextuals--content--semantic--neutral--secondary, #626a80);
+}
+
+@keyframes hub-meeting-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }

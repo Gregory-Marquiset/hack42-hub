@@ -49,9 +49,11 @@ export const ConversationSearchModal = ({
   const heading = useId();
   const messageHeading = useId();
 
-  const open = (chat: Chat) => {
+  const open = (chat: Chat, eventId?: string) => {
     onClose();
-    void router.push(chatHref(chat.ref), undefined, { shallow: true });
+    void router.push(chatHref({ ...chat.ref, eventId }), undefined, {
+      shallow: true,
+    });
   };
 
   return (
@@ -156,7 +158,7 @@ export const ConversationSearchModal = ({
                               ? result.accountLabel
                               : undefined
                           }
-                          onSelect={() => open(result.chat)}
+                          onSelect={() => open(result.chat, result.eventId)}
                         />
                       );
                     })}

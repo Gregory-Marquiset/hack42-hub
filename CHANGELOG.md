@@ -46,6 +46,9 @@ and this project adheres to
 - ✨(meetings) Save the transcript of a meeting in Docs when its organizer
   closes it, and list it in the meeting documents. A scribe service relays
   the live subtitles of the Hub meetings to the backend.
+- ✨(search) Jump straight to a message found via search: opening it now
+  scrolls its conversation to the exact message instead of the latest one,
+  and briefly flashes the row so it's easy to spot.
 - ✨(frontend) Add real-time Matrix presence and availability controls
 - ✨(frontend) Create a new Espace or Salon from the left panel, alongside
   direct messages: a round "+" next to the espace switcher, and one next

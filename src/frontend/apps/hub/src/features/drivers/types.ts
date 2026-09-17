@@ -7,6 +7,8 @@ export type AccountId = string;
 export type ChatRef = {
   accountId: AccountId;
   chatId: string;
+  /** Message to jump to and flash once the chat is open, if any. */
+  eventId?: string;
 };
 
 /** A Meet room created through the Hub backend. */

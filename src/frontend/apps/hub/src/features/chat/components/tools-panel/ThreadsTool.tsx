@@ -14,6 +14,8 @@ type ThreadsToolProps = {
   threadId: string | null;
   /** Incremented whenever a Reply action requests focus in the composer. */
   threadComposerFocusSignal: number;
+  /** Reply to flash once the detail view has scrolled to it, if any. */
+  threadHighlightEventId: string | null;
   /** Root message for a thread draft that has not been created yet. */
   draftThreadRoot: DraftThreadRoot | null;
   isOpen: boolean;
@@ -31,6 +33,7 @@ export const ThreadsTool = ({
   chatRef,
   threadId,
   threadComposerFocusSignal,
+  threadHighlightEventId,
   draftThreadRoot,
   isOpen,
   onClose,
@@ -43,6 +46,7 @@ export const ThreadsTool = ({
         chatRef={chatRef}
         threadId={threadId}
         composerFocusSignal={threadComposerFocusSignal}
+        highlightEventId={threadHighlightEventId}
         isOpen={isOpen}
         onClose={onClose}
         onBack={onCloseThread}

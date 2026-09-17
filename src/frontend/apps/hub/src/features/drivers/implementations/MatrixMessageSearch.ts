@@ -308,6 +308,7 @@ export class MatrixMessageSearch {
             excerpt,
             matchRanges,
             timestamp: new Date(doc.timestamp).toISOString(),
+            threadRootId: doc.threadRootId,
           },
         ];
       });
@@ -395,6 +396,10 @@ export class MatrixMessageSearch {
         replyToEventId,
         replyToSenderId,
         timestamp,
+        threadRootId:
+          event.threadRootId && !event.isThreadRoot
+            ? event.threadRootId
+            : undefined,
       };
     } catch {
       return null;

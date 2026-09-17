@@ -1,4 +1,5 @@
 import { Bell } from "@gouvfr-lasuite/ui-components/icons";
+import clsx from "clsx";
 import {
   Fragment,
   useCallback,
@@ -37,7 +38,13 @@ type ThreadDetailProps = {
   onClose: () => void;
   onBack: () => void;
   composerFocusSignal?: number;
+  /** Reply to scroll to and flash once its bubble is in the DOM, if any. */
+  highlightEventId?: string | null;
 };
+
+// How long a jumped-to reply stays flashed (kept in sync with the CSS
+// animation duration in ThreadsTool.scss).
+const REPLY_HIGHLIGHT_MS = 2800;
 
 /** Threads panel detail view — a single thread's root message and replies. */
 export const ThreadDetail = ({
@@ -47,6 +54,7 @@ export const ThreadDetail = ({
   onClose,
   onBack,
   composerFocusSignal,
+  highlightEventId,
 }: ThreadDetailProps) => {
   const { t } = useTranslation();
   const { thread, isInitialLoading, refetch } = useChatThread(
@@ -108,10 +116,11 @@ export const ThreadDetail = ({
   // thread is fully read — so the reader lands on what matters. Gated by
   // `isOpen` because `ThreadDetail` stays mounted while the panel close
   // animation runs (see `ThreadsTool`), and we want the scroll logic to re-run
-  // when the panel is reopened on the same thread.
+  // when the panel is reopened on the same thread. Skipped when a specific
+  // reply was requested (jump from search below) — that scroll wins instead.
   useEffect(() => {
     const container = messagesRef.current;
-    if (!isOpen || !container || !thread) {
+    if (!isOpen || !container || !thread || highlightEventId) {
       return;
     }
     const separator = container.querySelector<HTMLElement>(
@@ -120,7 +129,47 @@ export const ThreadDetail = ({
     container.scrollTop = separator
       ? Math.max(0, separator.offsetTop - 12)
       : container.scrollHeight;
-  }, [isOpen, thread?.id]);
+  }, [highlightEventId, isOpen, thread?.id]);
+
+  // Jump to a specific reply (from a search result) and flash it — mirrors
+  // ChatVirtualList's message flash, minus the virtualization concerns: every
+  // reply is already in the DOM here, so a plain `scrollIntoView` is enough.
+  const highlightTimerRef = useRef<number | null>(null);
+  const [flashedEventId, setFlashedEventId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !thread || !highlightEventId) {
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      const container = messagesRef.current;
+      const target = container?.querySelector<HTMLElement>(
+        `[data-message-id="${highlightEventId}"]`,
+      );
+      if (!target) {
+        return;
+      }
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+      setFlashedEventId(highlightEventId);
+      highlightTimerRef.current = window.setTimeout(() => {
+        highlightTimerRef.current = null;
+        setFlashedEventId(null);
+      }, REPLY_HIGHLIGHT_MS);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [highlightEventId, isOpen, thread]);
+
+  useEffect(
+    () => () => {
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     const previous = previousMessagesRef.current;
@@ -249,6 +298,8 @@ export const ThreadDetail = ({
               !isSameChatDay(message.timestamp, next.timestamp);
             const author = authorsById.get(message.authorId);
 
+            const isHighlighted = message.id === flashedEventId;
+
             return (
               <Fragment key={message.id}>
                 {index === thread.firstUnreadIndex && (
@@ -256,29 +307,17 @@ export const ThreadDetail = ({
                     <span>{t("Unread")}</span>
                   </div>
                 )}
-                {isSent ? (
-                  <ChatBubble
-                    variant="sent"
-                    chatRef={chatRef}
-                    messageId={message.id}
-                    content={message.content}
-                    timestamp={message.timestamp}
-                    reactions={message.reactions}
-                    isDeleted={message.isDeleted}
-                    isEdited={message.isEdited}
-                    canEdit={message.canEdit}
-                    canDelete={message.canDelete}
-                    threadId={threadId}
-                    showTimestamp={isLastOfGroup}
-                  />
-                ) : (
-                  author && (
+                <div
+                  className={clsx("hub__thread-detail__message", {
+                    "hub__thread-detail__message--highlighted": isHighlighted,
+                  })}
+                >
+                  {isSent ? (
                     <ChatBubble
-                      variant="received"
+                      variant="sent"
                       chatRef={chatRef}
                       messageId={message.id}
                       content={message.content}
-                      author={author}
                       timestamp={message.timestamp}
                       reactions={message.reactions}
                       isDeleted={message.isDeleted}
@@ -286,11 +325,29 @@ export const ThreadDetail = ({
                       canEdit={message.canEdit}
                       canDelete={message.canDelete}
                       threadId={threadId}
-                      showHeader={isFirstOfGroup}
-                      showAvatar={isLastOfGroup}
+                      showTimestamp={isLastOfGroup}
                     />
-                  )
-                )}
+                  ) : (
+                    author && (
+                      <ChatBubble
+                        variant="received"
+                        chatRef={chatRef}
+                        messageId={message.id}
+                        content={message.content}
+                        author={author}
+                        timestamp={message.timestamp}
+                        reactions={message.reactions}
+                        isDeleted={message.isDeleted}
+                        isEdited={message.isEdited}
+                        canEdit={message.canEdit}
+                        canDelete={message.canDelete}
+                        threadId={threadId}
+                        showHeader={isFirstOfGroup}
+                        showAvatar={isLastOfGroup}
+                      />
+                    )
+                  )}
+                </div>
               </Fragment>
             );
           })}

@@ -88,6 +88,8 @@ export type MessageSearchResult = {
   excerpt: string;
   matchRanges: [number, number][];
   timestamp: string;
+  /** Set when this result is a thread reply — see `MessageSearchDocument`. */
+  threadRootId?: string;
 };
 
 export type MessageSearchPage = {

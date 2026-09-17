@@ -101,6 +101,11 @@ export type MessageSearchDocument = {
   replyToEventId?: string;
   replyToSenderId?: string;
   timestamp: number;
+  /** Root message's event id, when this message is itself a thread reply
+   * (absent for the root and for main-timeline messages outside a thread) —
+   * a reply isn't part of the main timeline, so jumping to it means landing
+   * on the root there first and opening the thread panel on it. */
+  threadRootId?: string;
 };
 
 export const matchesMessageFilters = (

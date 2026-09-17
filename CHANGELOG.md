@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- 🌐(frontend) Translate the rest of the interface into French: the composer,
+  message actions, search states and every error message a person is likely to
+  meet. No key falls back to its English source any more.
 - ✨(frontend) Tell the three presence states apart: green for available, red
   for busy, grey for disconnected. Busy is chosen rather than inferred and
   withholds the notification sound, which going idle never does.

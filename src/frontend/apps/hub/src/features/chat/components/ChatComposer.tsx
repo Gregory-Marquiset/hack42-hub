@@ -56,6 +56,12 @@ type ChatComposerProps = {
    * typing `@` does nothing — the composer never fetches anything itself.
    */
   mentionCandidates?: ChatMember[];
+  /**
+   * Why the assistant cannot be mentioned here, when she cannot. Shown while
+   * her name is being typed: an empty list looks like a bug, and someone
+   * hunting for her deserves the rule instead of silence.
+   */
+  assistantUnavailableReason?: string | null;
 };
 
 /** Stable empty list, so the mention hook does not see a new array every render. */
@@ -75,6 +81,7 @@ export const ChatComposer = ({
   onCancelEdit,
   onTypingActivity,
   mentionCandidates = NO_CANDIDATES,
+  assistantUnavailableReason,
 }: ChatComposerProps) => {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -89,6 +96,18 @@ export const ChatComposer = ({
   const assistant = useAssistant();
   const mention = useComposerAutocomplete(mentionCandidates, assistant);
   const hasSuggestions = mention.suggestions.length > 0;
+  // A plain status line rather than a disabled option: it is not something to
+  // pick, so it stays out of the listbox and out of the arrow keys' way.
+  const assistantNotice =
+    assistantUnavailableReason &&
+    !hasSuggestions &&
+    mention.mentionQuery !== null &&
+    mention.mentionQuery.length > 0 &&
+    assistant.names.some((name) =>
+      name.startsWith(mention.mentionQuery!.toLowerCase()),
+    )
+      ? assistantUnavailableReason
+      : null;
 
   /** Insert the chosen suggestion and put the caret after it. */
   const insertMention = useCallback(
@@ -291,6 +310,11 @@ export const ChatComposer = ({
             <XMark size={16} />
           </button>
         </div>
+      )}
+      {assistantNotice && (
+        <p className="hub__chat-composer__mention-notice" role="status">
+          {assistantNotice}
+        </p>
       )}
       {hasSuggestions && (
         <ul

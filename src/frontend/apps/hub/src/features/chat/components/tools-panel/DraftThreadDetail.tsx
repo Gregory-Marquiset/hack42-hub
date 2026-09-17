@@ -42,10 +42,11 @@ export const DraftThreadDetail = ({
   // assistant here offers her and brings her in, as in the two other composers.
   const { chat } = useChat(chatRef);
   const { present } = useChatMembers(chatRef, true);
-  const { candidate: assistantCandidate, ensureInvited } = useAssistantMention(
-    chatRef,
-    chat,
-  );
+  const {
+    candidate: assistantCandidate,
+    ensureInvited,
+    unavailableReason: assistantUnavailableReason,
+  } = useAssistantMention(chatRef, chat);
   const mentionCandidates = useMemo(
     () => (assistantCandidate ? [...present, assistantCandidate] : present),
     [assistantCandidate, present],
@@ -118,6 +119,7 @@ export const DraftThreadDetail = ({
           <ChatComposer
             conversationId={root.message.id}
             mentionCandidates={mentionCandidates}
+            assistantUnavailableReason={assistantUnavailableReason}
             placeholder={
               isSupported
                 ? t("Answer")

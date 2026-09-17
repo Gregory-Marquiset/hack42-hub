@@ -47,6 +47,12 @@ export type AutocompleteState = {
   openCommands: () => void;
   /** Is this suggestion the assistant herself? */
   isAssistant: (id: string) => boolean;
+  /**
+   * The `@` token being typed, without its `@`, or `null` when the caret is
+   * not in one. Lets the composer say why a name it cannot offer is missing,
+   * which an empty list cannot.
+   */
+  mentionQuery: string | null;
 };
 
 const asSuggestions = (members: ChatMember[]): Suggestion[] =>
@@ -190,5 +196,6 @@ export const useComposerAutocomplete = (
     apply,
     openCommands,
     isAssistant: (id: string) => id === assistant.userId,
+    mentionQuery: token?.trigger === "@" ? token.query : null,
   };
 };

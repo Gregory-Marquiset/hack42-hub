@@ -21,6 +21,8 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(frontend) Say why Ariane cannot be mentioned in an encrypted room instead
+  of offering an empty suggestion list, which read as a bug rather than a rule.
 - 🐛(frontend) Show the availability dot for someone who has been offline for
   a while: `/sync` never repeated their presence, so the row could not tell
   "offline" from "not known" and showed nothing.

@@ -31,7 +31,9 @@
   // bottom so the list can grow without the button moving.
   &__rail {
     flex: 0 0 auto;
-    width: 48px;
+    // 1px of it is the border: 48 + 2x9 padding + 30 bubble left the bubble
+    // half a pixel off the whole-pixel grid, which is a blurred circle.
+    width: 49px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -79,10 +81,13 @@
       // The palette colours these from the espace's name and each carries its
       // own icon, so only size and shape are set here. Small enough that the
       // rail is a margin beside the lists rather than a second panel.
+      //
+      // It keeps the 1.5px border every other avatar in the app has: with a
+      // white-grounded logo inside and the border removed, a bubble was a
+      // white disc on the panel's near-white grey - 1.07:1, no edge at all.
       .hub__avatar {
         width: 30px;
         height: 30px;
-        border: 0;
 
         .material-icons {
           font-size: 18px;
@@ -90,11 +95,12 @@
 
         // A logo is not a face: `cover` scaled the 445x156 La Suite wordmark
         // to 85px wide inside a 30px circle and threw two thirds of it away.
-        // `contain` shows whatever shape the espace uploaded, whole, and the
-        // white ground keeps a transparent logo off the palette colour.
+        // `contain` shows whatever shape the espace uploaded, whole, on a
+        // ground of its own so a transparent mark is not tinted by the
+        // palette colour behind it.
         .hub__avatar__image {
           object-fit: contain;
-          background: #fff;
+          background: var(--c--contextuals--background--surface--primary, #fff);
         }
       }
 
@@ -190,7 +196,7 @@
   // never scrolls with them, so the panel gains its width rather than
   // borrowing it from the conversations.
   flex-direction: column;
-  width: 348px;
+  width: 349px;
   height: 100dvh;
   min-height: 0;
   padding: 0;

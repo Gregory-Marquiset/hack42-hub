@@ -8,6 +8,10 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Open a whiteboard next to the call in the meeting window. The
+  Excalidraw room is derived from the meeting, so every participant lands on
+  the same board, and it is self-hosted alongside its collaboration server
+  (`MEETING_BOARD_BASE_URL`); without that setting the call is shown alone.
 - ✨(frontend) Let anyone bring Ariane into a room by mentioning her. She is
   offered by `@` in every clear group room, member or not; addressing her in a
   room she has not joined invites her first, she accepts at once and answers.

@@ -47,6 +47,18 @@ const MESSAGE_VISIBILITY_RATIO = 0.6;
 // How long a jumped-to message stays flashed (kept in sync with the CSS
 // animation duration in ChatVirtualList.scss).
 const MESSAGE_HIGHLIGHT_MS = 2800;
+// How far below a jump target the view settles before gliding up to it.
+// Needs enough rows that the glide covers real, visible distance — 8 turned
+// out to be within a single screen on most viewports, reading as an instant
+// snap rather than a scroll.
+const JUMP_APPROACH_ROWS = 18;
+// How long to let the approach scroll actually settle before starting the
+// glide. Virtuoso's own "auto" behavior converges over ~150ms as rows get
+// measured and re-corrects its target during that window; starting the
+// smooth glide a single animation frame later instead overlapped the two
+// scrolls — same symptom as too short a distance: no visible motion, just
+// one net jump.
+const JUMP_APPROACH_SETTLE_MS = 220;
 
 type SkeletonState = "visible" | "leaving" | "hidden";
 type UnreadViewportState = "unknown" | "all-visible" | "needs-navigation";
@@ -89,9 +101,20 @@ export const ChatVirtualList = ({
       .backfillMessageSearchRoom(chatRef.chatId);
   }, [chatRef.accountId, chatRef.chatId]);
   const lastMessage = messages[messages.length - 1];
+  // A jump that also switches conversation remounts the list, and Virtuoso
+  // then places itself from `initialTopMostItemIndex` — racing (and beating)
+  // any scroll issued right after mount. So when the target is already in the
+  // loaded window, mount a few rows *below* it rather than at the live end:
+  // the approach rows get rendered and measured, and `scrollToEvent` only has
+  // a short, measured glide left to run.
+  const jumpTargetIndex = chatRef.eventId
+    ? messages.findIndex((message) => message.id === chatRef.eventId)
+    : -1;
   const initialWindowIndex = windowAnchorId
     ? messages.findIndex((message) => message.id === windowAnchorId)
-    : -1;
+    : jumpTargetIndex >= 0
+      ? Math.min(messages.length - 1, jumpTargetIndex + JUMP_APPROACH_ROWS)
+      : -1;
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerRef = useRef<HTMLElement | null>(null);
@@ -108,6 +131,10 @@ export const ChatVirtualList = ({
   const shouldStickToBottomRef = useRef(false);
   const hasUserInteractedRef = useRef(false);
   const pendingScrollRaf = useRef<number | null>(null);
+  // Separate from `pendingScrollRaf`: this is a `setTimeout`, not a raf, and
+  // it only ever guards the approach→glide gap inside `scrollToEvent` — it
+  // must not be touched by the chat-switch effect's raf cancellation.
+  const pendingGlideTimer = useRef<number | null>(null);
   const visibilityRafRef = useRef<number | null>(null);
   const visibilityTimerRef = useRef<number | null>(null);
   const readDwellTimerRef = useRef<number | null>(null);
@@ -454,6 +481,10 @@ export const ChatVirtualList = ({
       if (pendingScrollRaf.current !== null) {
         cancelAnimationFrame(pendingScrollRaf.current);
       }
+      if (pendingGlideTimer.current !== null) {
+        window.clearTimeout(pendingGlideTimer.current);
+        pendingGlideTimer.current = null;
+      }
       pendingScrollRaf.current = requestAnimationFrame(() => {
         pendingScrollRaf.current = requestAnimationFrame(() => {
           pendingScrollRaf.current = null;
@@ -464,19 +495,42 @@ export const ChatVirtualList = ({
             onSettled?.(false);
             return;
           }
+          // Two steps, because a single smooth scroll cannot be trusted over
+          // this distance: the rows between here and the target have never
+          // been rendered, so Virtuoso only has `defaultItemHeight` estimates
+          // for them. It waits for a `smoothScrollTargetReached` that never
+          // comes for a target whose real offset keeps moving, then gives up
+          // on its own timeout, leaving the view short of the message.
+          const approachIndex = Math.min(
+            messagesRef.current.length - 1,
+            arrayIndex + JUMP_APPROACH_ROWS,
+          );
+          // Step 1 — land just below the target. "auto" re-runs itself as rows
+          // get measured, so it converges, and it renders the target's
+          // neighbourhood on the way.
           virtuosoRef.current?.scrollToIndex({
             // Virtuoso's imperative index is relative to `data` even when
             // `itemContent` receives the offset virtual index. Matrix identity
             // is resolved first; the array position is only the final UI hop.
-            index: arrayIndex,
+            index: approachIndex,
             align: "center",
-            // Smooth here (unlike `scrollToBottom`'s snap): the target is
-            // usually already in the loaded window, so an animated glide
-            // shows *where* it is relative to the current view instead of
-            // teleporting.
-            behavior: "smooth",
+            behavior: "auto",
           });
-          onSettled?.(true);
+          // Step 2 — glide the rest, once the approach has actually settled
+          // (see `JUMP_APPROACH_SETTLE_MS`) rather than one frame later: on
+          // the very next frame, Virtuoso's own "auto" convergence for step 1
+          // is often still adjusting the scroll position, and starting a
+          // second, overlapping scrollToIndex there reads as a single net
+          // jump instead of two distinct, visible motions.
+          pendingGlideTimer.current = window.setTimeout(() => {
+            pendingGlideTimer.current = null;
+            virtuosoRef.current?.scrollToIndex({
+              index: arrayIndex,
+              align: "center",
+              behavior: "smooth",
+            });
+            onSettled?.(true);
+          }, JUMP_APPROACH_SETTLE_MS);
         });
       });
     },

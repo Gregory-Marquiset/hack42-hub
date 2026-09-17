@@ -8,6 +8,10 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Open a whiteboard next to the call in the meeting window. The
+  Excalidraw room is derived from the meeting, so every participant lands on
+  the same board, and it is self-hosted alongside its collaboration server
+  (`MEETING_BOARD_BASE_URL`); without that setting the call is shown alone.
 - ✨(profile) Add optional global role labels (PO, PM, DEV or a custom title),
   editable or removable at any time from the account menu and displayed beside
   people in conversations. Verify chat identity when saving a role.

@@ -27,6 +27,7 @@ import type {
   AccountId,
   ChatMainTimelineUnread,
   ChatMeeting,
+  ChatMeetingDocument,
   ChatMessage,
   ChatMessagesPage,
   ChatMembers,
@@ -41,6 +42,7 @@ import type {
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  MeetRoomSchedule,
   StartMeetingOptions,
   User,
 } from "../types";
@@ -340,7 +342,7 @@ export class LazyMatrixDriver extends BaseDriver {
 
   override async startChatMeeting(
     chatId: string,
-    createRoom: () => Promise<MeetRoom>,
+    createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     options?: StartMeetingOptions,
   ): Promise<ChatMeeting> {
     return this.withTarget((driver) =>
@@ -354,6 +356,20 @@ export class LazyMatrixDriver extends BaseDriver {
   ): Promise<void> {
     return this.withTarget((driver) =>
       driver.endChatMeeting(chatId, meetingId),
+    );
+  }
+
+  override async getOpenIdToken(): Promise<string> {
+    return this.withTarget((driver) => driver.getOpenIdToken());
+  }
+
+  override async addChatMeetingDocument(
+    chatId: string,
+    meetingId: string,
+    document: ChatMeetingDocument,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.addChatMeetingDocument(chatId, meetingId, document),
     );
   }
 

@@ -14,6 +14,7 @@ import {
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMeeting,
+  ChatMeetingDocument,
   ChatMessage,
   ChatMessageAuthor,
   ChatMessagesPage,
@@ -31,6 +32,7 @@ import {
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  MeetRoomSchedule,
   StartMeetingOptions,
   User,
 } from "./types";
@@ -410,7 +412,7 @@ export abstract class Driver {
    */
   async startChatMeeting(
     _chatId: string,
-    _createRoom: () => Promise<MeetRoom>,
+    _createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     _options?: StartMeetingOptions,
   ): Promise<ChatMeeting> {
     void _chatId;
@@ -427,6 +429,30 @@ export abstract class Driver {
     void _meetingId;
     throw new Error(
       `${this.constructor.name}.endChatMeeting: meetings are not supported by this driver.`,
+    );
+  }
+
+  /**
+   * A short-lived OpenID token of the current account, for the Hub backend to
+   * check which user it is (meeting archives) without its access token.
+   */
+  async getOpenIdToken(): Promise<string> {
+    throw new Error(
+      `${this.constructor.name}.getOpenIdToken: identity proofs are not supported by this driver.`,
+    );
+  }
+
+  /** Adds a document to a meeting, for every member. Only its organizer may do it. */
+  async addChatMeetingDocument(
+    _chatId: string,
+    _meetingId: string,
+    _document: ChatMeetingDocument,
+  ): Promise<void> {
+    void _chatId;
+    void _meetingId;
+    void _document;
+    throw new Error(
+      `${this.constructor.name}.addChatMeetingDocument: meetings are not supported by this driver.`,
     );
   }
 

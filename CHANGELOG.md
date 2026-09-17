@@ -8,6 +8,9 @@ and this project adheres to
 
 ### Added
 
+- ✨(meetings) Open the whiteboard for every participant at once, and name
+  them on it: opening or closing the board is part of the meeting, and each
+  cursor carries its owner name instead of a random one.
 - ✨(meetings) Show on the meeting icon of a conversation when a meeting
   starts within 15 minutes or is in progress, and let Ariane tell every
   member in a private message when a meeting is scheduled, starts and ends.

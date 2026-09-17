@@ -400,6 +400,16 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) => driver.getOpenIdToken());
   }
 
+  override async setChatMeetingBoard(
+    chatId: string,
+    meetingId: string,
+    isOpen: boolean,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.setChatMeetingBoard(chatId, meetingId, isOpen),
+    );
+  }
+
   override async addChatMeetingDocument(
     chatId: string,
     meetingId: string,

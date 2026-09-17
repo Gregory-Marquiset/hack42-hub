@@ -199,6 +199,8 @@ export type ChatMeeting = {
   documents: ChatMeetingDocument[];
   /** Recap/summary document, once attached. */
   summary?: ChatMeetingDocument;
+  /** Whether the whiteboard is open: opening it opens it for everyone. */
+  isBoardOpen?: boolean;
 };
 
 /** A document shared in a conversation. */

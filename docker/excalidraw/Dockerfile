@@ -11,7 +11,7 @@ FROM excalidraw/excalidraw:latest
 
 ARG WS_SERVER_URL=http://localhost:9815
 
-COPY sw.js /tmp/sw.js
+COPY sw.js username.js /tmp/
 
 WORKDIR /usr/share/nginx/html
 
@@ -24,6 +24,7 @@ WORKDIR /usr/share/nginx/html
 # 3. Its service worker caches the bundle by the upstream revisions, which the
 #    patches above do not change: browsers would keep an unpatched copy. It is
 #    replaced by one that empties that cache and removes itself.
+# 4. `username.js` names the participant on the board, from `?u=` in the address.
 RUN set -eu; \
     grep -rlq "https://oss-collab.excalidraw.com" . ; \
     find . -type f \( -name "*.js" -o -name "*.html" \) \
@@ -38,4 +39,9 @@ RUN set -eu; \
       -e 's|if(window.self!==window.top)try{\(const [A-Za-z_$]*=new URL(document.referrer)\)|if(!1)try{\1|g' {} + ; \
     ! grep -rq 'window.self!==window.top' assets ; \
     test -f sw.js ; \
-    cp /tmp/sw.js sw.js
+    cp /tmp/sw.js sw.js ; \
+    cp /tmp/username.js username.js ; \
+    grep -q '"excalidraw-collab"' assets/index-*.js ; \
+    grep -q '</head>' index.html ; \
+    sed -i 's|</head>|<script src="/username.js"></script></head>|' index.html ; \
+    grep -q 'username.js' index.html

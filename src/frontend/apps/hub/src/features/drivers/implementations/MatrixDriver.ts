@@ -678,6 +678,18 @@ export class MatrixDriver extends Driver {
     return token;
   }
 
+  async setChatMeetingBoard(
+    chatId: string,
+    meetingId: string,
+    isOpen: boolean,
+  ): Promise<void> {
+    // Anybody in the call may open the board, not just the organizer: it is
+    // the shared surface of the meeting, like the call itself.
+    await this.updateMeeting("setChatMeetingBoard", chatId, meetingId, () => ({
+      boardOpen: isOpen,
+    }));
+  }
+
   async addChatMeetingDocument(
     chatId: string,
     meetingId: string,
@@ -747,6 +759,19 @@ export class MatrixDriver extends Driver {
       content: MeetingStateEventContent,
     ) => Partial<MeetingStateEventContent>,
   ): Promise<void> {
+    await this.updateMeeting(method, chatId, meetingId, change, true);
+  }
+
+  /** Rewrites one meeting's state, for anyone the room lets write it. */
+  private async updateMeeting(
+    method: string,
+    chatId: string,
+    meetingId: string,
+    change: (
+      content: MeetingStateEventContent,
+    ) => Partial<MeetingStateEventContent>,
+    organizerOnly = false,
+  ): Promise<void> {
     const { mx, room } = this.requireRoom(method, chatId);
     const content = getMeetingStateContent(room, meetingId);
     if (!content) {
@@ -755,7 +780,7 @@ export class MatrixDriver extends Driver {
       );
     }
     const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
-    if (content.organizerId !== selfUserId) {
+    if (organizerOnly && content.organizerId !== selfUserId) {
       throw new MeetingNotAllowedError(chatId);
     }
     await mx.sendStateEvent(

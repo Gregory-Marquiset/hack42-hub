@@ -8,6 +8,15 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Create a new Espace or Salon from the left panel, alongside
+  direct messages: a round "+" next to the espace switcher, and one next
+  to the Direct messages/Rooms section titles, Discord-style. Naming a
+  salon always creates a fresh room, even if the same people already
+  share an unrelated chat elsewhere. Add a "scroll to most recent
+  message" button in the conversation view.
+- ✨(search) Show a matching message's own conversation (avatar and name)
+  in its search result row, and use the app's own design tokens instead
+  of a temporary placeholder style.
 - ✨(bots) Add Ariane, an assistant reachable from any room with `@Ariane`.
   She answers only when addressed, reads the thread and the recent room
   history for context, and changes register with `/juriste`, `/avocat`,

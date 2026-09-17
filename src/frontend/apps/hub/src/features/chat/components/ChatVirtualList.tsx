@@ -1,4 +1,5 @@
 import { ArrowDown } from "@gouvfr-lasuite/ui-components/icons";
+import { useRouter } from "next/router";
 import {
   memo,
   useCallback,
@@ -17,6 +18,7 @@ import type {
   ChatRef,
 } from "@/features/drivers/types";
 
+import { chatHref, readSpaceId } from "../chatRefs";
 import { isSameChatDay } from "../formatTimestamp";
 import { useChatMessages } from "../hooks/useChatMessages";
 import { useMainTimelineUnread } from "../hooks/useMainTimelineUnread";
@@ -56,6 +58,7 @@ export const ChatVirtualList = ({
   onUnreadBannerChange,
 }: ChatVirtualListProps) => {
   const { t } = useTranslation();
+  const router = useRouter();
   const {
     messages,
     authorsById,
@@ -377,7 +380,15 @@ export const ChatVirtualList = ({
         pendingScrollRaf.current = null;
       }
     };
-  }, [chatRef]);
+    // `chatRef` itself is a fresh object every render (built by `readChatRef`
+    // on the URL query), so depending on it directly reran this effect — and
+    // ran its cleanup, canceling any in-flight `pendingScrollRaf` — on every
+    // unrelated re-render of the parent chain, not just on an actual chat
+    // switch (the body's own accountId/chatId guard came too late to help,
+    // since the cleanup of the *previous* run had already fired by then).
+    // That canceled `scrollToEvent`'s pending frames from underneath the
+    // jump-to-message flow essentially at random. Primitives only.
+  }, [chatRef.accountId, chatRef.chatId]);
 
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({
@@ -401,30 +412,48 @@ export const ChatVirtualList = ({
     scrollToBottom();
   }, [returnToLive, scrollToBottom]);
 
-  const scrollToEvent = useCallback((eventId: string) => {
-    if (pendingScrollRaf.current !== null) {
-      cancelAnimationFrame(pendingScrollRaf.current);
-    }
-    pendingScrollRaf.current = requestAnimationFrame(() => {
+  const scrollToEvent = useCallback(
+    // `onSettled` fires once the imperative scroll has actually been issued
+    // (or once we gave up because the row isn't there yet). Callers that
+    // react to it by changing `chatRef` identity (e.g. clearing a URL param)
+    // must wait for this instead of running right after calling
+    // `scrollToEvent`: the "scroll to bottom on chat switch" effect below
+    // cancels any pending `pendingScrollRaf` whenever `chatRef` changes,
+    // which would otherwise cancel *this* scroll before its two rAFs even
+    // get to fire — the exact case hit right after `openAround` loads a room
+    // that wasn't in memory yet, immediately followed by our own URL cleanup.
+    (eventId: string, onSettled?: (found: boolean) => void) => {
+      if (pendingScrollRaf.current !== null) {
+        cancelAnimationFrame(pendingScrollRaf.current);
+      }
       pendingScrollRaf.current = requestAnimationFrame(() => {
-        pendingScrollRaf.current = null;
-        const arrayIndex = messagesRef.current.findIndex(
-          (message) => message.id === eventId,
-        );
-        if (arrayIndex < 0) {
-          return;
-        }
-        virtuosoRef.current?.scrollToIndex({
-          // Virtuoso's imperative index is relative to `data` even when
-          // `itemContent` receives the offset virtual index. Matrix identity
-          // is resolved first; the array position is only the final UI hop.
-          index: arrayIndex,
-          align: "center",
-          behavior: "auto",
+        pendingScrollRaf.current = requestAnimationFrame(() => {
+          pendingScrollRaf.current = null;
+          const arrayIndex = messagesRef.current.findIndex(
+            (message) => message.id === eventId,
+          );
+          if (arrayIndex < 0) {
+            onSettled?.(false);
+            return;
+          }
+          virtuosoRef.current?.scrollToIndex({
+            // Virtuoso's imperative index is relative to `data` even when
+            // `itemContent` receives the offset virtual index. Matrix identity
+            // is resolved first; the array position is only the final UI hop.
+            index: arrayIndex,
+            align: "center",
+            // Smooth here (unlike `scrollToBottom`'s snap): the target is
+            // usually already in the loaded window, so an animated glide
+            // shows *where* it is relative to the current view instead of
+            // teleporting.
+            behavior: "smooth",
+          });
+          onSettled?.(true);
         });
       });
-    });
-  }, []);
+    },
+    [],
+  );
 
   const handleNavigateToUnread = useCallback(async () => {
     const eventId = unread.firstUnreadId;
@@ -449,6 +478,63 @@ export const ChatVirtualList = ({
   const navigateToUnread = useCallback(() => {
     void handleNavigateToUnread();
   }, [handleNavigateToUnread]);
+
+  // Jump straight to a message referenced from search (`?event=` on the
+  // `/chat` URL, carried by `ChatRef.eventId`), then clear the URL so
+  // revisiting this chat later doesn't re-trigger the jump. Reading
+  // the primitive `eventId` (not `chatRef` itself, a fresh object every
+  // render) as a dep means this only fires when it actually changes — so it
+  // won't cancel an in-flight `openAround` on an unrelated re-render, and it
+  // fires again on a later jump to the very same message (URL cleared in
+  // between makes that a real value change: string -> undefined -> string).
+  // Waiting out `isInitialLoading` matters when the jump also switches chats:
+  // otherwise this races the chat's own default fetch for its live end (and
+  // Virtuoso isn't even mounted yet to scroll). The effect just reruns once
+  // loading settles, since that's a dep too.
+  const targetEventId = chatRef.eventId;
+  useEffect(() => {
+    if (!targetEventId || isInitialLoading) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      if (
+        !messagesRef.current.some((message) => message.id === targetEventId)
+      ) {
+        await openAround(targetEventId);
+      }
+      if (cancelled) {
+        return;
+      }
+      scrollToEvent(targetEventId, () => {
+        if (cancelled) {
+          return;
+        }
+        // Only clear the URL once the scroll was actually issued: changing
+        // `chatRef` identity any earlier would cancel it first (see
+        // `scrollToEvent`'s comment).
+        void router.replace(
+          chatHref(
+            { accountId: chatRef.accountId, chatId: chatRef.chatId },
+            readSpaceId(router.query),
+          ),
+          undefined,
+          { shallow: true },
+        );
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    chatRef.accountId,
+    chatRef.chatId,
+    isInitialLoading,
+    openAround,
+    router,
+    scrollToEvent,
+    targetEventId,
+  ]);
 
   // `unknown` deliberately renders nothing: waiting for Virtuoso to settle
   // avoids flashing a shortcut before proving whether every unread is visible.

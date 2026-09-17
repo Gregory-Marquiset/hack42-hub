@@ -49,6 +49,7 @@ export const chatHref = (ref: ChatRef, spaceId?: string | null) => ({
   query: {
     account: ref.accountId,
     chat: ref.chatId,
+    ...(ref.eventId ? { event: ref.eventId } : {}),
     ...(spaceId ? { space: spaceId } : {}),
   },
 });
@@ -57,7 +58,11 @@ export const readChatRef = (query: ParsedUrlQuery): ChatRef | null => {
   if (typeof query.account !== "string" || typeof query.chat !== "string") {
     return null;
   }
-  return { accountId: query.account, chatId: query.chat };
+  return {
+    accountId: query.account,
+    chatId: query.chat,
+    ...(typeof query.event === "string" ? { eventId: query.event } : {}),
+  };
 };
 
 /** Currently-open espace id, read from the same `/chat` query as `readChatRef`. */

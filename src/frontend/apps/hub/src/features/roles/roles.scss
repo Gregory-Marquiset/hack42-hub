@@ -7,7 +7,8 @@
   // a badge that borrows the name's width makes both unreadable.
   flex: 0 0 auto;
   max-width: 180px;
-  padding: 2px 7px;
+  padding: 1px 7px;
+  border: 1px solid transparent;
   border-radius: 5px;
   font-size: 10px;
   font-weight: 700;
@@ -16,20 +17,42 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #40516a;
-  background: #edf0f5;
 
+  // Six hues, 60 degrees apart on the wheel, so no two roles read as the same
+  // colour at a glance. Each pairs a dark text with a clearly tinted ground -
+  // every pair clears 5.9:1, well past the 4.5:1 a label this small needs -
+  // and a border of the same family, because on a coloured row the ground
+  // alone stops being visible. The label is always spelled out, so colour
+  // carries no meaning of its own.
   &--po {
-    color: #623c88;
-    background: #f1e9fb;
+    color: #4d1867;
+    background: #ebd4f7;
+    border-color: #bf8cd9;
   }
   &--pm {
-    color: #2858a4;
-    background: #eaf0fc;
+    color: #183367;
+    background: #d4e0f7;
+    border-color: #8ca6d9;
   }
   &--dev {
-    color: #18634a;
-    background: #e4f3eb;
+    color: #18674d;
+    background: #d4f7eb;
+    border-color: #8cd9bf;
+  }
+  &--qa {
+    color: #336718;
+    background: #e0f7d4;
+    border-color: #a6d98c;
+  }
+  &--ops {
+    color: #674d18;
+    background: #f7ebd4;
+    border-color: #d9bf8c;
+  }
+  &--design {
+    color: #671833;
+    background: #f7d4e0;
+    border-color: #d98ca6;
   }
 }
 

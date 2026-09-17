@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- 💄(profiles) Give every role label its own colour instead of one grey for
+  everything but PO, PM and DEV: six hues sixty degrees apart, with a custom
+  title taking a stable hue from its own text.
 - ✨(bots) Have Ariane answer in a thread hanging off the message that asked,
   rather than in the room: a room where several people ask her things no longer
   buries its own conversation under her replies.

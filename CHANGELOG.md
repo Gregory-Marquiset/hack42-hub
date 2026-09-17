@@ -8,6 +8,9 @@ and this project adheres to
 
 ### Added
 
+- ✨(search) Jump to a message found via search that is a thread reply:
+  land on its thread in the conversation, open the thread panel and flash
+  the reply there.
 - ✨(notifications) Show and edit Matrix notification rules from a new
   settings panel (who gets notified, where, and how), mute a whole
   conversation from its header menu or thread panel, and stop showing
@@ -219,6 +222,10 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Fix the jump to a message found via search: it could fail to
+  scroll when also switching conversation, land without any visible
+  motion, or break the conversation view entirely when the target message
+  could no longer be resolved.
 - 🐛(meetings) Let the whiteboard collaborate inside the meeting window:
   Excalidraw turned collaboration off in a frame, so each participant drew
   alone on the board kept from the previous meeting, and nothing was saved.

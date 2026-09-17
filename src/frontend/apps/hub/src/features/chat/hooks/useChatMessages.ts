@@ -1,5 +1,6 @@
 import {
   type InfiniteData,
+  type QueryClient,
   useInfiniteQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -51,6 +52,35 @@ export type UseChatMessagesResult = {
    * to most recent message" affordance, for when `openAround` has moved the
    * loaded window away from `isAtLiveEnd`. */
   returnToLive: () => Promise<void>;
+};
+
+/**
+ * Replaces `ref`'s cached window with the page of messages centred on
+ * `eventId`. Exported so a jump can prime the cache *before* navigating to the
+ * conversation: the view then mounts with its target already in memory and can
+ * scroll to it, instead of opening, fetching, and re-anchoring underneath the
+ * user. Rejects when the homeserver no longer resolves the event.
+ */
+export const loadMessagesAround = async (
+  queryClient: QueryClient,
+  ref: ChatRef,
+  eventId: string,
+): Promise<void> => {
+  const queryKey = chatKeys.messages(ref);
+  await queryClient.cancelQueries({ queryKey, exact: true });
+  const page = await getRegistry().get(ref.accountId).getChatMessages({
+    chatId: ref.chatId,
+    anchorId: eventId,
+    direction: "older",
+    limit: CHAT_PAGE_SIZE,
+  });
+  queryClient.setQueryData<InfiniteData<ChatMessagesPage, MessagePageParam>>(
+    queryKey,
+    {
+      pages: [page],
+      pageParams: [{ cursor: null, direction: "older", anchorId: eventId }],
+    },
+  );
 };
 
 export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
@@ -136,26 +166,18 @@ export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
 
   const openAround = useCallback(
     async (eventId: string) => {
-      await queryClient.cancelQueries({ queryKey, exact: true });
-      const page = await getRegistry().get(ref.accountId).getChatMessages({
-        chatId: ref.chatId,
-        anchorId: eventId,
-        direction: "older",
-        limit: CHAT_PAGE_SIZE,
-      });
-      queryClient.setQueryData<
-        InfiniteData<ChatMessagesPage, MessagePageParam>
-      >(queryKey, {
-        pages: [page],
-        pageParams: [{ cursor: null, direction: "older", anchorId: eventId }],
-      });
+      await loadMessagesAround(
+        queryClient,
+        { accountId: ref.accountId, chatId: ref.chatId },
+        eventId,
+      );
       setWindowAnchor({
         chatKey: `${ref.accountId}:${ref.chatId}`,
         eventId,
       });
       setWindowVersion((version) => version + 1);
     },
-    [queryClient, queryKey, ref.accountId, ref.chatId],
+    [queryClient, ref.accountId, ref.chatId],
   );
 
   const returnToLive = useCallback(async () => {

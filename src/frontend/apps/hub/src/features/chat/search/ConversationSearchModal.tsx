@@ -4,6 +4,7 @@ import {
   QuickSearch,
   QuickSearchItem,
 } from "@gouvfr-lasuite/ui-components";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import type { Chat } from "@/features/drivers/types";
 
 import { chatHref } from "../chatRefs";
+import { loadMessagesAround } from "../hooks/useChatMessages";
 
 import { ConversationSearchResultRow } from "./ConversationSearchResultRow";
 import { MessageSearchResultRow } from "./MessageSearchResultRow";
@@ -24,6 +26,7 @@ export const ConversationSearchModal = ({
 }) => {
   const { t } = useTranslation();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const {
     query,
     changeQuery,
@@ -51,9 +54,23 @@ export const ConversationSearchModal = ({
 
   const open = (chat: Chat, eventId?: string) => {
     onClose();
-    void router.push(chatHref({ ...chat.ref, eventId }), undefined, {
-      shallow: true,
-    });
+    void (async () => {
+      if (eventId) {
+        // Pull the target's surroundings into the cache before switching
+        // conversation: the view then opens with the message already in
+        // memory and glides to it, instead of opening at the live end and
+        // re-anchoring once the fetch lands. A failure here is not fatal —
+        // the conversation still opens and retries the jump on its own.
+        try {
+          await loadMessagesAround(queryClient, chat.ref, eventId);
+        } catch {
+          // Left to the conversation view to report or degrade.
+        }
+      }
+      void router.push(chatHref({ ...chat.ref, eventId }), undefined, {
+        shallow: true,
+      });
+    })();
   };
 
   return (

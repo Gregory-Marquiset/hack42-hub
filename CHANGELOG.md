@@ -8,6 +8,10 @@ and this project adheres to
 
 ### Added
 
+- ✨(notifications) Show and edit Matrix notification rules from a new
+  settings panel (who gets notified, where, and how), mute a whole
+  conversation from its header menu or thread panel, and stop showing
+  browser notifications/sound for muted conversations.
 - ✨(meetings) Join a meeting from the message Ariane sends about it: her
   message carries the meeting, and the Hub turns it into a button opening the
   call in its own window. Starting a call closes the meetings panel.

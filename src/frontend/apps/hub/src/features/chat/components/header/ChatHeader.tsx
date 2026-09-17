@@ -33,6 +33,7 @@ import { useUserRoles } from "@/features/roles/useRoles";
 import { ChatPresenceAvatar } from "@/features/ui/components/presence/ChatPresenceAvatar";
 
 import { ChatMembersModal } from "./ChatMembersModal";
+import { ChatNotificationsModal } from "./ChatNotificationsModal";
 import { LeaveConversationModal } from "./LeaveConversationModal";
 import { MeetingButton } from "./MeetingButton";
 
@@ -140,6 +141,7 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
     ? `${chat.name}, ${t("Role: {{role}}", { role })}`
     : chat.name;
   const [isMembersOpen, setIsMembersOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isLeaveOpen, setIsLeaveOpen] = useState(false);
   const { setFavourite, isPending } = useChatFavourite(chat.ref);
   const {
@@ -173,6 +175,7 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
   useEffect(() => {
     menu.setIsOpen(false);
     setIsMembersOpen(false);
+    setIsNotificationsOpen(false);
     setIsLeaveOpen(false);
   }, [chat.ref.accountId, chat.ref.chatId, menu.setIsOpen]);
 
@@ -228,7 +231,7 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
         id: "notifications",
         label: t("Notifications"),
         icon: <Bell />,
-        isDisabled: true,
+        callback: () => setIsNotificationsOpen(true),
       },
       {
         id: "leave",
@@ -305,6 +308,11 @@ const ChatMenu = ({ chat }: { chat: Chat }) => {
         chat={chat}
         isOpen={isMembersOpen}
         onClose={() => setIsMembersOpen(false)}
+      />
+      <ChatNotificationsModal
+        chatRef={chat.ref}
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
       />
       <LeaveConversationModal
         isOpen={isLeaveOpen}

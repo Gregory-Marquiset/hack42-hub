@@ -36,6 +36,9 @@ import {
   LocalSpace,
   MeetRoom,
   MeetRoomSchedule,
+  NotificationRules,
+  SetNotificationRuleActionsParams,
+  SetNotificationRuleEnabledParams,
   StartMeetingOptions,
   User,
 } from "./types";
@@ -219,7 +222,8 @@ export type ChatEvent =
   | { type: "members:changed"; chatId: string }
   | { type: "tags:changed"; chatId: string }
   | { type: "chats:changed" }
-  | { type: "meeting:changed"; chatId: string };
+  | { type: "meeting:changed"; chatId: string }
+  | { type: "notification-rules:changed" };
 
 export type ChatEventListener = (event: ChatEvent) => void;
 
@@ -290,6 +294,9 @@ export abstract class Driver {
   readonly supportsSpaceCreation: boolean = false;
   /** Whether the driver can start/list meetings for a conversation. */
   readonly supportsMeetings: boolean = false;
+  /** Whether the driver can read/toggle real notification rules (see
+   * `getNotificationRules`) rather than only playing a local sound. */
+  readonly supportsNotificationRules: boolean = false;
 
   /** Whether documents can be shared in a conversation. */
   readonly supportsChatFiles: boolean = false;
@@ -438,6 +445,59 @@ export abstract class Driver {
 
   /** Sets the current user's favourite tag for one conversation. */
   abstract setChatFavourite(chatId: string, favourite: boolean): Promise<void>;
+
+  private static readonly EMPTY_NOTIFICATION_RULES: NotificationRules = {
+    override: [],
+    content: [],
+    room: [],
+    sender: [],
+    underride: [],
+  };
+
+  /**
+   * Every notification rule, organized by kind. Unsupported drivers resolve
+   * with an all-empty structure so the settings UI can render without
+   * branching on driver capability (see `supportsNotificationRules`).
+   */
+  async getNotificationRules(): Promise<NotificationRules> {
+    return Driver.EMPTY_NOTIFICATION_RULES;
+  }
+
+  async setNotificationRuleEnabled(
+    _params: SetNotificationRuleEnabledParams,
+  ): Promise<void> {
+    void _params;
+    throw new Error(
+      `${this.constructor.name}.setNotificationRuleEnabled: notification rules are not supported by this driver.`,
+    );
+  }
+
+  async setNotificationRuleActions(
+    _params: SetNotificationRuleActionsParams,
+  ): Promise<void> {
+    void _params;
+    throw new Error(
+      `${this.constructor.name}.setNotificationRuleActions: notification rules are not supported by this driver.`,
+    );
+  }
+
+  /**
+   * Whether this conversation has a muting rule active. Unsupported drivers
+   * resolve `false` so mute affordances can render disabled rather than
+   * branch on capability everywhere they're used.
+   */
+  async isChatMuted(_chatId: string): Promise<boolean> {
+    void _chatId;
+    return false;
+  }
+
+  async setChatMuted(_chatId: string, _muted: boolean): Promise<void> {
+    void _chatId;
+    void _muted;
+    throw new Error(
+      `${this.constructor.name}.setChatMuted: conversation muting is not supported by this driver.`,
+    );
+  }
 
   /**
    * Meetings held in this conversation, newest first. Unsupported drivers

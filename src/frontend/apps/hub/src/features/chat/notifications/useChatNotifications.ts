@@ -3,10 +3,11 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
-import type { ChatRef } from "@/features/drivers/types";
+import type { AccountId, ChatRef } from "@/features/drivers/types";
 
 import { chatHref } from "../chatRefs";
 
+import { getMutedRoomRules } from "./describeNotificationRule";
 import { NotificationSound } from "./NotificationSound";
 import { NotificationPermission } from "./notificationPermission";
 
@@ -36,6 +37,11 @@ export const useChatNotifications = (userId?: string): void => {
   }, [router, t]);
 
   const session = useRef<NotificationSession | null>(null);
+  // Per-account set of muted room ids, refreshed from `getNotificationRules`
+  // on mount and on `notification-rules:changed`. Empty (the default) for
+  // any driver that doesn't support notification rules at all — leaving
+  // this hook's behavior byte-for-byte unchanged for those accounts.
+  const mutedByAccount = useRef<Map<AccountId, Set<string>>>(new Map());
   useEffect(() => {
     if (!userId || !hasAccounts) return;
     const current: NotificationSession = {
@@ -69,15 +75,38 @@ export const useChatNotifications = (userId?: string): void => {
     });
 
     let active = true;
+    entries.forEach(({ accountId, driver }) => {
+      if (!driver.supportsNotificationRules) return;
+      void driver.getNotificationRules().then((rules) => {
+        if (!active) return;
+        mutedByAccount.current.set(
+          accountId,
+          new Set(getMutedRoomRules(rules).map((rule) => rule.id)),
+        );
+      });
+    });
     const unsubscribes = entries.map(({ accountId, driver }) =>
       driver.subscribeToEvents((event) => {
+        if (!active || current.disposed) return;
+
+        if (event.type === "notification-rules:changed") {
+          void driver.getNotificationRules().then((rules) => {
+            if (!active) return;
+            mutedByAccount.current.set(
+              accountId,
+              new Set(getMutedRoomRules(rules).map((rule) => rule.id)),
+            );
+          });
+          return;
+        }
+
         if (
-          !active ||
-          current.disposed ||
-          (event.type !== "message:received" &&
-            event.type !== "invitation:received")
+          event.type !== "message:received" &&
+          event.type !== "invitation:received"
         )
           return;
+
+        if (mutedByAccount.current.get(accountId)?.has(event.chatId)) return;
 
         // Capture focus before a permission prompt can change it.
         const focused =

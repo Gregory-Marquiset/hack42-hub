@@ -46,6 +46,9 @@ import type {
   LocalSpace,
   MeetRoom,
   MeetRoomSchedule,
+  NotificationRules,
+  SetNotificationRuleActionsParams,
+  SetNotificationRuleEnabledParams,
   StartMeetingOptions,
   User,
 } from "../types";
@@ -127,6 +130,9 @@ export class LazyMatrixDriver extends BaseDriver {
   // Static capability mirroring the real `MatrixDriver`, read by the meeting
   // button before the SDK lazy-loads.
   override readonly supportsMeetings = true;
+  // Static capability mirroring the real `MatrixDriver`, read by the
+  // notification settings UI before the SDK lazy-loads.
+  override readonly supportsNotificationRules = true;
   override readonly supportsChatFiles = true;
 
   private target: Driver | null = null;
@@ -356,6 +362,34 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) =>
       driver.setChatFavourite(chatId, favourite),
     );
+  }
+
+  override async getNotificationRules(): Promise<NotificationRules> {
+    return this.withTarget((driver) => driver.getNotificationRules());
+  }
+
+  override async setNotificationRuleEnabled(
+    params: SetNotificationRuleEnabledParams,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.setNotificationRuleEnabled(params),
+    );
+  }
+
+  override async setNotificationRuleActions(
+    params: SetNotificationRuleActionsParams,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.setNotificationRuleActions(params),
+    );
+  }
+
+  override async isChatMuted(chatId: string): Promise<boolean> {
+    return this.withTarget((driver) => driver.isChatMuted(chatId));
+  }
+
+  override async setChatMuted(chatId: string, muted: boolean): Promise<void> {
+    return this.withTarget((driver) => driver.setChatMuted(chatId, muted));
   }
 
   override async getChatMeetings(chatId: string): Promise<ChatMeeting[]> {

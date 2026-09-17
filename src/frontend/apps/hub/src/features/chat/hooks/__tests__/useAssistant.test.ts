@@ -53,6 +53,22 @@ describe("mentionsAssistant", () => {
     expect(mentionsAssistant("@@ariane", names)).toBe(false);
   });
 
+  it("ignores a quoted line, as the bot does", () => {
+    // Replying to her repeats her name behind `> `; counting that would invite
+    // her for a message she then ignores, or loop her onto herself.
+    expect(mentionsAssistant("> @ariane peux-tu ?", names)).toBe(false);
+    expect(mentionsAssistant("  > @Ariane", names)).toBe(false);
+    expect(mentionsAssistant("ok\n> @ariane\nmerci", names)).toBe(false);
+    expect(mentionsAssistant("ok\n> cite\n@ariane merci", names)).toBe(true);
+  });
+
+  it("reads the alphabet as the bot does, not just ASCII", () => {
+    // Python's `\w` and `\b` cover accented letters; an ASCII-only rule here
+    // would call these mentions and invite her for nothing.
+    expect(mentionsAssistant("é@ariane", names)).toBe(false);
+    expect(mentionsAssistant("@arianeé", names)).toBe(false);
+  });
+
   it("never matches before her names are known", () => {
     expect(mentionsAssistant("@Ariane", [])).toBe(false);
   });

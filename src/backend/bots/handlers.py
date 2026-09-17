@@ -77,8 +77,8 @@ def help_message() -> str:
         "Où je travaille : dans chaque salon de groupe non chiffré — on m'y "
         "invite à la création, ou dès que quelqu'un m'y mentionne — et en "
         "conversation directe avec moi. Jamais dans un salon chiffré — je ne "
-        "peux pas y lire les messages — ni dans un message privé entre deux "
-        "personnes, qui l'est toujours.",
+        "peux pas y lire les messages — ni dans une conversation privée entre "
+        "deux personnes.",
         "",
         "Ce que je lis : les messages du salon postérieurs à mon arrivée et, "
         "quand vous me pinguez dans un fil, ce fil. Jamais ce qui a été dit "
@@ -110,6 +110,16 @@ class _Seen:
             while len(self._ids) > self._capacity:
                 self._ids.popitem(last=False)
             return True
+
+    def forget(self, event_id: str) -> None:
+        """Take the id back, so a ping lost to a passing failure can be retried.
+
+        Marking an event handled is a promise that it was answered. When the
+        homeserver is the one that failed - a timeout, a 5xx, a rate limit -
+        that promise is false, and keeping it would silence the ping for good.
+        """
+        with self._lock:
+            self._ids.pop(event_id, None)
 
 
 SEEN = _Seen()
@@ -300,6 +310,21 @@ def _dedupe(events: list[dict]) -> list[dict]:
     return unique
 
 
+def _thread_root(room_id: str, root_id: str) -> list[dict]:
+    """The thread's opening message, or nothing when it cannot be read.
+
+    Now that a mention is how she enters a room, being pinged in a thread whose
+    root predates her join is ordinary. A room that hides its history from
+    newcomers answers that fetch with M_FORBIDDEN or M_NOT_FOUND, and losing the
+    root is no reason to lose the answer: the replies are context enough.
+    """
+    try:
+        return [matrix.get_event(room_id, root_id)]
+    except matrix.MatrixError as exc:
+        logger.info("thread root %s unreadable in %s: %s", root_id, room_id, exc)
+        return []
+
+
 def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str | None]:
     """Everything Ariane should have read before answering, and where to answer.
 
@@ -326,10 +351,7 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
         # A thread inherits the room's rule: its root can predate the asker's
         # arrival just as easily as any other message.
         thread = visible_to(
-            [
-                matrix.get_event(room_id, root_id),
-                *matrix.thread_replies(room_id, root_id),
-            ],
+            [*_thread_root(room_id, root_id), *matrix.thread_replies(room_id, root_id)],
             horizon,
         )
         # The room tail already holds the root and may hold thread replies.
@@ -435,6 +457,7 @@ def handle_message(room_id: str, event: dict) -> None:
             return
     except matrix.MatrixError as exc:
         logger.warning("could not enter %s: %s", room_id, exc)
+        SEEN.forget(event["event_id"])
         return
 
     command, unknown = parse_command(body)

@@ -266,7 +266,7 @@ provision-bot: ## provision Ariane, the Hub assistant (needs run-matrix)
 	@python3 bin/provision-bot
 .PHONY: provision-bot
 
-check-bot: ## prove the assistant enters a room only when invited
+check-bot: ## prove the assistant enters a room only when invited, and answers a mention
 	@python3 bin/check-bot
 .PHONY: check-bot
 

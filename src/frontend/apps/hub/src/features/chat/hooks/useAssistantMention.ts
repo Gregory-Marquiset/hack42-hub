@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { getRegistry } from "@/features/drivers/DriverRegistry";
 import type { Chat, ChatMember, ChatRef } from "@/features/drivers/types";
+import { notify } from "@/features/ui/components/toast";
 
 import { chatKeys } from "../chatKeys";
 
@@ -20,8 +21,9 @@ export type AssistantMention = {
   candidate: ChatMember | null;
   /**
    * Invites the assistant if `content` addresses her and she is not in the
-   * room. Resolves at once otherwise. Call it before sending, so her
-   * invitation precedes the message that mentions her and she reads it.
+   * room. Resolves at once otherwise, and never rejects: the message is what
+   * the person asked for, the invitation is a convenience on top. Call it
+   * before sending, so her invitation precedes the message that mentions her.
    */
   ensureInvited: (content: string) => Promise<void>;
 };
@@ -43,7 +45,7 @@ export const useAssistantMention = (
   const { t } = useTranslation();
   const assistant = useAssistant();
   const queryClient = useQueryClient();
-  const { present, pendingInvites } = useChatMembers(
+  const { present, pendingInvites, isLoaded } = useChatMembers(
     chatRef ?? NO_REF,
     Boolean(chatRef),
   );
@@ -56,9 +58,12 @@ export const useAssistantMention = (
       ),
     [assistant.userId, pendingInvites, present],
   );
+  // Until the member list has actually loaded, "she is not here" is a guess,
+  // and the row would promise an invitation to someone already in the room.
   const canReach =
     chatRef !== null &&
     assistant.userId !== "" &&
+    isLoaded &&
     chat?.kind === "group" &&
     !chat.encrypted;
 
@@ -84,9 +89,20 @@ export const useAssistantMention = (
       ) {
         return;
       }
-      await getRegistry()
-        .get(chatRef.accountId)
-        .inviteToChat(chatRef.chatId, assistant.userId);
+      try {
+        await getRegistry()
+          .get(chatRef.accountId)
+          .inviteToChat(chatRef.chatId, assistant.userId);
+      } catch {
+        // Losing the invitation must not lose the message. The homeserver
+        // refuses for reasons the sender can do nothing about here - no right
+        // to invite, a rate limit, or she joined in the meantime - so say it
+        // once and let the message through.
+        notify.error(
+          t("Ariane could not be invited. Your message was sent anyway."),
+        );
+        return;
+      }
       // The member list feeds the suggestions: refresh it so she stops being
       // offered as "invited when mentioned" once she is in.
       await queryClient.invalidateQueries({
@@ -100,6 +116,7 @@ export const useAssistantMention = (
       chatRef,
       isMember,
       queryClient,
+      t,
     ],
   );
 

@@ -145,6 +145,10 @@ export const ChatView = ({
   // `onSent` only for new messages so editing never changes navigation state.
   const handleSubmit = useCallback(
     async (content: string) => {
+      // Before anything is sent, including an edit: an edited body pings her
+      // exactly like a new one, and her invitation has to precede the event
+      // that addresses her for her to read it at all.
+      await ensureInvited(content);
       if (editingMessage) {
         const message = await editMessage(editingMessage.id, content);
         setEditingMessage(null);
@@ -156,9 +160,6 @@ export const ChatView = ({
         }
         return onSubmitDraft(content);
       }
-      // Her invitation must precede the message that addresses her, so it is
-      // the first thing she reads once she has accepted.
-      await ensureInvited(content);
       const message = await sendMessage(content);
       onSent?.(chatRef);
       return message;

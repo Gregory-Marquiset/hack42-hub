@@ -4,14 +4,19 @@
 Run with `make check-bot` after `make provision-bot`.
 
 This is the acceptance test of the consent rule. It creates a throwaway private
-room as a human, then checks three things in order:
+room as a human, then checks four things in order:
 
   1. she cannot join on her own          -> M_FORBIDDEN, and that is the point;
   2. an invitation lets her in           -> the only door there is;
-  3. she can then post as herself        -> masquerading through the AS token.
+  3. she can then post as herself        -> masquerading through the AS token;
+  4. invited and mentioned at once       -> she accepts and answers, which is
+                                            what the Hub does when someone
+                                            writes `@Ariane` in a room she has
+                                            not joined.
 
 Step 1 failing to fail would mean the room is not private, and the rest proves
-nothing. So it is asserted, not skipped.
+nothing. So it is asserted, not skipped. Step 4 needs the assistant service
+itself, not only the homeserver, and is skipped when it is not running.
 
 An earlier version proved the opposite: that a Synapse admin token could walk
 her into any room. That token is gone, and so is that test.
@@ -93,6 +98,26 @@ HEALTH_URL = "http://localhost:9801/bots/health/"
 ANSWER_TIMEOUT_S = 25
 
 
+def discard(room_id: str, owner: str, bot: str, as_token: str) -> None:
+    """Leave and forget a throwaway room, whatever happened to it.
+
+    Each step is attempted on its own: a room the bot never joined must not
+    stop the human from forgetting it.
+    """
+    steps = (
+        ("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave?user_id={quote(bot)}", as_token),
+        ("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave", owner),
+        ("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/forget", owner),
+    )
+    for method, path, token in steps:
+        try:
+            call(method, path, token, {})
+        except SystemExit:
+            raise
+        except Exception as error:  # pylint: disable=broad-except
+            print(f"  --  nettoyage incomplet ({path}): {error}")
+
+
 def service_up() -> bool:
     try:
         with urllib.request.urlopen(HEALTH_URL, timeout=3) as response:
@@ -111,7 +136,14 @@ def check_mention_after_invite(owner: str, bot: str, as_token: str) -> int:
     room_id = room["room_id"]
     failures = 0
     try:
-        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/invite", owner, {"user_id": bot})
+        # Asserted, not fired and forgotten: Synapse rate-limits invitations per
+        # receiver (`rc_invites.per_user`), and a refused invitation would look
+        # exactly like an assistant that never answers.
+        invited = call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/invite",
+                       owner, {"user_id": bot})
+        if "errcode" in invited:
+            print(f"{KO}invitation refusee: {invited}")
+            return 1
         txn = f"checkbot-mention{int(time.time() * 1000)}"
         sent = call("PUT",
                     f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{txn}",
@@ -129,14 +161,12 @@ def check_mention_after_invite(owner: str, bot: str, as_token: str) -> int:
                     answered = event
                     break
         if answered:
-            print(f"{OK}invitee et mentionnee dans la foulee, elle repond ({answered['event_id'][:24]}...)")
+            print(f"{OK}invitee et mentionnee dans la foulee, elle a repondu ({answered['event_id'][:24]}...)")
         else:
             print(f"{KO}invitee et mentionnee, pas de reponse en {ANSWER_TIMEOUT_S} s")
             failures += 1
     finally:
-        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave?user_id={quote(bot)}", as_token, {})
-        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave", owner, {})
-        call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/forget", owner, {})
+        discard(room_id, owner, bot, as_token)
     return failures
 
 
@@ -186,13 +216,12 @@ def main() -> None:
         failures += 1
 
     # Clean up: a throwaway room should not outlive the test.
-    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave?user_id={quote(bot)}", as_token, {})
-    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave", owner, {})
-    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/forget", owner, {})
+    discard(room_id, owner, bot, as_token)
 
     # 4. Mentioning her is how she gets in: the Hub invites her and sends the
-    #    message right behind. She must accept, read it and answer - which
-    #    needs the assistant service itself, not just the homeserver.
+    #    message right behind. She must accept and answer. The message is
+    #    `/aide`, whose reply is written by the Hub itself - so this proves the
+    #    invite-then-mention sequence, not Albert, and needs no model budget.
     if not service_up():
         print(f"  --  service absent ({HEALTH_URL}): la 4e verification est sautee")
     else:

@@ -89,12 +89,13 @@ export const ThreadDetail = ({
 
   const handleSubmit = useCallback(
     async (content: string) => {
+      // Before the edit branch too: an edited body pings her just the same.
+      await ensureInvited(content);
       if (editingMessage) {
         const message = await editMessage(editingMessage.id, content);
         setEditingMessage(null);
         return message;
       }
-      await ensureInvited(content);
       return sendReply(content);
     },
     [editMessage, editingMessage, ensureInvited, sendReply],

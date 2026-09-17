@@ -37,7 +37,7 @@ MAS_CONFIG = "/config/config.yaml"
 PROVIDER_ID = "0XZP24DYZ8BJXR093M5TH4PKB9"
 
 LINKED_USERS = [
-    ("hub", "Hub"),
+    ("hub", "Maxime Torgue"),
     ("user-e2e-chromium", "E2E Chromium"),
     ("user-e2e-firefox", "E2E Firefox"),
     ("user-e2e-webkit", "E2E WebKit"),

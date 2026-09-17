@@ -5,12 +5,20 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useId,
   useRef,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { ChatMember } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
+
+import { useAssistant } from "../hooks/useAssistant";
+import {
+  type Suggestion,
+  useComposerAutocomplete,
+} from "./useComposerAutocomplete";
 
 const TYPING_STOP_WAIT_MS = 400;
 
@@ -43,7 +51,15 @@ type ChatComposerProps = {
   onCancelEdit?: () => void;
   /** Reports real keyboard input for volatile typing notifications. */
   onTypingActivity?: (hasText: boolean) => Promise<unknown> | unknown;
+  /**
+   * People `@` can suggest, usually the members of the conversation. Left out,
+   * typing `@` does nothing — the composer never fetches anything itself.
+   */
+  mentionCandidates?: ChatMember[];
 };
+
+/** Stable empty list, so the mention hook does not see a new array every render. */
+const NO_CANDIDATES: ChatMember[] = [];
 
 export const ChatComposer = ({
   placeholder,
@@ -58,6 +74,7 @@ export const ChatComposer = ({
   editDraft,
   onCancelEdit,
   onTypingActivity,
+  mentionCandidates = NO_CANDIDATES,
 }: ChatComposerProps) => {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -67,6 +84,46 @@ export const ChatComposer = ({
   const handledFocusSignalRef = useRef<number | undefined>(undefined);
   const trimmedDraft = useMemo(() => draft.trim(), [draft]);
   const isBusy = isSubmitting || isSubmittingDraft;
+  const listId = useId();
+  const optionId = (index: number) => `${listId}-option-${index}`;
+  const assistant = useAssistant();
+  const mention = useComposerAutocomplete(mentionCandidates, assistant);
+  const hasSuggestions = mention.suggestions.length > 0;
+
+  /** Insert the chosen suggestion and put the caret after it. */
+  const insertMention = useCallback(
+    (suggestion: Suggestion) => {
+      const input = inputRef.current;
+      if (!input) {
+        return;
+      }
+      const next = mention.apply(
+        suggestion,
+        input.value,
+        input.selectionStart ?? 0,
+      );
+      if (!next) {
+        return;
+      }
+      // Write the DOM first, then the state. Deferring the caret to a frame
+      // loses the race against a fast typist: the next keystrokes land at the
+      // old position and the draft comes out scrambled. React re-renders to the
+      // same value straight after, so there is no flicker.
+      input.value = next.value;
+      input.setSelectionRange(next.caret, next.caret);
+      setDraft(next.value);
+
+      // Naming the assistant is almost always followed by choosing a tone, so
+      // the command list opens straight away rather than making the user
+      // discover that `/` exists. Any other mention just closes the list.
+      if (mention.isAssistant(suggestion.id)) {
+        mention.openCommands();
+      } else {
+        mention.dismiss();
+      }
+    },
+    [mention],
+  );
   const canSubmit =
     Boolean(onSubmit) && !disabled && !isBusy && trimmedDraft.length > 0;
 
@@ -235,8 +292,65 @@ export const ChatComposer = ({
           </button>
         </div>
       )}
+      {hasSuggestions && (
+        <ul
+          className="hub__chat-composer__mentions"
+          id={listId}
+          role="listbox"
+          aria-label={t("Suggestions")}
+        >
+          {mention.suggestions.map((suggestion, index) => (
+            <li key={suggestion.id} role="presentation">
+              <button
+                type="button"
+                role="option"
+                id={optionId(index)}
+                // The widget is driven by aria-activedescendant, so the options
+                // must not be tab stops of their own.
+                tabIndex={-1}
+                aria-selected={index === mention.activeIndex}
+                className={
+                  index === mention.activeIndex
+                    ? "hub__chat-composer__mention hub__chat-composer__mention--active"
+                    : "hub__chat-composer__mention"
+                }
+                // The textarea blurs before a click lands, which would close the
+                // list first and swallow the pick. Insert on mousedown instead.
+                // mousedown keeps the focus in the textarea, but a synthetic
+                // click - what a screen reader or a pointing aid emits - only
+                // fires onClick, so both are wired.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  insertMention(suggestion);
+                }}
+                onClick={() => insertMention(suggestion)}
+                onMouseEnter={() => mention.move(index - mention.activeIndex)}
+              >
+                <span className="hub__chat-composer__mention-name">
+                  {suggestion.primary}
+                </span>
+                <span className="hub__chat-composer__mention-id">
+                  {suggestion.secondary}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <form className="hub__chat-composer" onSubmit={handleSubmit}>
-        <div className="hub__chat-composer__field">
+        {/*
+          ARIA in HTML allows no role on a textarea, so the combobox lives on
+          the wrapper and the textarea keeps its native multiline textbox role.
+          This is the ARIA APG pattern, and it stops the composer being
+          announced as a drop-down list on every single message.
+        */}
+        <div
+          className="hub__chat-composer__field"
+          role="combobox"
+          aria-expanded={hasSuggestions}
+          aria-controls={hasSuggestions ? listId : undefined}
+          aria-haspopup="listbox"
+        >
           <textarea
             ref={inputRef}
             rows={1}
@@ -251,9 +365,47 @@ export const ChatComposer = ({
             onChange={(event) => {
               const value = event.currentTarget.value;
               setDraft(value);
+              mention.update(value, event.currentTarget.selectionStart ?? 0);
               void onTypingActivity?.(value.trim().length > 0);
             }}
+            onClick={(event) => {
+              // Moving the caret away from an `@` token must close the list.
+              mention.update(
+                event.currentTarget.value,
+                event.currentTarget.selectionStart ?? 0,
+              );
+            }}
+            onBlur={() => mention.dismiss()}
+            aria-autocomplete="list"
+            // Without this the arrow keys are silent: the focus never leaves
+            // the textarea, so `aria-selected` alone announces nothing.
+            aria-activedescendant={
+              hasSuggestions ? optionId(mention.activeIndex) : undefined
+            }
             onKeyDown={(event) => {
+              // While the list is open it owns the arrows, Enter and Tab: they
+              // are how you pick a name. Everything else falls through, so the
+              // composer keeps behaving exactly as before when it is closed.
+              if (hasSuggestions && !event.nativeEvent.isComposing) {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  mention.move(event.key === "ArrowDown" ? 1 : -1);
+                  return;
+                }
+                if (
+                  event.key === "Enter" ||
+                  (event.key === "Tab" && !event.shiftKey)
+                ) {
+                  event.preventDefault();
+                  insertMention(mention.suggestions[mention.activeIndex]);
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  mention.dismiss();
+                  return;
+                }
+              }
               if (event.key === "Escape" && editDraft) {
                 event.preventDefault();
                 cancelEdit();

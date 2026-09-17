@@ -31,7 +31,7 @@
   // bottom so the list can grow without the button moving.
   &__rail {
     flex: 0 0 auto;
-    width: 46px;
+    width: 48px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -40,13 +40,20 @@
     border-right: 1px solid
       var(--c--contextuals--border--surface--primary, #dfe2ea);
 
+    // `overflow-y: auto` makes this a scroll container on BOTH axes, and a
+    // scroll container clips at its padding box - so the list has to be as
+    // wide as the rail and pad itself, or it clips to the 30px bubble and
+    // shears every unread badge and the active ring off. It was 30px wide.
     &__list {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 6px;
       flex: 1 1 auto;
+      align-self: stretch;
+      box-sizing: border-box;
       min-height: 0;
+      padding: 6px 9px;
       overflow-y: auto;
       scrollbar-width: none;
 
@@ -79,6 +86,15 @@
 
         .material-icons {
           font-size: 18px;
+        }
+
+        // A logo is not a face: `cover` scaled the 445x156 La Suite wordmark
+        // to 85px wide inside a 30px circle and threw two thirds of it away.
+        // `contain` shows whatever shape the espace uploaded, whole, and the
+        // white ground keeps a transparent logo off the palette colour.
+        .hub__avatar__image {
+          object-fit: contain;
+          background: #fff;
         }
       }
 
@@ -174,7 +190,7 @@
   // never scrolls with them, so the panel gains its width rather than
   // borrowing it from the conversations.
   flex-direction: column;
-  width: 346px;
+  width: 348px;
   height: 100dvh;
   min-height: 0;
   padding: 0;

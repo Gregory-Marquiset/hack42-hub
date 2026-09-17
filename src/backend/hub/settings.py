@@ -374,6 +374,12 @@ class Base(Configuration):
     MATRIX_HS_TOKEN = values.Value(
         None, environ_name="MATRIX_HS_TOKEN", environ_prefix=None
     )
+    # 🔒️ Synapse admin rights, read-only and for one thing: listing a room's
+    # members so the backend can decide who may download a meeting archive.
+    # It is no longer a way into a room - Ariane enters on invitation only.
+    MATRIX_ADMIN_TOKEN = values.Value(
+        None, environ_name="MATRIX_ADMIN_TOKEN", environ_prefix=None
+    )
 
     # What counts as a ping. The Hub emits no `m.mentions`, so the message body
     # is the only signal available.

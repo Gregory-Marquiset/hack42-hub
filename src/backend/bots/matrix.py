@@ -300,12 +300,21 @@ def send_message(
 
 
 def can_write_rooms() -> bool:
-    """Whether Ariane has what she needs to get into a room and write in it."""
-    return bool(
-        settings.MATRIX_AS_TOKEN
-        and settings.MATRIX_ADMIN_TOKEN
-        and settings.MATRIX_BOT_USER_ID
+    """Whether Ariane has what she needs to write in a room she was invited to."""
+    return bool(settings.MATRIX_AS_TOKEN and settings.MATRIX_BOT_USER_ID)
+
+
+def _admin(method: str, path: str) -> dict[str, Any]:
+    """Call the Synapse admin API. Read-only by convention - see `joined_members`."""
+    response = requests.request(
+        method,
+        f"{settings.MATRIX_HOMESERVER_URL:s}{path:s}",
+        headers={"Authorization": f"Bearer {settings.MATRIX_ADMIN_TOKEN:s}"},
+        timeout=settings.MATRIX_REQUEST_TIMEOUT,
     )
+    if response.status_code >= 400:
+        raise MatrixError(f"{method:s} {path:s} -> {response.status_code:d}")
+    return response.json() or {}
 
 
 def _state_path(room_id: str, event_type: str, state_key: str) -> str:
@@ -328,11 +337,15 @@ def set_room_state(
 
 
 def joined_members(room_id: str) -> set[str]:
-    """Who is in a room now, through the admin API: Ariane need not be there."""
-    members = _call(
-        "GET",
-        f"/_synapse/admin/v1/rooms/{quote(room_id, safe=''):s}/members",
-        settings.MATRIX_ADMIN_TOKEN,
+    """Who is in a room now, so the backend can answer "may this person read it".
+
+    This is the one call that does not go through `_as`, and the only remaining
+    use of the Synapse admin token: it answers for rooms Ariane was never
+    invited to, which is the point - the question is about the person asking,
+    not about her. It reads; it never joins anything.
+    """
+    members = _admin(
+        "GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe=''):s}/members"
     )
     return set(members.get("members", []))
 

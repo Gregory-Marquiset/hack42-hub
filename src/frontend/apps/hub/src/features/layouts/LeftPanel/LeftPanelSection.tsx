@@ -1,9 +1,8 @@
 import { Plus } from "@gouvfr-lasuite/ui-components/icons";
-import clsx from "clsx";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Chat, ChatUnread, Space } from "@/features/drivers/types";
+import type { Chat, ChatUnread } from "@/features/drivers/types";
 
 import { ChatRow } from "./ChatRow";
 import { SECTION_PREVIEW_COUNT } from "./chatSections";
@@ -15,10 +14,8 @@ export type LeftPanelSectionProps = {
   /** All of them, scrolling, instead of the first few. */
   isExpanded: boolean;
   onToggleExpanded: () => void;
-  spaces: Space[];
-  /** `null` is every espace, which is where each section starts. */
+  /** The espace the rail has chosen, carried into each row's link. */
   spaceId: string | null;
-  onSpaceChange: (spaceId: string | null) => void;
   unreadLookup: (ref: Chat["ref"]) => ChatUnread;
   accountLabels: Map<string, string>;
   showAccountLabels: boolean;
@@ -34,18 +31,15 @@ export type LeftPanelSectionProps = {
  * whole panel and its own scrollbar; the other two step aside, because three
  * lists sharing one scrollbar is what made the old panel hard to read.
  *
- * Its espace filter is its own: narrowing rooms to one espace is a common
- * thing to want, and it should not also narrow the direct messages, which
- * belong to no espace at all.
+ * It carries no espace chooser of its own: the rail on the panel's left edge
+ * is the single place that decides where these conversations come from.
  */
 export const LeftPanelSection = ({
   title,
   chats,
   isExpanded,
   onToggleExpanded,
-  spaces,
   spaceId,
-  onSpaceChange,
   unreadLookup,
   accountLabels,
   showAccountLabels,
@@ -97,42 +91,6 @@ export const LeftPanelSection = ({
           </button>
         )}
       </div>
-
-      {spaces.length > 0 && (
-        <div
-          className="hub__left-panel__section__filters"
-          role="group"
-          aria-label={t("Filter by space")}
-        >
-          <button
-            type="button"
-            className={clsx(
-              "hub__left-panel__section__filter",
-              spaceId === null && "hub__left-panel__section__filter--active",
-            )}
-            aria-pressed={spaceId === null}
-            onClick={() => onSpaceChange(null)}
-          >
-            {t("All")}
-          </button>
-          {spaces.map((space) => (
-            <button
-              key={space.id}
-              type="button"
-              className={clsx(
-                "hub__left-panel__section__filter",
-                spaceId === space.id &&
-                  "hub__left-panel__section__filter--active",
-              )}
-              aria-pressed={spaceId === space.id}
-              title={space.name}
-              onClick={() => onSpaceChange(space.id)}
-            >
-              {space.name}
-            </button>
-          ))}
-        </div>
-      )}
 
       <div id={panelId} className="hub__left-panel__section__panel">
         {visible.length === 0 ? (

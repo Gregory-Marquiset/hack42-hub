@@ -87,21 +87,13 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   const [isSalonModalOpen, setIsSalonModalOpen] = useState(false);
   // One section at a time may take the whole panel.
   const [expanded, setExpanded] = useState<ChatSectionId | null>(null);
-  // Each section narrows itself. The espace picked at the top is where they
-  // all start, so switching espace still moves the whole panel, but a section
-  // can be held on another one without dragging the others along.
-  const [overrides, setOverrides] = useState<
-    Partial<Record<ChatSectionId, string | null>>
-  >({});
-  const spaceOf = (id: ChatSectionId) =>
-    id in overrides ? (overrides[id] ?? null) : activeSpaceId;
-  const setSpaceOf = (id: ChatSectionId, spaceId: string | null) =>
-    setOverrides((current) => ({ ...current, [id]: spaceId }));
-  const chatIdsOf = (spaceId: string | null) => {
-    if (!spaceId) return null;
-    const space = spaces.find((candidate) => candidate.id === spaceId);
-    return space ? new Set(space.chatIds) : new Set<string>();
-  };
+  // The rail is the only espace chooser: one place decides where the panel's
+  // conversations come from, and every list follows it.
+  const activeChatIds = useMemo(() => {
+    if (!activeSpaceId) return null;
+    const space = spaces.find((candidate) => candidate.id === activeSpaceId);
+    return new Set(space?.chatIds ?? []);
+  }, [activeSpaceId, spaces]);
 
   // What "everything" is worth: the espace bubbles only cover their own
   // children, and a direct message belongs to no espace at all.
@@ -143,50 +135,49 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
 
   return (
     <aside className="hub__left-panel" aria-label={t("Side panel")}>
-      <div className="hub__left-panel__top">
-        <div className="hub__left-panel__logo">
-          <TchapLogo />
+      <SpacesRail
+        spaces={spaces}
+        activeSpaceId={activeSpaceId}
+        canCreateSpace={canCreateSpace}
+        onCreateSpace={() => setIsSpaceModalOpen(true)}
+        unreadOfSpace={unreadOfSpace}
+        unreadTotal={unreadTotal}
+      />
+      <div className="hub__left-panel__column">
+        <div className="hub__left-panel__top">
+          <div className="hub__left-panel__logo">
+            <TchapLogo />
+          </div>
+
+          <nav
+            className="hub__left-panel__actions"
+            aria-label={t("Quick actions")}
+          >
+            {actions.map((action) => (
+              <ActionRow key={action.id} action={action} />
+            ))}
+          </nav>
         </div>
 
-        <nav
-          className="hub__left-panel__actions"
-          aria-label={t("Quick actions")}
-        >
-          {actions.map((action) => (
-            <ActionRow key={action.id} action={action} />
-          ))}
-        </nav>
-
-        <EspacesRow
-          spaces={spaces}
-          activeSpaceId={activeSpaceId}
-          canCreateSpace={canCreateSpace}
-          onCreateSpace={() => setIsSpaceModalOpen(true)}
-          unreadOfSpace={unreadOfSpace}
-          unreadTotal={unreadTotal}
-        />
-      </div>
-
-      {/* Three fixed lists, each showing its five most recent. "See all"
+        {/* Three fixed lists, each showing its five most recent. "See all"
           gives one of them the whole panel and its own scrollbar: three lists
           sharing one is what made the old panel hard to read. */}
-      <div
-        className="hub__left-panel__body"
-        data-expanded={expanded ?? undefined}
-      >
-        {SECTIONS.filter(({ id }) => expanded === null || expanded === id).map(
-          ({ id, title, add }) => (
+        <div
+          className="hub__left-panel__body"
+          data-expanded={expanded ?? undefined}
+        >
+          {SECTIONS.filter(
+            ({ id }) => expanded === null || expanded === id,
+          ).map(({ id, title, add }) => (
             <LeftPanelSection
               key={id}
               title={t(title)}
-              chats={filterChatsBySpace(sections[id], chatIdsOf(spaceOf(id)))}
+              chats={filterChatsBySpace(sections[id], activeChatIds)}
               isExpanded={expanded === id}
               onToggleExpanded={() =>
                 setExpanded((current) => (current === id ? null : id))
               }
-              spaces={spaces}
-              spaceId={spaceOf(id)}
-              onSpaceChange={(spaceId) => setSpaceOf(id, spaceId)}
+              spaceId={activeSpaceId}
               unreadLookup={unreadLookup}
               accountLabels={accountLabels}
               showAccountLabels={showAccountLabels}
@@ -197,20 +188,20 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
                   : undefined
               }
             />
-          ),
-        )}
-      </div>
+          ))}
+        </div>
 
-      <div className="hub__left-panel__footer">
-        <AccountSelector />
-        <div className="hub__left-panel__footer__end">
-          <Button
-            variant="tertiary"
-            color="neutral"
-            icon={<QuestionMark size={24} />}
-            aria-label={t("Help")}
-          />
-          <LanguagePickerUserMenu />
+        <div className="hub__left-panel__footer">
+          <AccountSelector />
+          <div className="hub__left-panel__footer__end">
+            <Button
+              variant="tertiary"
+              color="neutral"
+              icon={<QuestionMark size={24} />}
+              aria-label={t("Help")}
+            />
+            <LanguagePickerUserMenu />
+          </div>
         </div>
       </div>
 
@@ -264,7 +255,15 @@ const ActionRow = ({ action }: { action: ActionItem }) => {
  * toggle button (not a full-width row) so a separate "+" button can sit on
  * the same line, flush to the right, to add straight into this section.
  */
-const EspacesRow = ({
+/**
+ * The espaces, stacked on the panel's left edge.
+ *
+ * It is the only place that decides where the panel's conversations come
+ * from: one chooser, and every list follows it. "Everything" sits on top
+ * because a conversation needs no espace, and the "+" at the bottom so the
+ * list of espaces can grow downwards without the button moving.
+ */
+const SpacesRail = ({
   spaces,
   activeSpaceId,
   canCreateSpace,
@@ -287,113 +286,83 @@ const EspacesRow = ({
     return null;
   }
 
+  const bubble = (
+    key: string,
+    href: ReturnType<typeof spaceHref>,
+    label: string,
+    isActive: boolean,
+    unread: number,
+    icon: string,
+  ) => (
+    <Link
+      key={key}
+      href={href}
+      shallow
+      aria-current={isActive ? "true" : undefined}
+      aria-label={
+        unread > 0
+          ? `${label}, ${t("{{count}} unread messages", { count: unread })}`
+          : label
+      }
+      title={label}
+      className={clsx(
+        "hub__left-panel__rail__item",
+        isActive && "hub__left-panel__rail__item--active",
+      )}
+    >
+      <Avatar label={label} decorative>
+        <span className="material-icons" aria-hidden="true">
+          {icon}
+        </span>
+      </Avatar>
+      {unread > 0 && (
+        // The words are in the link's label; this is for the eye.
+        <span className="hub__left-panel__rail__badge" aria-hidden="true">
+          {formatUnreadBadge(unread)}
+        </span>
+      )}
+    </Link>
+  );
+
   return (
-    <div className="hub__left-panel__spaces">
-      <span className="hub__left-panel__spaces__title">{t("Spaces")}</span>
-      {/* The "+" and its separator stay fixed and visible; only the espace
-          bubbles themselves scroll horizontally underneath them. */}
-      <div className="hub__left-panel__spaces__bar">
-        <div className="hub__left-panel__spaces__row">
-          {/* The way back. A room needs no espace, so the unfiltered list is
-              a destination of its own rather than the absence of one. */}
-          {spaces.length > 0 && (
-            <Link
-              href={spaceHref(null, currentChatRef)}
-              shallow
-              aria-current={activeSpaceId === null ? "true" : undefined}
-              aria-label={
-                unreadTotal > 0
-                  ? `${t("All conversations")}, ${t("{{count}} unread messages", { count: unreadTotal })}`
-                  : t("All conversations")
-              }
-              title={t("All conversations")}
-              className={clsx(
-                "hub__left-panel__spaces__item",
-                activeSpaceId === null &&
-                  "hub__left-panel__spaces__item--active",
-              )}
-            >
-              <span className="hub__left-panel__spaces__name">
-                {t("Everything")}
-              </span>
-              <Avatar label={t("All conversations")} decorative>
-                <span className="material-icons" aria-hidden="true">
-                  forum
-                </span>
-              </Avatar>
-              {unreadTotal > 0 && (
-                // The words are in the link's label; this is for the eye.
-                <span
-                  className="hub__left-panel__spaces__badge"
-                  aria-hidden="true"
-                >
-                  {formatUnreadBadge(unreadTotal)}
-                </span>
-              )}
-            </Link>
-          )}
-          {spaces.map((space) => {
-            const isActive = space.id === activeSpaceId;
-            const unread = unreadOfSpace(space);
-            return (
-              <Link
-                key={space.id}
-                href={spaceHref(space.id, currentChatRef)}
-                shallow
-                aria-current={isActive ? "true" : undefined}
-                aria-label={
-                  unread > 0
-                    ? `${space.name}, ${t("{{count}} unread messages", { count: unread })}`
-                    : space.name
-                }
-                title={space.name}
-                className={clsx(
-                  "hub__left-panel__spaces__item",
-                  isActive && "hub__left-panel__spaces__item--active",
-                )}
-              >
-                <span className="hub__left-panel__spaces__name">
-                  {space.name}
-                </span>
-                <Avatar label={space.name} decorative>
-                  <span className="material-icons" aria-hidden="true">
-                    {space.visual.kind === "icon"
-                      ? space.visual.icon
-                      : "workspaces"}
-                  </span>
-                </Avatar>
-                {unread > 0 && (
-                  <span
-                    className="hub__left-panel__spaces__badge"
-                    aria-hidden="true"
-                  >
-                    {formatUnreadBadge(unread)}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-        {canCreateSpace && (
-          <>
-            {spaces.length > 0 && (
-              <span
-                className="hub__left-panel__spaces__separator"
-                aria-hidden="true"
-              />
-            )}
-            <button
-              type="button"
-              className="hub__left-panel__spaces__add"
-              aria-label={t("New space")}
-              title={t("New space")}
-              onClick={onCreateSpace}
-            >
-              <Plus size={16} aria-hidden="true" />
-            </button>
-          </>
+    <nav className="hub__left-panel__rail" aria-label={t("Spaces")}>
+      <div className="hub__left-panel__rail__list">
+        {bubble(
+          "all",
+          spaceHref(null, currentChatRef),
+          t("All conversations"),
+          activeSpaceId === null,
+          unreadTotal,
+          "forum",
+        )}
+        {spaces.length > 0 && (
+          <span
+            className="hub__left-panel__rail__separator"
+            aria-hidden="true"
+          />
+        )}
+        {spaces.map((space) =>
+          bubble(
+            space.id,
+            spaceHref(space.id, currentChatRef),
+            space.name,
+            space.id === activeSpaceId,
+            unreadOfSpace(space),
+            space.visual.kind === "icon" ? space.visual.icon : "workspaces",
+          ),
         )}
       </div>
-    </div>
+      {canCreateSpace && (
+        <button
+          type="button"
+          className="hub__left-panel__rail__add"
+          aria-label={t("New space")}
+          title={t("New space")}
+          onClick={onCreateSpace}
+        >
+          <Plus aria-hidden="true" />
+        </button>
+      )}
+    </nav>
   );
 };

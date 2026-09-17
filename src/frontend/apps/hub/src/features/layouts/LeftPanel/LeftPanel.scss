@@ -1,10 +1,160 @@
 .hub__left-panel {
+  &__column {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  // Discord-style: the espaces stacked top to bottom, the "+" pinned at the
+  // bottom so the list can grow without the button moving.
+  &__rail {
+    flex: 0 0 auto;
+    width: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-right: 1px solid
+      var(--c--contextuals--border--surface--primary, #dfe2ea);
+
+    &__list {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      scrollbar-width: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+    }
+
+    &__separator {
+      width: 24px;
+      height: 1px;
+      flex: 0 0 auto;
+      background: var(--c--contextuals--border--surface--primary, #dfe2ea);
+    }
+
+    &__item {
+      position: relative;
+      flex: 0 0 auto;
+      display: inline-flex;
+      border-radius: 50%;
+      text-decoration: none;
+
+      .hub__avatar {
+        width: 40px;
+        height: 40px;
+        border: 0;
+        background: var(
+          --c--contextuals--background--surface--secondary,
+          #eef0f5
+        );
+        color: var(
+          --c--contextuals--content--semantic--neutral--secondary,
+          #555e74
+        );
+      }
+
+      &:hover .hub__avatar {
+        background: var(
+          --c--contextuals--background--surface--tertiary,
+          #e2e6ef
+        );
+      }
+
+      // The active espace is the one the lists are showing: a ring, because a
+      // filled bubble would compete with the unread badges beside it.
+      &--active .hub__avatar {
+        box-shadow: 0 0 0 2px
+          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
+        color: var(
+          --c--contextuals--content--semantic--brand--primary,
+          #3e5de7
+        );
+      }
+
+      &:focus-visible {
+        outline: 2px solid
+          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
+        outline-offset: 2px;
+      }
+    }
+
+    &__badge {
+      position: absolute;
+      top: -2px;
+      right: -4px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9px;
+      border: 1px solid
+        var(--c--contextuals--background--surface--primary, #fff);
+      background: var(
+        --c--contextuals--background--semantic--error--primary,
+        #ce0500
+      );
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    &__add {
+      appearance: none;
+      flex: 0 0 auto;
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px dashed
+        var(--c--contextuals--border--surface--primary, #dfe2ea);
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+      color: var(
+        --c--contextuals--content--semantic--neutral--secondary,
+        #555e74
+      );
+
+      &:hover {
+        background: var(
+          --c--contextuals--background--surface--secondary,
+          #eef0f5
+        );
+      }
+
+      &:focus-visible {
+        outline: 2px solid
+          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
+        outline-offset: 2px;
+      }
+    }
+  }
   --hub-lp-row-height: 32px;
   --hub-lp-radius: 4px;
 
   display: flex;
-  flex-direction: column;
-  width: 300px;
+  // Rail on the edge, then the column of lists. The rail is fixed-width and
+  // never scrolls with them, so the panel gains its width rather than
+  // borrowing it from the lists.
+  flex-direction: row;
+  width: 356px;
   height: 100dvh;
   min-height: 0;
   padding: 0;
@@ -389,174 +539,6 @@
     min-height: 0;
   }
 
-  &__spaces {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 0 12px;
-
-    &__title {
-      font-size: 12px;
-      font-weight: 700;
-      line-height: 16px;
-      color: var(
-        --c--contextuals--content--semantic--neutral--secondary,
-        #555e74
-      );
-    }
-
-    // Holds the scrollable bubble row plus the fixed separator/"+" — only
-    // the row itself scrolls, so the "+" stays put and visible.
-    &__bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    &__row {
-      flex: 1 1 auto;
-      min-width: 0;
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      overflow-x: auto;
-      overflow-y: visible;
-      // Vertical breathing room: the active bubble's outline ring extends
-      // past the avatar's own box, and would otherwise be clipped by
-      // overflow-x's forced overflow-y (a same-axis-pair CSS quirk).
-      padding: 4px 2px 8px;
-    }
-
-    // Smaller than they were: choosing an espace is now each section's own
-    // business, so this row is an overview and a way in, not the main
-    // control - and it was taking a third of the panel's head.
-    &__item {
-      appearance: none;
-      background: transparent;
-      border: 0;
-      flex: 0 0 auto;
-      width: 44px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      text-decoration: none;
-      border-radius: var(--hub-lp-radius);
-
-      .hub__avatar {
-        width: 28px;
-        height: 28px;
-        font-size: 14px;
-        flex: 0 0 auto;
-
-        .material-icons {
-          font-size: 18px;
-        }
-      }
-
-      // Not the active espace: greyed out, clickable to switch.
-      .hub__avatar {
-        filter: grayscale(100%);
-        opacity: 0.55;
-        transition: opacity 150ms ease;
-      }
-
-      &:hover .hub__avatar {
-        opacity: 0.85;
-      }
-
-      &:focus-visible {
-        outline: 2px solid
-          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
-        outline-offset: 2px;
-      }
-
-      &--active .hub__avatar {
-        filter: none;
-        opacity: 1;
-        outline: 2px solid
-          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
-        outline-offset: 2px;
-      }
-    }
-
-    // Espace names read as short, uppercase codes (max ~7 letters): this
-    // transform is the enforcement point, independent of what's actually
-    // stored — anything longer clips with an ellipsis (the full name is
-    // still on `title`/`aria-label`).
-    &__name {
-      max-width: 100%;
-      font-size: 11px;
-      font-weight: 700;
-      line-height: 14px;
-      letter-spacing: 0.02em;
-      text-align: center;
-      text-transform: uppercase;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      color: var(
-        --c--contextuals--content--semantic--neutral--secondary,
-        #555e74
-      );
-    }
-
-    &__item--active &__name {
-      color: var(
-        --c--contextuals--content--semantic--neutral--primary,
-        #222631
-      );
-    }
-
-    // Grey pipe between the scrollable espace row and the fixed "+" —
-    // siblings of `&__row` inside `&__bar`, so neither scrolls with it.
-    &__separator {
-      flex: 0 0 auto;
-      align-self: stretch;
-      width: 1px;
-      background: var(--c--contextuals--border--surface--primary, #dfe2ea);
-    }
-
-    &__add {
-      appearance: none;
-      background: var(--c--contextuals--background--surface--primary, #fff);
-      border: 1px solid var(--c--contextuals--border--surface--primary, #dfe2ea);
-      cursor: pointer;
-      flex: 0 0 auto;
-      align-self: center;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      color: var(
-        --c--contextuals--content--semantic--neutral--secondary,
-        #555e74
-      );
-      transition:
-        background 150ms ease,
-        color 150ms ease;
-
-      &:hover {
-        background: var(
-          --c--contextuals--background--semantic--overlay--primary,
-          rgba(24, 27, 36, 0.05)
-        );
-        color: var(
-          --c--contextuals--content--semantic--brand--primary,
-          #3e5de7
-        );
-      }
-
-      &:focus-visible {
-        outline: 2px solid
-          var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
-        outline-offset: 2px;
-      }
-    }
-  }
-
   &__tabs {
     display: flex;
     align-items: center;
@@ -811,41 +793,6 @@
   .hub__left-panel__section__chevron {
     transition: none;
   }
-}
-
-// The encryption marker sits inline with the conversation name. Small enough
-// to read as a property of the row rather than an action, and never the only
-// difference between two rows: it carries an accessible label.
-// The avatar is the anchor for what a row says without words: availability
-// owns the bottom-right corner, a call in progress the top-right.
-// The count of what is waiting inside an espace, on the corner of its bubble.
-.hub__left-panel__spaces__item {
-  position: relative;
-}
-
-.hub__left-panel__spaces__badge {
-  position: absolute;
-  top: 14px;
-  right: -4px;
-  z-index: 1;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  border: 1px solid var(--c--contextuals--background--surface--primary, #fff);
-  background: var(
-    --c--contextuals--background--semantic--error--primary,
-    #ce0500
-  );
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
 }
 
 .hub__left-panel__chat__avatar {

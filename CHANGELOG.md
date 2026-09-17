@@ -22,9 +22,9 @@ and this project adheres to
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
 - ♻️(frontend) Rebuild the side panel around three fixed lists - Favourites,
-  Rooms, Direct messages - each showing its five most recent across every
-  espace, with its own espace filter and a "see all" that gives it the whole
-  panel and a scrollbar.
+  Rooms, Direct messages - each showing its five most recent, with a "see all"
+  that gives it the whole panel and a scrollbar, and the espaces on a rail
+  down the left edge as the single place that chooses where they come from.
 - ✨(frontend) Count what is unread inside each espace on its bubble, and the
   total on the "everything" one, capped at `99+`.
 - ✨(frontend) Hold availability at busy and withhold notification sounds while

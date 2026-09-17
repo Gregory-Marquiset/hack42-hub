@@ -31,11 +31,11 @@
   // bottom so the list can grow without the button moving.
   &__rail {
     flex: 0 0 auto;
-    width: 56px;
+    width: 46px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 0;
     border-right: 1px solid
       var(--c--contextuals--border--surface--primary, #dfe2ea);
@@ -44,7 +44,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       flex: 1 1 auto;
       min-height: 0;
       overflow-y: auto;
@@ -56,7 +56,7 @@
     }
 
     &__separator {
-      width: 24px;
+      width: 20px;
       height: 1px;
       flex: 0 0 auto;
       background: var(--c--contextuals--border--surface--primary, #dfe2ea);
@@ -69,13 +69,17 @@
       border-radius: 50%;
       text-decoration: none;
 
-      // The palette colours these from the espace's name, so only size and
-      // shape are set here - the colour is what tells them apart.
+      // The palette colours these from the espace's name and each carries its
+      // own icon, so only size and shape are set here. Small enough that the
+      // rail is a margin beside the lists rather than a second panel.
       .hub__avatar {
-        width: 40px;
-        height: 40px;
+        width: 30px;
+        height: 30px;
         border: 0;
-        font-size: 14px;
+
+        .material-icons {
+          font-size: 18px;
+        }
       }
 
       &:hover {
@@ -102,16 +106,16 @@
 
     &__badge {
       position: absolute;
-      top: -2px;
-      right: -4px;
-      min-width: 18px;
-      height: 18px;
-      padding: 0 4px;
+      top: -3px;
+      right: -5px;
+      min-width: 15px;
+      height: 15px;
+      padding: 0 3px;
       box-sizing: border-box;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border-radius: 9px;
+      border-radius: 8px;
       border: 1px solid
         var(--c--contextuals--background--surface--primary, #fff);
       background: var(
@@ -119,7 +123,7 @@
         #ce0500
       );
       color: #fff;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
       line-height: 1;
       font-variant-numeric: tabular-nums;
@@ -128,8 +132,8 @@
     &__add {
       appearance: none;
       flex: 0 0 auto;
-      width: 40px;
-      height: 40px;
+      width: 30px;
+      height: 30px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -142,6 +146,11 @@
         --c--contextuals--content--semantic--neutral--secondary,
         #555e74
       );
+
+      svg {
+        width: 16px;
+        height: 16px;
+      }
 
       &:hover {
         background: var(
@@ -165,7 +174,7 @@
   // never scrolls with them, so the panel gains its width rather than
   // borrowing it from the conversations.
   flex-direction: column;
-  width: 356px;
+  width: 346px;
   height: 100dvh;
   min-height: 0;
   padding: 0;

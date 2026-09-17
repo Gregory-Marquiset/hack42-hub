@@ -27,6 +27,7 @@ import {
   partitionChats,
   ChatSectionId,
 } from "./chatSections";
+import { assignSpaceIcons } from "./spaceIcons";
 
 type ActionItem =
   | { id: string; href: string; icon: ReactNode; label: string }
@@ -268,33 +269,37 @@ const ActionRow = ({ action }: { action: ActionItem }) => {
  * list of espaces can grow downwards without the button moving.
  */
 /**
- * An espace's face on the rail: its avatar when it has one, its initials on a
- * colour derived from the name otherwise. `useAvatarSrc` turns the `mxc://`
- * into something the browser can load.
+ * An espace's face on the rail: its own picture when it has one, otherwise the
+ * icon the rail gave it, on a colour derived from its name. Never initials -
+ * a column of single letters is the one thing that reads as nothing.
+ *
+ * The icon is also what an unreachable picture falls back to, so a dead avatar
+ * url leaves the rail intact. `useAvatarSrc` turns the `mxc://` into something
+ * the browser can load.
  */
 const SpaceAvatar = ({
   accountId,
   label,
+  icon,
   visual,
 }: {
   accountId: AccountId;
   label: string;
+  icon: string;
   visual?: ChatVisual;
 }) => {
   const src = useAvatarSrc(accountId, visual ?? { kind: "initials" });
-  if (visual?.kind === "image") {
-    return <Avatar label={label} src={src} decorative />;
-  }
-  if (visual?.kind === "icon") {
-    return (
-      <Avatar label={label} decorative>
-        <span className="material-icons" aria-hidden="true">
-          {visual.icon}
-        </span>
-      </Avatar>
-    );
-  }
-  return <Avatar label={label} decorative />;
+  return (
+    <Avatar
+      label={label}
+      src={visual?.kind === "image" ? src : undefined}
+      decorative
+    >
+      <span className="material-icons" aria-hidden="true">
+        {visual?.kind === "icon" ? visual.icon : icon}
+      </span>
+    </Avatar>
+  );
 };
 
 const SpacesRail = ({
@@ -315,20 +320,27 @@ const SpacesRail = ({
   const { t } = useTranslation();
   const router = useRouter();
   const currentChatRef = readChatRef(router.query);
+  // Every espace wears a different icon, decided once for the whole rail so
+  // no two of them collide.
+  const icons = useMemo(
+    () => assignSpaceIcons(spaces.map((space) => space.id)),
+    [spaces],
+  );
 
   if (spaces.length === 0 && !canCreateSpace) {
     return null;
   }
 
   // Seven espaces used to be seven identical grey circles: the rail was
-  // unreadable. Initials on the colour the palette derives from the name tell
-  // them apart at a glance, exactly as a person's avatar does.
+  // unreadable. An icon of its own, on the colour the palette derives from the
+  // name, tells them apart at a glance without having to read anything.
   const bubble = (
     key: string,
     href: ReturnType<typeof spaceHref>,
     label: string,
     isActive: boolean,
     unread: number,
+    icon: string,
     visual?: ChatVisual,
     accountId: AccountId = "",
   ) => (
@@ -348,7 +360,12 @@ const SpacesRail = ({
         isActive && "hub__left-panel__rail__item--active",
       )}
     >
-      <SpaceAvatar accountId={accountId} label={label} visual={visual} />
+      <SpaceAvatar
+        accountId={accountId}
+        label={label}
+        icon={icon}
+        visual={visual}
+      />
       {unread > 0 && (
         // The words are in the link's label; this is for the eye.
         <span className="hub__left-panel__rail__badge" aria-hidden="true">
@@ -367,7 +384,7 @@ const SpacesRail = ({
           t("All conversations"),
           activeSpaceId === null,
           unreadTotal,
-          { kind: "icon", icon: "forum" },
+          "forum",
         )}
         {spaces.length > 0 && (
           <span
@@ -382,6 +399,7 @@ const SpacesRail = ({
             space.name,
             space.id === activeSpaceId,
             unreadOfSpace(space),
+            icons.get(space.id) ?? "groups",
             space.visual,
             space.accountId,
           ),

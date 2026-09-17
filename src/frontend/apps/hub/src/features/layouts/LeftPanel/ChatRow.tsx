@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { chatHref, readChatRef, sameChatRef } from "@/features/chat/chatRefs";
 import { formatChatListTimestamp } from "@/features/chat/formatTimestamp";
+import { countUnread, formatUnreadBadge } from "@/features/chat/unreadBadge";
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import { useNow } from "@/features/chat/meetings/useNow";
 import { getConversationMeetingState } from "@/features/drivers/meetingTime";
@@ -49,13 +50,18 @@ export const ChatRow = ({
     : null;
   const previewText = formatPreview(t, chat);
   // An explicit label replaces the link's content for assistive technology,
-  // so the lock is spoken here or not at all.
+  // so everything worth hearing is spoken here or not at all - the count
+  // included, because the badge beside it stops counting at 99.
+  const unreadCount = countUnread(unread);
   const linkLabel = [
     showAccountLabel && accountLabel
       ? `${chat.name} ${accountLabel}`
       : chat.name,
     ...(chat.encrypted ? [t("End-to-end encrypted")] : []),
     ...(hasOngoingMeeting ? [t("A meeting is in progress")] : []),
+    ...(unreadCount > 0
+      ? [t("{{count}} unread messages", { count: unreadCount })]
+      : []),
   ].join(", ");
 
   return (
@@ -121,13 +127,12 @@ export const ChatRow = ({
         <span className="hub__left-panel__chat__row">
           <span className="hub__left-panel__chat__preview">{previewText}</span>
           {unread.unread && unread.count > 0 && (
-            <span className="hub__left-panel__chat__badge">{unread.count}</span>
+            <span className="hub__left-panel__chat__badge">
+              {formatUnreadBadge(unread.count)}
+            </span>
           )}
         </span>
       </span>
-      {unread.unread && (
-        <span className="hub__visually-hidden">{t("Unread message")}</span>
-      )}
     </Link>
   );
 };

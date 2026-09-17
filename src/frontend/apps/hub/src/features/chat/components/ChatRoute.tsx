@@ -3,10 +3,26 @@ import { useEffect } from "react";
 
 import { readChatRef } from "@/features/chat/chatRefs";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import type { ChatRef } from "@/features/drivers/types";
 import { HubLayout } from "@/features/layouts/HubLayout";
 import type { NextPageWithLayout } from "@/features/layouts/NextPageWithLayout";
 
 import { ChatSurface } from "./ChatSurface";
+
+/**
+ * A conversation addressed without its account — as the assistant's links
+ * are, the server not knowing the account ids — read on a Hub that has only
+ * one account. With several, the address is ambiguous and is left alone.
+ */
+const soleAccountChatRef = (
+  query: ReturnType<typeof useRouter>["query"],
+  entries: ReturnType<typeof useDriverEntries>,
+): ChatRef | null =>
+  typeof query.chat === "string" && query.account === undefined
+    ? entries.length === 1
+      ? { accountId: entries[0].accountId, chatId: query.chat }
+      : null
+    : null;
 
 /**
  * Shared page component for both `/chat/new` and `/chat` (an existing
@@ -20,7 +36,9 @@ const ChatRoute: NextPageWithLayout = () => {
   const router = useRouter();
   const entries = useDriverEntries();
   const isNew = router.pathname === "/chat/new";
-  const urlChatRef = router.isReady ? readChatRef(router.query) : null;
+  const urlChatRef = router.isReady
+    ? (readChatRef(router.query) ?? soleAccountChatRef(router.query, entries))
+    : null;
   const hasKnownAccount = Boolean(
     urlChatRef &&
     entries.some((entry) => entry.accountId === urlChatRef.accountId),

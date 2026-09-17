@@ -412,6 +412,21 @@ export type ChatMessage = {
   canDelete?: boolean;
   /** Set when this message opened a thread; omitted otherwise. */
   thread?: ChatThreadSummary;
+  /** A meeting the message invites to, shown as a button joining the call. */
+  meetingInvite?: ChatMeetingInvite;
+};
+
+/**
+ * The meeting a message invites to: the assistant attaches it to what it
+ * writes, so the Hub opens the call in its own window, with its whiteboard
+ * and its documents, rather than sending the member to the bare call page.
+ */
+export type ChatMeetingInvite = {
+  /** Conversation holding the meeting, which is not the one of the message. */
+  chatId: string;
+  meetingId: string;
+  url: string;
+  title?: string;
 };
 
 /** Volatile room member identity used only by the typing indicator. */

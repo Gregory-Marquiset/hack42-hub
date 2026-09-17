@@ -821,6 +821,7 @@ const Row = memo(function Row({
           canEdit={message.canEdit}
           canDelete={message.canDelete}
           thread={message.thread}
+          meetingInvite={message.meetingInvite}
           showTimestamp={isLastOfGroup}
         />
       </RowShell>
@@ -851,6 +852,7 @@ const Row = memo(function Row({
         canEdit={message.canEdit}
         canDelete={message.canDelete}
         thread={message.thread}
+        meetingInvite={message.meetingInvite}
         showHeader={isFirstOfGroup}
         showAvatar={isLastOfGroup}
       />

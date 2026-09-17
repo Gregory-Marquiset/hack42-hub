@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  ChatMeetingInvite,
   ChatRef,
   ChatMessage,
   ChatMessageAuthor,
@@ -12,6 +13,7 @@ import type {
 } from "@/features/drivers/types";
 
 import { useChatPanel } from "../ChatPanelContext";
+import { MeetingInviteButton } from "./MeetingInviteButton";
 import { MessageText } from "./MessageText";
 import { useChatMessageEdit } from "../ChatMessageEditContext";
 import { copyTextToClipboard } from "../copyTextToClipboard";
@@ -45,6 +47,8 @@ type ChatBubbleReceivedProps = {
   threadId?: string;
   /** Drops Reply while keeping reactions and message actions. */
   compactToolbar?: boolean;
+  /** Meeting this message invites to, joined from the bubble. */
+  meetingInvite?: ChatMeetingInvite;
   showHeader: boolean;
   showAvatar: boolean;
 };
@@ -66,6 +70,8 @@ type ChatBubbleSentProps = {
   threadId?: string;
   /** Drops Reply while keeping reactions and message actions. */
   compactToolbar?: boolean;
+  /** Meeting this message invites to, joined from the bubble. */
+  meetingInvite?: ChatMeetingInvite;
   showTimestamp: boolean;
 };
 
@@ -221,6 +227,12 @@ export const ChatBubble = (props: ChatBubbleProps) => {
           ) : (
             <>
               <MessageText content={props.content} />
+              {props.meetingInvite && (
+                <MeetingInviteButton
+                  accountId={props.chatRef.accountId}
+                  invite={props.meetingInvite}
+                />
+              )}
               {props.isEdited && (
                 <span className="hub__chat-bubble__edited">{t("edited")}</span>
               )}
@@ -296,6 +308,12 @@ export const ChatBubble = (props: ChatBubbleProps) => {
           ) : (
             <>
               <MessageText content={content} />
+              {props.meetingInvite && (
+                <MeetingInviteButton
+                  accountId={props.chatRef.accountId}
+                  invite={props.meetingInvite}
+                />
+              )}
               {props.isEdited && (
                 <span className="hub__chat-bubble__edited">{t("edited")}</span>
               )}

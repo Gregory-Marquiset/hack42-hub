@@ -28,6 +28,7 @@ import { hashAvatarColor } from "@/features/ui/components/avatar/palette";
 
 import { ChatEvent } from "../Driver";
 import {
+  ChatMeetingInvite,
   ChatMessage,
   ChatMessageAuthor,
   ChatPreview,
@@ -615,6 +616,36 @@ const reactionEventToChatEvent = (
   );
 };
 
+/** Field Ariane puts the meeting in (see `meeting_notifications.py`). */
+const MEETING_INVITE_KEY = "io.lasuite.hub.meeting_invite";
+
+/** The meeting a message invites to, or `undefined` for any other message. */
+const toMeetingInvite = (
+  content: Record<string, unknown>,
+): ChatMeetingInvite | undefined => {
+  const raw = content[MEETING_INVITE_KEY];
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
+  const { chatId, meetingId, url, title } = raw as Record<string, unknown>;
+  if (
+    typeof chatId !== "string" ||
+    typeof meetingId !== "string" ||
+    typeof url !== "string" ||
+    !chatId ||
+    !meetingId ||
+    !/^https?:\/\//i.test(url)
+  ) {
+    return undefined;
+  }
+  return {
+    chatId,
+    meetingId,
+    url,
+    ...(typeof title === "string" && title ? { title } : {}),
+  };
+};
+
 export const matrixEventToChatMessage = (
   event: MatrixEvent,
   room: Room,
@@ -624,6 +655,9 @@ export const matrixEventToChatMessage = (
   const content = event.getContent<{ body?: string; msgtype?: string }>();
   const body = content.body;
   const eventId = event.getId() ?? "";
+  const meetingInvite = isDeleted
+    ? undefined
+    : toMeetingInvite(content as Record<string, unknown>);
   const canEdit = Boolean(
     !isDeleted &&
     selfUserId &&
@@ -647,6 +681,7 @@ export const matrixEventToChatMessage = (
     isEdited: !isDeleted && Boolean(event.replacingEventId()),
     canEdit,
     canDelete,
+    ...(meetingInvite ? { meetingInvite } : {}),
   };
   const thread = room.getThread(eventId);
   if (thread) {

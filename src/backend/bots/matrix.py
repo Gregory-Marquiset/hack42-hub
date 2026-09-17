@@ -269,10 +269,19 @@ ASIDE_KEY = "fr.hack42.bot.aside"
 
 
 def send_message(
-    room_id: str, body: str, *, thread_root: str | None = None, aside: bool = False
+    room_id: str,
+    body: str,
+    *,
+    thread_root: str | None = None,
+    aside: bool = False,
+    extra: dict[str, Any] | None = None,
 ) -> str:
-    """Post as Ariane, in a thread when there is one."""
-    content: dict[str, Any] = {"msgtype": "m.text", "body": body}
+    """Post as Ariane, in a thread when there is one.
+
+    `extra` adds fields to the message content: the Hub reads them to offer
+    more than text, such as the button that joins a meeting.
+    """
+    content: dict[str, Any] = {"msgtype": "m.text", "body": body, **(extra or {})}
     if aside:
         content[ASIDE_KEY] = True
     if thread_root:

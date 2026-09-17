@@ -525,11 +525,32 @@ export const ChatVirtualList = ({
       return;
     }
     let cancelled = false;
+    const clearJumpParam = () =>
+      void router.replace(
+        chatHref(
+          { accountId: chatRef.accountId, chatId: chatRef.chatId },
+          readSpaceId(router.query),
+        ),
+        undefined,
+        { shallow: true },
+      );
     void (async () => {
       if (
         !messagesRef.current.some((message) => message.id === targetEventId)
       ) {
-        await openAround(targetEventId);
+        try {
+          await openAround(targetEventId);
+        } catch {
+          // A search hit can outlive what the homeserver will still serve for
+          // it — redacted, purged, or indexed against an earlier server — and
+          // the SDK then rejects rather than returning an empty context. The
+          // conversation is open and usable, so drop the jump (and the URL
+          // param with it, or it would be retried) instead of failing the view.
+          if (!cancelled) {
+            clearJumpParam();
+          }
+          return;
+        }
       }
       if (cancelled) {
         return;
@@ -544,14 +565,7 @@ export const ChatVirtualList = ({
         // Only clear the URL once the scroll was actually issued: changing
         // `chatRef` identity any earlier would cancel it first (see
         // `scrollToEvent`'s comment).
-        void router.replace(
-          chatHref(
-            { accountId: chatRef.accountId, chatId: chatRef.chatId },
-            readSpaceId(router.query),
-          ),
-          undefined,
-          { shallow: true },
-        );
+        clearJumpParam();
       });
     })();
     return () => {

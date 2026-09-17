@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchAPI } from "@/features/api/fetchApi";
+import type { LocalChat } from "@/features/drivers/types";
 
 import type { Suggestion } from "../components/useComposerAutocomplete";
 
@@ -20,6 +21,18 @@ export type Assistant = {
 };
 
 const NO_ASSISTANT: Assistant = { userId: "", names: [], commands: [] };
+
+/**
+ * Whether a conversation is a one-to-one with the assistant. Her rooms carry
+ * her face rather than an initial, in the list, the header and search alike.
+ */
+export const isAssistantConversation = (
+  chat: Pick<LocalChat, "kind" | "participantIds">,
+  assistant: Pick<Assistant, "userId">,
+): boolean =>
+  assistant.userId !== "" &&
+  chat.kind === "direct" &&
+  chat.participantIds.includes(assistant.userId);
 
 /**
  * The assistant's identity and commands, straight from the backend.
@@ -43,6 +56,10 @@ export const useAssistant = (): Assistant => {
     // simply offers nothing, and everything else keeps working.
     meta: { noGlobalError: true },
     retry: false,
+    // One attempt per session: the catalogue only changes on deploy, and a
+    // failure must not turn every avatar that mounts into a new request.
+    retryOnMount: false,
+    refetchOnReconnect: false,
   });
 
   if (!data) {

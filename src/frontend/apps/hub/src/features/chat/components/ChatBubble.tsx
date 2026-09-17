@@ -10,7 +10,6 @@ import type {
   ChatReaction,
   ChatThreadSummary,
 } from "@/features/drivers/types";
-import { Avatar } from "@/features/ui/components/avatar/Avatar";
 
 import { useChatPanel } from "../ChatPanelContext";
 import { useChatMessageEdit } from "../ChatMessageEditContext";
@@ -25,6 +24,7 @@ import { notify } from "@/features/ui/components/toast";
 import { MessageHoverToolbar } from "./MessageHoverToolbar";
 import { MessageReactions } from "./MessageReactions";
 import { ThreadButton } from "./ThreadButton";
+import { UserAvatar } from "./UserAvatar";
 
 type ChatBubbleReceivedProps = {
   variant: "received";
@@ -269,9 +269,14 @@ export const ChatBubble = (props: ChatBubbleProps) => {
       )}
       <div className="hub__chat-bubble__row">
         {showAvatar ? (
-          <Avatar label={author.name} color={author.color} decorative size="sm">
-            {author.initials}
-          </Avatar>
+          <UserAvatar
+            userId={author.id}
+            label={author.name}
+            color={author.color}
+            initials={author.initials}
+            decorative
+            size="sm"
+          />
         ) : (
           <span
             className="hub__chat-bubble__avatar-spacer"

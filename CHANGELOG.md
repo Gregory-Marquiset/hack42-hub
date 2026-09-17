@@ -8,6 +8,11 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Give the assistant a face. Wherever a person's avatar appears -
+  message bubbles, people search, thread list, and the header, list and search
+  rows of a conversation with her - Ariane shows a small robot on one fixed
+  colour instead of an initial, so she is told apart from a person at a glance.
+  The members list, drawn by the UI kit, is the one exception.
 - 🔒️(profiles) Stop sending request bodies to Sentry and keep the chat
   identity proof out of tracebacks: saving a role carries a live Matrix access
   token, which error reports were shipping verbatim.

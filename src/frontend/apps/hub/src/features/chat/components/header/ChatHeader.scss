@@ -197,3 +197,10 @@
     animation: none;
   }
 }
+
+// Same marker as the conversation list, at the header's own scale.
+.hub__chat-header__encrypted {
+  width: 16px;
+  height: 16px;
+  color: var(--c--contextuals--content--semantic--neutral--secondary, #626a80);
+}

@@ -1,0 +1,69 @@
+# Hub Application Service registration - DEV ONLY.
+#
+# Declares the Hub backend as a Matrix Application Service: a service Synapse
+# trusts on the strength of this file, with no login and no user account. It is
+# how Hub creates rooms, invites and threads without a browser session - the
+# "bot" account it replaces could not authenticate at all, since this stack
+# delegates every human login to MAS and Keycloak.
+#
+# Declared in homeserver.yaml under `app_service_config_files`. Synapse reads
+# it at startup only: any change here needs a restart.
+#
+# Obviously-fake dev-only secrets, in keeping with the rest of homeserver.yaml
+# (registration_shared_secret, macaroon_secret_key). Production MUST inject
+# both tokens from the environment instead.
+id: hub
+
+# Where Synapse pushes events for this service: the Django backend, which
+# answers `PUT /_matrix/app/v1/transactions/{txnId}`. Combined with the `.*`
+# room namespace below, this is what makes Ariane omnipresent - she is sent
+# every message on the server without being a member anywhere.
+#
+# Synapse retries a transaction until it gets a 200 and keeps one ordered queue
+# per service, so a backend that answers 500 stalls every later event.
+url: http://app-dev:8000
+
+# Hub -> Synapse. Proves "I am this Application Service" on outgoing calls.
+as_token: "ThisIsAnAppServiceTokenForDevOnly"
+
+# Synapse -> Hub. Proves "I am really Synapse" on incoming transactions. The
+# two are opposite directions, not two copies of one secret.
+hs_token: "ThisIsAHomeserverTokenForDevOnly"
+
+# The service's own account, @hub-as:localhost. Must be matched by the users
+# namespace below, or Synapse rejects the token.
+sender_localpart: hub-as
+
+namespaces:
+  # Every account the service may act as through `?user_id=`. The `hub-as`
+  # prefix is not cosmetic: MAS derives localparts from Keycloak's
+  # preferred_username (see docker/matrix/mas/config.yaml), so an unprefixed
+  # namespace would eventually collide with a real person's account.
+  #
+  # Accounts created here exist in Synapse but NOT in MAS or Keycloak: they
+  # have no password and nobody can log into them. Robots only, never humans.
+  users:
+    - exclusive: true
+      regex: "@hub-as.*:localhost"
+  aliases:
+    - exclusive: true
+      regex: "#hub-as_.*:localhost"
+  # Every room the service receives events for. `.*` is what makes the bot
+  # omnipresent: Synapse pushes it the events of every room on the server, with
+  # no membership and no invitation. That is the whole point - the bot has to
+  # see a mention before it can answer it.
+  #
+  # `exclusive: false` is not a detail. Set to true, the service would claim
+  # ownership of every room id on the homeserver, and Synapse would refuse room
+  # creation to everybody else.
+  #
+  # Reading is not writing: to POST in a room the bot must be a member. Joining
+  # a private room it was never invited to needs the Synapse admin API, which
+  # is why MATRIX_ADMIN_TOKEN exists (see env.d/development/bots.local).
+  rooms:
+    - exclusive: false
+      regex: ".*"
+
+# The service is trusted infrastructure, not a client: message throttling would
+# only get in the way of seeding and of alert bursts.
+rate_limited: false

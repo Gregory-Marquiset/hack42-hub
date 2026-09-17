@@ -5,6 +5,7 @@ from django.urls import include, path
 
 from rest_framework.routers import DefaultRouter
 
+from bots import api as bots_api
 from core.api import viewsets
 
 # - Main endpoints
@@ -22,6 +23,8 @@ urlpatterns = [
         ),
     ),
     path("config/", viewsets.ConfigView.as_view()),
+    # The assistant's identity and command catalogue, read by the composer.
+    path("bots/assistant/", bots_api.AssistantView.as_view(), name="bots-assistant"),
 ]
 
 # When DEBUG, include a 404 URL for E2E tests

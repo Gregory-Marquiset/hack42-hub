@@ -18,6 +18,7 @@
 @use "./../features/chat/components/ChatVirtualList.scss";
 @use "./../features/chat/components/ChatView.scss";
 @use "./../features/chat/components/NewChatView.scss";
+@use "./../features/chat/components/CreateSalonModal.scss";
 @use "./../features/chat/components/ChatInvitation.scss";
 @use "./../features/chat/components/FluentEmoji.scss";
 @use "./../features/chat/components/MessageHoverToolbar.scss";
@@ -28,7 +29,7 @@
 @use "./../features/chat/components/UnreadMessages.scss";
 @use "./../features/chat/components/EmojiPicker.scss";
 @use "./../features/chat/search/ConversationSearchModal.scss";
-@use "./../features/chat/search/messageSearchScaffold.scss";
+@use "./../features/chat/search/MessageSearchSection.scss";
 @use "./../features/chat/search/MessageSearchResultRow.scss";
 @use "./../features/chat/search/messageSearchHighlight.scss";
 @use "./../features/chat/components/tools-panel/ChatToolsPanel.scss";

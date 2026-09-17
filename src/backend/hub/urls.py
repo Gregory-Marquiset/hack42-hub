@@ -15,6 +15,9 @@ from lasuite.oidc_login.urls import urlpatterns as oidc_urls
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Application Service routes. Outside api/{version}/ on purpose: Synapse
+    # calls these paths verbatim and they are not part of the client API.
+    path("", include("bots.urls")),
     path(f"api/{settings.API_VERSION}/", include("core.urls")),
     path(f"api/{settings.API_VERSION}/", include(oidc_urls)),
 ]

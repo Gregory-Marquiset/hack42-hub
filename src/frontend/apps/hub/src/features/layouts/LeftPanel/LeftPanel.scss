@@ -50,25 +50,17 @@
       border-radius: 50%;
       text-decoration: none;
 
+      // The palette colours these from the espace's name, so only size and
+      // shape are set here - the colour is what tells them apart.
       .hub__avatar {
         width: 40px;
         height: 40px;
         border: 0;
-        background: var(
-          --c--contextuals--background--surface--secondary,
-          #eef0f5
-        );
-        color: var(
-          --c--contextuals--content--semantic--neutral--secondary,
-          #555e74
-        );
+        font-size: 14px;
       }
 
-      &:hover .hub__avatar {
-        background: var(
-          --c--contextuals--background--surface--tertiary,
-          #e2e6ef
-        );
+      &:hover {
+        opacity: 0.85;
       }
 
       // The active espace is the one the lists are showing: a ring, because a
@@ -286,11 +278,18 @@
       border-radius: 4px;
       cursor: pointer;
       font: inherit;
-      font-size: 12px;
+      font-size: 11px;
       line-height: 16px;
-      color: var(--c--contextuals--content--semantic--brand--primary, #3e5de7);
+      color: var(
+        --c--contextuals--content--semantic--neutral--tertiary,
+        #75758a
+      );
 
       &:hover {
+        color: var(
+          --c--contextuals--content--semantic--brand--primary,
+          #3e5de7
+        );
         background: var(
           --c--contextuals--background--semantic--overlay--primary,
           rgba(24, 27, 36, 0.05)
@@ -371,13 +370,21 @@
     // (not full width) so a separate "+" button can sit flush right on
     // the same line, its own click target for adding straight into this
     // section.
+    // The title takes the row and the controls sit at its end, quiet until
+    // wanted: three headers stacked in a narrow column cannot each carry a
+    // coloured chip and two buttons without becoming the loudest thing in
+    // the panel.
     &__header-row {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 4px;
+      gap: 2px;
       padding: 0 8px 0 12px;
-      height: 28px;
+      height: 26px;
+
+      .hub__left-panel__section__title {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
     }
 
     &__header {
@@ -468,17 +475,13 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 16px;
-      height: 16px;
-      padding: 0 4px;
-      border-radius: 8px;
-      background: var(--c--globals--colors--brand-050, #edf0ff);
       color: var(
-        --c--contextuals--content--semantic--brand--secondary,
-        #304ddf
+        --c--contextuals--content--semantic--neutral--tertiary,
+        #75758a
       );
-      font-size: 10px;
-      font-weight: 700;
+      font-size: 11px;
+      font-weight: 400;
+      font-variant-numeric: tabular-nums;
     }
 
     &__chevron {
@@ -535,7 +538,8 @@
   &__body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 14px;
+    padding-bottom: 8px;
     min-height: 0;
   }
 

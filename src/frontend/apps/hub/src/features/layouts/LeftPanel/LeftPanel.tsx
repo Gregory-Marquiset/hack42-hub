@@ -286,13 +286,16 @@ const SpacesRail = ({
     return null;
   }
 
+  // Seven espaces used to be seven identical grey circles: the rail was
+  // unreadable. Initials on the colour the palette derives from the name tell
+  // them apart at a glance, exactly as a person's avatar does.
   const bubble = (
     key: string,
     href: ReturnType<typeof spaceHref>,
     label: string,
     isActive: boolean,
     unread: number,
-    icon: string,
+    icon?: string,
   ) => (
     <Link
       key={key}
@@ -311,9 +314,11 @@ const SpacesRail = ({
       )}
     >
       <Avatar label={label} decorative>
-        <span className="material-icons" aria-hidden="true">
-          {icon}
-        </span>
+        {icon ? (
+          <span className="material-icons" aria-hidden="true">
+            {icon}
+          </span>
+        ) : undefined}
       </Avatar>
       {unread > 0 && (
         // The words are in the link's label; this is for the eye.
@@ -348,7 +353,6 @@ const SpacesRail = ({
             space.name,
             space.id === activeSpaceId,
             unreadOfSpace(space),
-            space.visual.kind === "icon" ? space.visual.icon : "workspaces",
           ),
         )}
       </div>

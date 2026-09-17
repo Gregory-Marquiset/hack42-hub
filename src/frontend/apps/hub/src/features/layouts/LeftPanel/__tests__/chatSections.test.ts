@@ -78,10 +78,18 @@ describe("filterChatsBySpace", () => {
     ).toEqual(["!in:x"]);
   });
 
-  it("empties a list of conversations no espace groups", () => {
-    // A direct message belongs to none, and the filter says "from this
-    // espace" - so it answers honestly rather than pretending.
+  it("empties a list of rooms no espace groups", () => {
     expect(filterChatsBySpace(chats, new Set(["!elsewhere:x"]))).toEqual([]);
+  });
+
+  it("never filters a direct message out", () => {
+    // It belongs to no espace, so an espace could only ever empty the whole
+    // list - which reads as broken rather than as a filter.
+    const withDm = [...chats, chat({ id: "!dm:x", kind: "direct" })];
+
+    expect(
+      filterChatsBySpace(withDm, new Set(["!elsewhere:x"])).map((c) => c.id),
+    ).toEqual(["!dm:x"]);
   });
 });
 

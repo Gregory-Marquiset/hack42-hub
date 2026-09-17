@@ -34,14 +34,18 @@ export const partitionChats = (chats: Chat[]): ChatSections => {
 };
 
 /**
- * Keeps the conversations one espace groups, or all of them when no espace is
+ * Keeps the conversations one espace groups, or all of them when none is
  * chosen.
  *
- * A direct message belongs to no espace, so narrowing to one empties that
- * list. That is the honest answer rather than a special case: the filter says
- * "from this espace", and a direct message comes from none.
+ * A direct message is never filtered out: it belongs to no espace, so an
+ * espace could only ever empty that list, and a panel answering "no
+ * conversation" for someone's whole address book reads as broken rather than
+ * as a filter. An espace groups rooms, so that is what it narrows.
  */
 export const filterChatsBySpace = (
   chats: Chat[],
   chatIds: ReadonlySet<string> | null,
-): Chat[] => (chatIds ? chats.filter((chat) => chatIds.has(chat.id)) : chats);
+): Chat[] =>
+  chatIds
+    ? chats.filter((chat) => chat.kind === "direct" || chatIds.has(chat.id))
+    : chats;

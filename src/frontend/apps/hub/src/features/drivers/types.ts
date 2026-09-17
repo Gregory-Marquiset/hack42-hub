@@ -7,8 +7,14 @@ export type AccountId = string;
 export type ChatRef = {
   accountId: AccountId;
   chatId: string;
-  /** Message to jump to and flash once the chat is open, if any. */
+  /** Message to jump to and flash once the chat is open, if any. A thread
+   * reply isn't part of the main timeline, so for one this is its thread's
+   * root — see `threadEventId` for the reply itself. */
   eventId?: string;
+  /** Set alongside `eventId` when the jump target is a thread reply: the
+   * reply to open the thread panel on and flash there, once landed on the
+   * root via `eventId`. */
+  threadEventId?: string;
 };
 
 /** A Meet room created through the Hub backend. */

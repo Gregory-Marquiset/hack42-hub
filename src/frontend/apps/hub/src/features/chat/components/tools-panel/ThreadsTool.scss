@@ -173,6 +173,14 @@
       var(--c--globals--spacings--sm, 12px);
   }
 
+  // Jump-to-reply landing, from a search result: same idea as the main
+  // conversation's row flash (ChatVirtualList.scss), duplicated rather than
+  // shared since this panel has no virtualization to coordinate with.
+  &__message--highlighted {
+    animation: hub-thread-message-highlight-pulse 2.8s ease-out;
+    border-radius: var(--c--globals--spacings--xs, 8px);
+  }
+
   // "Unread" divider — a centred brand label flanked by hairlines.
   &__unread {
     display: flex;
@@ -192,5 +200,32 @@
       background: currentcolor;
       opacity: 0.4;
     }
+  }
+}
+
+@keyframes hub-thread-message-highlight-pulse {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  15%,
+  55% {
+    background-color: var(
+      --c--contextuals--background--semantic--warning--tertiary,
+      #f8f0e9
+    );
+  }
+  35% {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub__thread-detail__message--highlighted {
+    animation: none;
+    background-color: var(
+      --c--contextuals--background--semantic--warning--tertiary,
+      #f8f0e9
+    );
   }
 }

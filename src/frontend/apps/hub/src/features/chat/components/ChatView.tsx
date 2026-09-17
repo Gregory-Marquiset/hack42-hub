@@ -184,6 +184,11 @@ export const ChatView = ({
   const [threadComposerFocusSignal, setThreadComposerFocusSignal] = useState(0);
   const [draftThreadRoot, setDraftThreadRoot] =
     useState<DraftThreadRoot | null>(null);
+  // Reply to flash once `ThreadDetail` scrolls to it — a jump from search
+  // into a thread. Cleared alongside the other panel state below.
+  const [threadHighlightEventId, setThreadHighlightEventId] = useState<
+    string | null
+  >(null);
   useEffect(() => {
     if (activeTool !== null) {
       setDisplayedTool(activeTool);
@@ -195,6 +200,7 @@ export const ChatView = ({
     setActiveThreadId(null);
     setThreadComposerFocusSignal(0);
     setDraftThreadRoot(null);
+    setThreadHighlightEventId(null);
     setEditingMessage(null);
   }, [chatRef?.accountId, chatRef?.chatId]);
 
@@ -207,6 +213,7 @@ export const ChatView = ({
     if (willOpen && tool === "threads") {
       setActiveThreadId(null);
       setThreadComposerFocusSignal(0);
+      setThreadHighlightEventId(null);
     }
   };
 
@@ -220,6 +227,7 @@ export const ChatView = ({
         options?.focusComposer ? signal + 1 : 0,
       );
       setDraftThreadRoot(null);
+      setThreadHighlightEventId(options?.highlightEventId ?? null);
     },
     [],
   );
@@ -229,6 +237,7 @@ export const ChatView = ({
     setActiveThreadId(null);
     setThreadComposerFocusSignal(0);
     setDraftThreadRoot(null);
+    setThreadHighlightEventId(null);
   }, []);
 
   const openDraftThread = useCallback((root: DraftThreadRoot) => {
@@ -236,11 +245,13 @@ export const ChatView = ({
     setActiveThreadId(null);
     setThreadComposerFocusSignal((signal) => signal + 1);
     setDraftThreadRoot(root);
+    setThreadHighlightEventId(null);
   }, []);
 
   const closeThread = useCallback(() => {
     setActiveThreadId(null);
     setThreadComposerFocusSignal(0);
+    setThreadHighlightEventId(null);
     setDraftThreadRoot(null);
   }, []);
 
@@ -354,6 +365,7 @@ export const ChatView = ({
                 chatRef={chatRef}
                 threadId={activeThreadId}
                 threadComposerFocusSignal={threadComposerFocusSignal}
+                threadHighlightEventId={threadHighlightEventId}
                 draftThreadRoot={draftThreadRoot}
                 onClose={closePanel}
                 onOpenThread={openThread}

@@ -19,6 +19,7 @@ import type {
   ChatRef,
 } from "@/features/drivers/types";
 
+import { useChatPanel } from "../ChatPanelContext";
 import { chatHref, readSpaceId } from "../chatRefs";
 import { isSameChatDay } from "../formatTimestamp";
 import { useChatMessages } from "../hooks/useChatMessages";
@@ -75,6 +76,7 @@ export const ChatVirtualList = ({
 }: ChatVirtualListProps) => {
   const { t } = useTranslation();
   const router = useRouter();
+  const { openThread } = useChatPanel();
   const {
     messages,
     authorsById,
@@ -615,6 +617,15 @@ export const ChatVirtualList = ({
         }
         if (found) {
           highlightMessage(targetEventId);
+          // The jump target was a thread reply: `targetEventId` (what we just
+          // scrolled to) is its root, landed on because the reply itself
+          // isn't part of the main timeline. Open the thread on it now and
+          // flash the reply there instead.
+          if (chatRef.threadEventId) {
+            openThread(targetEventId, {
+              highlightEventId: chatRef.threadEventId,
+            });
+          }
         }
         // Only clear the URL once the scroll was actually issued: changing
         // `chatRef` identity any earlier would cancel it first (see
@@ -628,9 +639,11 @@ export const ChatVirtualList = ({
   }, [
     chatRef.accountId,
     chatRef.chatId,
+    chatRef.threadEventId,
     highlightMessage,
     isInitialLoading,
     openAround,
+    openThread,
     router,
     scrollToEvent,
     targetEventId,

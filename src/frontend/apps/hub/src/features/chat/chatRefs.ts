@@ -50,6 +50,7 @@ export const chatHref = (ref: ChatRef, spaceId?: string | null) => ({
     account: ref.accountId,
     chat: ref.chatId,
     ...(ref.eventId ? { event: ref.eventId } : {}),
+    ...(ref.threadEventId ? { thread: ref.threadEventId } : {}),
     ...(spaceId ? { space: spaceId } : {}),
   },
 });
@@ -62,6 +63,9 @@ export const readChatRef = (query: ParsedUrlQuery): ChatRef | null => {
     accountId: query.account,
     chatId: query.chat,
     ...(typeof query.event === "string" ? { eventId: query.event } : {}),
+    ...(typeof query.thread === "string"
+      ? { threadEventId: query.thread }
+      : {}),
   };
 };
 

@@ -20,6 +20,8 @@ type ChatToolsPanelProps = {
   threadId: string | null;
   /** Incremented whenever a Reply action requests focus in the composer. */
   threadComposerFocusSignal: number;
+  /** Reply to flash once the detail view has scrolled to it, if any. */
+  threadHighlightEventId: string | null;
   /** Root message for a not-yet-created thread draft. */
   draftThreadRoot: DraftThreadRoot | null;
   onClose: () => void;
@@ -33,6 +35,7 @@ export const ChatToolsPanel = ({
   chatRef,
   threadId,
   threadComposerFocusSignal,
+  threadHighlightEventId,
   draftThreadRoot,
   onClose,
   onOpenThread,
@@ -57,6 +60,7 @@ export const ChatToolsPanel = ({
           chatRef={chatRef}
           threadId={threadId}
           threadComposerFocusSignal={threadComposerFocusSignal}
+          threadHighlightEventId={threadHighlightEventId}
           draftThreadRoot={draftThreadRoot}
           isOpen={isOpen}
           onClose={onClose}

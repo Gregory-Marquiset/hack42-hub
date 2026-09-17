@@ -9,6 +9,8 @@ export type DraftThreadRoot = {
 
 export type OpenThreadOptions = {
   focusComposer?: boolean;
+  /** Reply to flash once the thread's detail view has scrolled to it. */
+  highlightEventId?: string;
 };
 
 /**

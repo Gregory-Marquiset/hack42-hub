@@ -52,24 +52,37 @@ export const ConversationSearchModal = ({
   const heading = useId();
   const messageHeading = useId();
 
-  const open = (chat: Chat, eventId?: string) => {
+  const open = (chat: Chat, eventId?: string, threadRootId?: string) => {
     onClose();
+    // A thread reply isn't part of the main timeline — `TimelineWindow`
+    // rejects trying to anchor there directly ("No timeline given to
+    // initFields"). Land on the thread's root instead (a real main-timeline
+    // message) and carry the reply along as `threadEventId`, so the
+    // conversation view can open the thread panel on it once settled.
+    const mainTimelineEventId = threadRootId ?? eventId;
+    const threadEventId = threadRootId ? eventId : undefined;
     void (async () => {
-      if (eventId) {
+      if (mainTimelineEventId) {
         // Pull the target's surroundings into the cache before switching
         // conversation: the view then opens with the message already in
         // memory and glides to it, instead of opening at the live end and
         // re-anchoring once the fetch lands. A failure here is not fatal —
         // the conversation still opens and retries the jump on its own.
         try {
-          await loadMessagesAround(queryClient, chat.ref, eventId);
+          await loadMessagesAround(queryClient, chat.ref, mainTimelineEventId);
         } catch {
           // Left to the conversation view to report or degrade.
         }
       }
-      void router.push(chatHref({ ...chat.ref, eventId }), undefined, {
-        shallow: true,
-      });
+      void router.push(
+        chatHref({
+          ...chat.ref,
+          eventId: mainTimelineEventId,
+          threadEventId,
+        }),
+        undefined,
+        { shallow: true },
+      );
     })();
   };
 
@@ -175,7 +188,13 @@ export const ConversationSearchModal = ({
                               ? result.accountLabel
                               : undefined
                           }
-                          onSelect={() => open(result.chat, result.eventId)}
+                          onSelect={() =>
+                            open(
+                              result.chat,
+                              result.eventId,
+                              result.threadRootId,
+                            )
+                          }
                         />
                       );
                     })}

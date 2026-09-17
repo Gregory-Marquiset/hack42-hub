@@ -26,6 +26,7 @@ import {
 import type {
   AccountId,
   ChatMainTimelineUnread,
+  ChatMeeting,
   ChatMessage,
   ChatMessagesPage,
   ChatMembers,
@@ -37,6 +38,8 @@ import type {
   LocalChat,
   LocalChatSections,
   LocalSpace,
+  MeetRoom,
+  StartMeetingOptions,
   User,
 } from "../types";
 
@@ -98,6 +101,10 @@ export class LazyMatrixDriver extends BaseDriver {
     if (this.target) await this.target.clearMessageSearch();
   }
 
+  override backfillMessageSearchRoom(roomId: string): void {
+    this.target?.backfillMessageSearchRoom(roomId);
+  }
+
   // Static capability the UI reads synchronously (see `useChatCompositionSupport`),
   // before the SDK lazy-loads. It must mirror the real `MatrixDriver`; the actual
   // `sendChatMessage` still routes through `withTarget`, loading the driver on demand.
@@ -109,6 +116,9 @@ export class LazyMatrixDriver extends BaseDriver {
   override readonly supportsConversationCreation = true;
   override readonly supportsSpaces = true;
   override readonly supportsSpaceCreation = true;
+  // Static capability mirroring the real `MatrixDriver`, read by the meeting
+  // button before the SDK lazy-loads.
+  override readonly supportsMeetings = true;
 
   private target: Driver | null = null;
   private targetPromise: Promise<Driver> | null = null;
@@ -289,6 +299,49 @@ export class LazyMatrixDriver extends BaseDriver {
   async setChatFavourite(chatId: string, favourite: boolean): Promise<void> {
     return this.withTarget((driver) =>
       driver.setChatFavourite(chatId, favourite),
+    );
+  }
+
+  override async getChatMeetings(chatId: string): Promise<ChatMeeting[]> {
+    return this.withTarget((driver) => driver.getChatMeetings(chatId));
+  }
+
+  override async startChatMeeting(
+    chatId: string,
+    createRoom: () => Promise<MeetRoom>,
+    options?: StartMeetingOptions,
+  ): Promise<ChatMeeting> {
+    return this.withTarget((driver) =>
+      driver.startChatMeeting(chatId, createRoom, options),
+    );
+  }
+
+  override async endChatMeeting(
+    chatId: string,
+    meetingId: string,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.endChatMeeting(chatId, meetingId),
+    );
+  }
+
+  override async renameChatMeeting(
+    chatId: string,
+    meetingId: string,
+    title: string,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.renameChatMeeting(chatId, meetingId, title),
+    );
+  }
+
+  override async extendChatMeeting(
+    chatId: string,
+    meetingId: string,
+    minutes: number,
+  ): Promise<void> {
+    return this.withTarget((driver) =>
+      driver.extendChatMeeting(chatId, meetingId, minutes),
     );
   }
 

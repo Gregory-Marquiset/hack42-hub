@@ -192,6 +192,9 @@ export const ConversationSearchModal = ({
                         messageAccounts.length > 1 ? entry.label : undefined
                       }
                       onRetry={() => entry.driver.retryMessageSearch()}
+                      onBackfillRoom={(roomId) =>
+                        entry.driver.backfillMessageSearchRoom(roomId)
+                      }
                     />
                   ))}
                 </div>
@@ -314,10 +317,12 @@ const MessageSearchStatusHint = ({
   status,
   label,
   onRetry,
+  onBackfillRoom,
 }: {
   status: MessageSearchStatus;
   label?: string;
   onRetry: () => void;
+  onBackfillRoom: (roomId: string) => void;
 }) => {
   const { t } = useTranslation();
   const incomplete = status.roomsPending > 0;
@@ -336,6 +341,26 @@ const MessageSearchStatusHint = ({
               })}
           {status.hasFailures && <> {t("Some rooms could not be indexed.")}</>}
         </p>
+      )}
+      {status.pendingRooms.length > 0 && (
+        <ul className="hub__conversation-search__pending-rooms">
+          {status.pendingRooms.map((room) => (
+            <li key={room.roomId}>
+              <button
+                type="button"
+                className="hub__conversation-search__retry"
+                disabled={room.status === "backfilling"}
+                onClick={() => onBackfillRoom(room.roomId)}
+              >
+                {room.status === "backfilling"
+                  ? t("Indexing {{roomName}}…", { roomName: room.roomName })
+                  : t("Search further in {{roomName}}", {
+                      roomName: room.roomName,
+                    })}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
       {!status.storageAvailable && (
         <p>

@@ -22,7 +22,6 @@ import {
   type SyncStateData,
   type Thread,
   ThreadEvent,
-  TimelineWindow,
 } from "matrix-js-sdk/lib/matrix";
 import { HttpApiEvent } from "matrix-js-sdk/lib/http-api";
 import {
@@ -79,6 +78,7 @@ import {
   AccountId,
   ChatLocalUser,
   ChatMainTimelineUnread,
+  ChatMeeting,
   ChatMessage,
   ChatMember,
   ChatMembers,
@@ -92,8 +92,12 @@ import {
   LocalChat,
   LocalChatSections,
   LocalSpace,
+  MeetRoom,
+  StartMeetingOptions,
   User,
 } from "../types";
+import { MeetingNotAllowedError } from "../meetingErrors";
+import { isMeetingOngoing } from "../meetingTime";
 import {
   authorForSender,
   buildAuthors,
@@ -125,6 +129,12 @@ import { subscribeToIncomingMatrixEvents } from "./matrixIncomingEvents";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
+  getChatMeetingsFromRoom,
+  getMeetingStateContent,
+  MEETING_EVENT_TYPE,
+  type MeetingStateEventContent,
+} from "./matrixMeetingMapping";
+import {
   clearStoredConversationSearch,
   MATRIX_USER_STORAGE_KEY,
   matrixStorageKey,
@@ -140,10 +150,13 @@ import {
   roomOtherMembers,
   spaceChildRoomIds,
 } from "./matrixRoomMapping";
+import {
+  extendTimelineWindow,
+  mainTimelineEvents,
+  scopedTimelineWindow,
+} from "./matrixTimelineWindow";
 /** Matches `getChatMessages`'s default; the homeserver may clamp it lower. */
 const DEFAULT_CHAT_PAGE_SIZE = 50;
-const MAX_TIMELINE_PAGINATION_STEPS = 200;
-const TIMELINE_WINDOW_LIMIT = Number.MAX_SAFE_INTEGER;
 const MATRIX_TYPING_TIMEOUT_MS = 30_000;
 
 // A generous fetch limit is requested from the user directory and the filtered
@@ -209,14 +222,6 @@ const sortChatMembers = (
     }
     return left.name.localeCompare(right.name);
   });
-
-type RoomTimelineListener = (
-  event: MatrixEvent,
-  room: Room | undefined,
-  toStartOfTimeline: boolean | undefined,
-  removed: boolean,
-  data: IRoomTimelineData,
-) => void;
 
 /**
  * Matrix-backed chat driver. All Matrix specifics — the OIDC handshake, client
@@ -290,12 +295,17 @@ export class MatrixDriver extends Driver {
     if (search) await search.remove?.();
   }
 
+  override backfillMessageSearchRoom(roomId: string): void {
+    this.messageSearch?.backfillRoom(roomId);
+  }
+
   override readonly supportsComposition: boolean = true;
   override readonly supportsThreadComposition: boolean = true;
   override readonly supportsConversationHistoryRemoval: boolean = true;
   override readonly supportsConversationCreation: boolean = true;
   override readonly supportsSpaces: boolean = true;
   override readonly supportsSpaceCreation: boolean = true;
+  override readonly supportsMeetings: boolean = true;
 
   private mx: MatrixClient | null = null;
   /** Subscribers to the single global event stream. */
@@ -512,6 +522,148 @@ export class MatrixDriver extends Driver {
       return;
     }
     await mx.deleteRoomTag(chatId, MATRIX_FAVOURITE_TAG);
+  }
+
+  async getChatMeetings(chatId: string): Promise<ChatMeeting[]> {
+    const { room } = this.requireRoom("getChatMeetings", chatId);
+    return getChatMeetingsFromRoom(room);
+  }
+
+  async startChatMeeting(
+    chatId: string,
+    createRoom: () => Promise<MeetRoom>,
+    options: StartMeetingOptions = {},
+  ): Promise<ChatMeeting> {
+    const { mx, room } = this.requireRoom("startChatMeeting", chatId);
+    const joinedRoomIds = await this.getJoinedRoomIds(mx);
+    if (!joinedRoomIds.has(chatId)) {
+      throw new Error(
+        `MatrixDriver.startChatMeeting: room "${chatId}" is not joined.`,
+      );
+    }
+    const now = Date.now();
+    const scheduledStart = options.startsAt?.getTime();
+    const isScheduled = scheduledStart !== undefined && scheduledStart > now;
+    if (!isScheduled) {
+      const ongoing = getChatMeetingsFromRoom(room).find((meeting) =>
+        isMeetingOngoing(meeting, now),
+      );
+      if (ongoing) {
+        return ongoing;
+      }
+    }
+    const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
+    // The Meet slug is unique per room: it doubles as the state key.
+    const { slug: meetingId, url } = await createRoom();
+    const title = options.title?.trim() || undefined;
+    const content: MeetingStateEventContent = {
+      meetingUrl: url,
+      startedAt: isScheduled ? scheduledStart : now,
+      organizerId: selfUserId,
+      ...(title ? { title } : {}),
+      ...(options.plannedDurationMinutes
+        ? { plannedDurationMinutes: options.plannedDurationMinutes }
+        : {}),
+    };
+    await mx.sendStateEvent(chatId, MEETING_EVENT_TYPE, content, meetingId);
+    return {
+      id: meetingId,
+      url,
+      organizerId: selfUserId,
+      ...(title ? { title } : {}),
+      startedAt: new Date(content.startedAt).toISOString(),
+      ...(content.plannedDurationMinutes
+        ? { plannedDurationMinutes: content.plannedDurationMinutes }
+        : {}),
+      documents: [],
+    };
+  }
+
+  async endChatMeeting(chatId: string, meetingId: string): Promise<void> {
+    await this.updateOwnMeeting("endChatMeeting", chatId, meetingId, () => ({
+      endedAt: Date.now(),
+    }));
+  }
+
+  async extendChatMeeting(
+    chatId: string,
+    meetingId: string,
+    minutes: number,
+  ): Promise<void> {
+    await this.updateOwnMeeting(
+      "extendChatMeeting",
+      chatId,
+      meetingId,
+      (content) => {
+        // Without a planned duration, the extension counts from now.
+        const elapsedMinutes = Math.ceil(
+          Math.max(0, Date.now() - content.startedAt) / 60000,
+        );
+        return {
+          plannedDurationMinutes:
+            (content.plannedDurationMinutes ?? elapsedMinutes) + minutes,
+        };
+      },
+    );
+  }
+
+  async renameChatMeeting(
+    chatId: string,
+    meetingId: string,
+    title: string,
+  ): Promise<void> {
+    const trimmed = title.trim();
+    await this.updateOwnMeeting("renameChatMeeting", chatId, meetingId, () => ({
+      title: trimmed || undefined,
+    }));
+  }
+
+  /**
+   * The connected user, when they may record a meeting in the room. Checked
+   * before creating a Meet room, which would otherwise be left unused when the
+   * homeserver refuses the state event.
+   */
+  private requireMeetingOrganizerRights(
+    mx: MatrixClient,
+    room: Room,
+    chatId: string,
+  ): string {
+    const selfUserId = mx.getUserId();
+    if (!selfUserId) {
+      throw new Error("MatrixDriver: no authenticated user.");
+    }
+    if (!room.currentState.maySendStateEvent(MEETING_EVENT_TYPE, selfUserId)) {
+      throw new MeetingNotAllowedError(chatId);
+    }
+    return selfUserId;
+  }
+
+  /** Rewrites one meeting's state, only for its organizer. */
+  private async updateOwnMeeting(
+    method: "endChatMeeting" | "extendChatMeeting" | "renameChatMeeting",
+    chatId: string,
+    meetingId: string,
+    change: (
+      content: MeetingStateEventContent,
+    ) => Partial<MeetingStateEventContent>,
+  ): Promise<void> {
+    const { mx, room } = this.requireRoom(method, chatId);
+    const content = getMeetingStateContent(room, meetingId);
+    if (!content) {
+      throw new Error(
+        `MatrixDriver.${method}: meeting "${meetingId}" not found in "${chatId}".`,
+      );
+    }
+    const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
+    if (content.organizerId !== selfUserId) {
+      throw new MeetingNotAllowedError(chatId);
+    }
+    await mx.sendStateEvent(
+      chatId,
+      MEETING_EVENT_TYPE,
+      { ...content, ...change(content) },
+      meetingId,
+    );
   }
 
   /**
@@ -740,6 +892,9 @@ export class MatrixDriver extends Driver {
       is_direct: isDirect,
       invite: participantIds,
       ...(name ? { name } : {}),
+      // Every member may start a meeting, which is recorded as room state
+      // (moderator-only by default).
+      power_level_content_override: { events: { [MEETING_EVENT_TYPE]: 0 } },
     });
 
     if (spaceId) {
@@ -901,79 +1056,6 @@ export class MatrixDriver extends Driver {
     }
   }
 
-  private mainTimelineEvents(window: TimelineWindow) {
-    return window.getEvents().filter(isMainTimelineMessage);
-  }
-
-  /**
-   * Matrix TimelineWindow installs a Room.timeline listener but exposes no
-   * disposal API. These windows are request-scoped, so retain and remove only
-   * the listener added by this constructor once the page or scan is complete.
-   */
-  private scopedTimelineWindow(mx: MatrixClient, room: Room) {
-    const existingListeners = new Set(room.listeners(RoomEvent.Timeline));
-    const window = new TimelineWindow(mx, room.getUnfilteredTimelineSet(), {
-      windowLimit: TIMELINE_WINDOW_LIMIT,
-    });
-    const windowListeners = room
-      .listeners(RoomEvent.Timeline)
-      .filter((listener) => !existingListeners.has(listener));
-
-    return {
-      window,
-      dispose: () => {
-        windowListeners.forEach((listener) =>
-          room.off(
-            RoomEvent.Timeline,
-            listener as unknown as RoomTimelineListener,
-          ),
-        );
-      },
-    };
-  }
-
-  private timelineWindowSignature(
-    window: TimelineWindow,
-    direction: typeof EventTimeline.BACKWARDS | typeof EventTimeline.FORWARDS,
-  ): string {
-    const events = window.getEvents();
-    const index = window.getTimelineIndex(direction);
-    return [
-      events.length,
-      events[0]?.getId() ?? "",
-      events[events.length - 1]?.getId() ?? "",
-      index?.index ?? "",
-      index?.timeline.getPaginationToken(direction) ?? "",
-      index?.timeline.getNeighbouringTimeline(direction) ? "linked" : "",
-    ].join(":");
-  }
-
-  /**
-   * Extends a contextual SDK window until the caller has enough displayable
-   * messages or the requested Matrix direction is genuinely exhausted.
-   */
-  private async extendTimelineWindow(
-    window: TimelineWindow,
-    direction: typeof EventTimeline.BACKWARDS | typeof EventTimeline.FORWARDS,
-    limit: number,
-    hasEnough: () => boolean,
-  ): Promise<void> {
-    for (let step = 0; step < MAX_TIMELINE_PAGINATION_STEPS; step += 1) {
-      if (hasEnough() || !window.canPaginate(direction)) {
-        return;
-      }
-      const before = this.timelineWindowSignature(window, direction);
-      await window.paginate(direction, limit, true, 20);
-      const after = this.timelineWindowSignature(window, direction);
-      if (before === after) {
-        return;
-      }
-    }
-    throw new Error(
-      "MatrixDriver: timeline pagination exceeded the safety limit.",
-    );
-  }
-
   private async mapMainTimelinePage(
     room: Room,
     pageEvents: MatrixEvent[],
@@ -1032,13 +1114,13 @@ export class MatrixDriver extends Driver {
       );
     }
     const targetId = anchorId ?? cursor ?? undefined;
-    const { window, dispose } = this.scopedTimelineWindow(mx, room);
+    const { window, dispose } = scopedTimelineWindow(mx, room);
     try {
       await window.load(targetId, anchorId ? limit : 1);
 
       const targetIndex = () =>
         targetId
-          ? this.mainTimelineEvents(window).findIndex(
+          ? mainTimelineEvents(window).findIndex(
               (event) => event.getId() === targetId,
             )
           : -1;
@@ -1054,13 +1136,13 @@ export class MatrixDriver extends Driver {
         // visible with enough history above it while reading can continue below.
         const olderTarget = Math.floor(limit / 3);
         const newerTarget = limit - olderTarget - 1;
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.BACKWARDS,
           limit,
           () => targetIndex() >= olderTarget,
         );
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.FORWARDS,
           limit,
@@ -1068,11 +1150,11 @@ export class MatrixDriver extends Driver {
             const index = targetIndex();
             return (
               index >= 0 &&
-              this.mainTimelineEvents(window).length - index - 1 >= newerTarget
+              mainTimelineEvents(window).length - index - 1 >= newerTarget
             );
           },
         );
-        const events = this.mainTimelineEvents(window);
+        const events = mainTimelineEvents(window);
         const index = events.findIndex((event) => event.getId() === anchorId);
         const startIndex = Math.max(
           0,
@@ -1096,16 +1178,16 @@ export class MatrixDriver extends Driver {
       }
 
       if (cursor && direction === "newer") {
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.FORWARDS,
           limit,
           () => {
-            const events = this.mainTimelineEvents(window);
+            const events = mainTimelineEvents(window);
             return events.length - targetIndex() - 1 >= limit;
           },
         );
-        const events = this.mainTimelineEvents(window);
+        const events = mainTimelineEvents(window);
         const startIndex = targetIndex() + 1;
         const available = events.slice(startIndex);
         const pageEvents = available.slice(0, limit);
@@ -1123,16 +1205,11 @@ export class MatrixDriver extends Driver {
         );
       }
 
-      await this.extendTimelineWindow(
-        window,
-        EventTimeline.BACKWARDS,
-        limit,
-        () => {
-          const events = this.mainTimelineEvents(window);
-          return cursor ? targetIndex() >= limit : events.length >= limit;
-        },
-      );
-      const events = this.mainTimelineEvents(window);
+      await extendTimelineWindow(window, EventTimeline.BACKWARDS, limit, () => {
+        const events = mainTimelineEvents(window);
+        return cursor ? targetIndex() >= limit : events.length >= limit;
+      });
+      const events = mainTimelineEvents(window);
       const endIndex = cursor ? targetIndex() : events.length;
       const startIndex = Math.max(0, endIndex - limit);
       const pageEvents = events.slice(startIndex, endIndex);
@@ -1172,12 +1249,12 @@ export class MatrixDriver extends Driver {
     boundaryId: string | null,
     selfUserId: string,
   ): Promise<ChatMainTimelineUnread | null> {
-    const { window, dispose } = this.scopedTimelineWindow(mx, room);
+    const { window, dispose } = scopedTimelineWindow(mx, room);
     try {
       try {
         await window.load(boundaryId ?? undefined, 1);
         if (boundaryId === null) {
-          await this.extendTimelineWindow(
+          await extendTimelineWindow(
             window,
             EventTimeline.BACKWARDS,
             DEFAULT_CHAT_PAGE_SIZE,
@@ -1187,7 +1264,7 @@ export class MatrixDriver extends Driver {
             return null;
           }
         }
-        await this.extendTimelineWindow(
+        await extendTimelineWindow(
           window,
           EventTimeline.FORWARDS,
           DEFAULT_CHAT_PAGE_SIZE,
@@ -2501,6 +2578,15 @@ export class MatrixDriver extends Driver {
     const onTags = (_event: MatrixEvent, room: Room) => {
       this.emit({ type: "tags:changed", chatId: room.roomId });
     };
+    const onRoomState = (event: MatrixEvent) => {
+      if (event.getType() !== MEETING_EVENT_TYPE) {
+        return;
+      }
+      const roomId = event.getRoomId();
+      if (roomId) {
+        this.emit({ type: "meeting:changed", chatId: roomId });
+      }
+    };
     const onAccountData = (event: MatrixEvent, room: Room) => {
       if (event.getType() === EventType.FullyRead) {
         emitMainTimelineUnread(room);
@@ -2605,6 +2691,7 @@ export class MatrixDriver extends Driver {
     mx.on(RoomMemberEvent.Typing, onTyping);
     mx.on(RoomMemberEvent.PowerLevel, onPowerLevel);
     mx.on(RoomStateEvent.Members, onMembers);
+    mx.on(RoomStateEvent.Events, onRoomState);
     mx.on(RoomEvent.Name, onName);
     mx.on(RoomEvent.Tags, onTags);
     mx.on(RoomEvent.AccountData, onAccountData);
@@ -2627,6 +2714,7 @@ export class MatrixDriver extends Driver {
       mx.off(RoomMemberEvent.Typing, onTyping);
       mx.off(RoomMemberEvent.PowerLevel, onPowerLevel);
       mx.off(RoomStateEvent.Members, onMembers);
+      mx.off(RoomStateEvent.Events, onRoomState);
       mx.off(RoomEvent.Name, onName);
       mx.off(RoomEvent.Tags, onTags);
       mx.off(RoomEvent.AccountData, onAccountData);

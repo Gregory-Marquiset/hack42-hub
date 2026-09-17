@@ -24,18 +24,40 @@ export type SearchSnapshot = {
 type StoredSnapshot = Omit<SearchSnapshot, "format"> & { format: string };
 type Lease = { owner: string; generation: number; expires: number };
 
-const requestValue = <T>(request: IDBRequest<T>): Promise<T> =>
+export const requestValue = <T>(request: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 
-const transactionDone = (transaction: IDBTransaction): Promise<void> =>
+export const transactionDone = (transaction: IDBTransaction): Promise<void> =>
   new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error);
   });
+
+/**
+ * SearchStorage and MessageSearchStorage open separate connections to the
+ * same database name, so whichever connection wins the upgrade race must
+ * create every store either side needs. Guarded by `contains` so this stays
+ * safe to call again as later versions add stores.
+ */
+export const SEARCH_DB_VERSION = 2;
+
+export const upgradeSearchSchema = (db: IDBDatabase): void => {
+  if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
+  if (!db.objectStoreNames.contains("rooms"))
+    db.createObjectStore("rooms", { keyPath: "id" });
+  if (!db.objectStoreNames.contains("messages")) {
+    const messages = db.createObjectStore("messages", {
+      keyPath: ["roomId", "eventId"],
+    });
+    messages.createIndex("roomId", "roomId");
+  }
+  if (!db.objectStoreNames.contains("messageBackfill"))
+    db.createObjectStore("messageBackfill", { keyPath: "roomId" });
+};
 
 export const searchDatabaseName = (
   owner: string,
@@ -76,11 +98,8 @@ export class SearchStorage {
           }
         };
       }
-      const request = indexedDB.open(this.name, 1);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore("meta");
-        request.result.createObjectStore("rooms", { keyPath: "id" });
-      };
+      const request = indexedDB.open(this.name, SEARCH_DB_VERSION);
+      request.onupgradeneeded = () => upgradeSearchSchema(request.result);
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         let expired = false;
         const timer = setTimeout(() => {

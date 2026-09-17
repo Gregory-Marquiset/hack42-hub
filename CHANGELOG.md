@@ -17,6 +17,9 @@ and this project adheres to
 - ✨(search) Show a matching message's own conversation (avatar and name)
   in its search result row, and use the app's own design tokens instead
   of a temporary placeholder style.
+- ✨(frontend) Name a meeting, plan its duration or schedule it ahead,
+  follow its progress in the meeting window, and let its organizer rename,
+  extend or close it.
 - ✨(bots) Add Ariane, an assistant reachable from any room with `@Ariane`.
   She answers only when addressed, reads the thread and the recent room
   history for context, and changes register with `/juriste`, `/avocat`,
@@ -30,6 +33,17 @@ and this project adheres to
 - ✨(frontend) Show real profile/group photos in the account menu, chat
   header and members list. Reorder the account menu, add Direct messages
   filter tabs, and fix the language picker only applying French.
+- ✨(frontend) Open a meetings panel from the conversation header, with the
+  meetings list, a creation form and the history of past meetings and their
+  documents. The call is now started from "Start now" in that form.
+- ✨(frontend) Start a temporary meeting from a conversation, shown in a Meet
+  window inside the Hub that can be minimized to keep using the Hub during the
+  call. Record the call in the Matrix room so every member can rejoin it.
+- ✨(frontend) Attach .txt or .md files to the agenda and the documents of a
+  new meeting. Add documents by link from the Docs button.
+- ✨(backend) Create Meet rooms through the Meet external API. Add the
+  `/meetings/` endpoint, enabled once the Meet application credentials are set.
+  Rooms are public by default so they can be joined from an embedded frame.
 - ✨(frontend) Search joined conversations by name and current participants.
   Persist the search index separately and prepare small rooms progressively.
   Add a QuickSearch modal with local results across connected accounts.
@@ -38,6 +52,10 @@ and this project adheres to
   Discord-style filters (`from:`, `mentions:`, `has:`, `before:`/`during:`/
   `after:`). Show matches in a "Messages" section of the search modal with
   highlighted excerpts.
+- ✨(search) Persist the message search index to IndexedDB so it survives a
+  page reload. Backfill a room's older history (up to 200 messages or 90
+  days, whichever comes first) automatically when it is opened, or on demand
+  per room from the search modal, with indexing progress shown per room.
 - ✨(frontend) Notify incoming messages, thread replies and invitations.
   Play sound on receipt and show browser notifications when Hub is unfocused.
   Request permission on incoming activity with a user-gesture fallback.
@@ -81,6 +99,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Let every member start a meeting in conversations created by
+  the Hub, and explain the refusal before creating a Meet room elsewhere.
 - 🐛(frontend) Restore unread navigation in conversations without a read marker
 - 🐛(frontend) Keep the thread root message toolbar fully accessible
 - 🐛(frontend) Follow Matrix timeline and count updates for deleted thread

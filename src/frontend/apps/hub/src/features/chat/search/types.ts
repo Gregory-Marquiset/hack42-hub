@@ -95,6 +95,25 @@ export type MessageSearchPage = {
   total: number;
 };
 
+export type MessageBackfillStatus =
+  | "pending"
+  | "backfilling"
+  | "done"
+  | "error";
+
+export type MessageBackfillState = {
+  roomId: string;
+  status: MessageBackfillStatus;
+  messageCount: number;
+  oldestTimestamp?: number;
+};
+
+export type RoomBackfillInfo = {
+  roomId: string;
+  roomName: string;
+  status: MessageBackfillStatus;
+};
+
 export type MessageSearchStatus = {
   freshness: SearchFreshness;
   storageAvailable: boolean;
@@ -102,6 +121,7 @@ export type MessageSearchStatus = {
   roomsBackfilled: number;
   roomsPending: number;
   hasFailures: boolean;
+  pendingRooms: RoomBackfillInfo[];
 };
 
 export const EMPTY_MESSAGE_SEARCH_STATUS: MessageSearchStatus = {
@@ -111,4 +131,5 @@ export const EMPTY_MESSAGE_SEARCH_STATUS: MessageSearchStatus = {
   roomsBackfilled: 0,
   roomsPending: 0,
   hasFailures: false,
+  pendingRooms: [],
 };

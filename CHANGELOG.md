@@ -8,6 +8,15 @@ and this project adheres to
 
 ### Added
 
+- ✨(bots) Answer `@Ariane` in the chat of a meeting call, from what was said
+  and written in the call since the person asking arrived.
+- ✨(meetings) Close a meeting on its own once its planned end has passed
+  and nobody is left in the call, and let every member of the conversation
+  download the archive of a closed meeting: agenda, participants, documents,
+  transcript and call chat.
+- ✨(meetings) Save the transcript of a meeting in Docs when its organizer
+  closes it, and list it in the meeting documents. A scribe service relays
+  the live subtitles of the Hub meetings to the backend.
 - ✨(frontend) Add real-time Matrix presence and availability controls
 - ✨(frontend) Create a new Espace or Salon from the left panel, alongside
   direct messages: a round "+" next to the espace switcher, and one next

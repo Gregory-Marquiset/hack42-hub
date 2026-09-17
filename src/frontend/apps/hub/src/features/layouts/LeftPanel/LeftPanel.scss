@@ -25,14 +25,17 @@
     background: var(--c--contextuals--background--surface--tertiary, #f6f8f9);
   }
 
-  &__scroll {
+  // Single scrollbar for the whole panel body: Direct messages and Rooms
+  // used to each scroll on their own (a capped list, and a flex-grow list);
+  // now they're normal-flow content inside one shared scroll area.
+  &__body {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 8px;
     padding: 0 0 8px;
   }
 
@@ -41,16 +44,6 @@
     align-items: center;
     gap: 8px;
     padding: 0 12px;
-
-    &__label {
-      font-size: 20px;
-      font-weight: 700;
-      line-height: 26px;
-      color: var(
-        --c--contextuals--content--semantic--neutral--primary,
-        #222631
-      );
-    }
   }
 
   &__actions {
@@ -113,7 +106,10 @@
     }
   }
 
-  &__dm-section {
+  // Shared by the Direct messages and Rooms collapsible headers — same
+  // hover, same chevron-toggle interaction. Both are normal-flow content
+  // inside `&__body`, which owns the panel's single shared scrollbar.
+  &__section {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -206,13 +202,6 @@
         min-height: 0;
         overflow: hidden;
       }
-
-      .hub__left-panel__list {
-        overflow: hidden;
-        overflow-y: auto;
-        min-height: 0;
-        max-height: 240px;
-      }
     }
 
     &__empty {
@@ -227,26 +216,14 @@
     }
 
     &[data-open="false"] {
-      .hub__left-panel__dm-section__chevron {
+      .hub__left-panel__section__chevron {
         transform: rotate(-90deg);
       }
 
-      .hub__left-panel__dm-section__panel {
+      .hub__left-panel__section__panel {
         grid-template-rows: 0fr;
       }
     }
-  }
-
-  &__rooms-title {
-    display: block;
-    padding: 4px 12px 0;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 16px;
-    color: var(
-      --c--contextuals--content--semantic--neutral--secondary,
-      #555e74
-    );
   }
 
   &__spaces {
@@ -605,9 +582,21 @@
   }
 }
 
+// The "New" button's dropdown (Direct message / Space / Room) is portaled
+// to <body> by the shared DropdownMenu component, so it can't be reached by
+// an ancestor selector under .hub__left-panel. It defaults to a narrow,
+// content-fit width anchored flush with the trigger; this widens it to
+// match the panel's own side padding (12px) on both edges, which also
+// centers it under the 300px-wide panel instead of hugging the trigger.
+// `left`/`width` need `!important` to beat react-aria's inline position.
+.react-aria-Popover:has([data-testid="hub-new-menu-direct-message"]) {
+  left: 12px !important;
+  width: 276px !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .hub__left-panel__dm-section__panel,
-  .hub__left-panel__dm-section__toggle svg {
+  .hub__left-panel__section__panel,
+  .hub__left-panel__section__chevron {
     transition: none;
   }
 }

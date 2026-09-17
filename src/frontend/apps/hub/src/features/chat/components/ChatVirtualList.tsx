@@ -1,4 +1,5 @@
 import { ArrowDown } from "@gouvfr-lasuite/ui-components/icons";
+import clsx from "clsx";
 import { useRouter } from "next/router";
 import {
   memo,
@@ -43,6 +44,9 @@ const VISIBILITY_SETTLE_MS = 150;
 const READ_DWELL_MS = 250;
 // A message qualifies as visible only when 60% of its rendered height is shown.
 const MESSAGE_VISIBILITY_RATIO = 0.6;
+// How long a jumped-to message stays flashed (kept in sync with the CSS
+// animation duration in ChatVirtualList.scss).
+const MESSAGE_HIGHLIGHT_MS = 2800;
 
 type SkeletonState = "visible" | "leaving" | "hidden";
 type UnreadViewportState = "unknown" | "all-visible" | "needs-navigation";
@@ -107,12 +111,16 @@ export const ChatVirtualList = ({
   const visibilityRafRef = useRef<number | null>(null);
   const visibilityTimerRef = useRef<number | null>(null);
   const readDwellTimerRef = useRef<number | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
   const [unreadViewportState, setUnreadViewportState] =
     useState<UnreadViewportState>("unknown");
   const [unreadSeparator, setUnreadSeparator] =
     useState<UnreadSeparatorState | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [highlightedEventId, setHighlightedEventId] = useState<string | null>(
+    null,
+  );
   const unreadSeparatorEventId =
     unreadSeparator?.chatKey === chatKey ? unreadSeparator.eventId : null;
 
@@ -125,6 +133,26 @@ export const ChatVirtualList = ({
       readDwellTimerRef.current = null;
     }
   }, []);
+
+  const highlightMessage = useCallback((eventId: string) => {
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    setHighlightedEventId(eventId);
+    highlightTimerRef.current = window.setTimeout(() => {
+      highlightTimerRef.current = null;
+      setHighlightedEventId(null);
+    }, MESSAGE_HIGHLIGHT_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const releaseHiddenSeparatorOutsideViewport = useCallback(() => {
     const scroller = scrollerRef.current;
@@ -480,8 +508,8 @@ export const ChatVirtualList = ({
   }, [handleNavigateToUnread]);
 
   // Jump straight to a message referenced from search (`?event=` on the
-  // `/chat` URL, carried by `ChatRef.eventId`), then clear the URL so
-  // revisiting this chat later doesn't re-trigger the jump. Reading
+  // `/chat` URL, carried by `ChatRef.eventId`), then flash it and clear the
+  // URL so revisiting this chat later doesn't re-trigger the jump. Reading
   // the primitive `eventId` (not `chatRef` itself, a fresh object every
   // render) as a dep means this only fires when it actually changes — so it
   // won't cancel an in-flight `openAround` on an unrelated re-render, and it
@@ -506,9 +534,12 @@ export const ChatVirtualList = ({
       if (cancelled) {
         return;
       }
-      scrollToEvent(targetEventId, () => {
+      scrollToEvent(targetEventId, (found) => {
         if (cancelled) {
           return;
+        }
+        if (found) {
+          highlightMessage(targetEventId);
         }
         // Only clear the URL once the scroll was actually issued: changing
         // `chatRef` identity any earlier would cancel it first (see
@@ -529,6 +560,7 @@ export const ChatVirtualList = ({
   }, [
     chatRef.accountId,
     chatRef.chatId,
+    highlightMessage,
     isInitialLoading,
     openAround,
     router,
@@ -707,6 +739,7 @@ export const ChatVirtualList = ({
                 isUnreadSeparatorVisible={
                   hasSeparator && unreadSeparator?.isVisible === true
                 }
+                isHighlighted={message.id === highlightedEventId}
               />
             );
           }}
@@ -745,6 +778,7 @@ type RowProps = {
   authorsById: Map<string, ChatMessageAuthor>;
   hasUnreadSeparator: boolean;
   isUnreadSeparatorVisible: boolean;
+  isHighlighted: boolean;
 };
 
 const Row = memo(function Row({
@@ -755,6 +789,7 @@ const Row = memo(function Row({
   authorsById,
   hasUnreadSeparator,
   isUnreadSeparatorVisible,
+  isHighlighted,
 }: RowProps) {
   const isSent = message.authorId === "me";
   const isFirstOfGroup =
@@ -772,6 +807,7 @@ const Row = memo(function Row({
         messageId={message.id}
         hasUnreadSeparator={hasUnreadSeparator}
         isUnreadSeparatorVisible={isUnreadSeparatorVisible}
+        isHighlighted={isHighlighted}
       >
         <ChatBubble
           variant="sent"
@@ -800,6 +836,7 @@ const Row = memo(function Row({
       messageId={message.id}
       hasUnreadSeparator={hasUnreadSeparator}
       isUnreadSeparatorVisible={isUnreadSeparatorVisible}
+      isHighlighted={isHighlighted}
     >
       <ChatBubble
         variant="received"
@@ -826,13 +863,20 @@ const RowShell = ({
   messageId,
   hasUnreadSeparator,
   isUnreadSeparatorVisible,
+  isHighlighted,
 }: {
   children: React.ReactNode;
   messageId: string;
   hasUnreadSeparator: boolean;
   isUnreadSeparatorVisible: boolean;
+  isHighlighted: boolean;
 }) => (
-  <div className="hub__chat-conversation__row" data-chat-message-id={messageId}>
+  <div
+    className={clsx("hub__chat-conversation__row", {
+      "hub__chat-conversation__row--highlighted": isHighlighted,
+    })}
+    data-chat-message-id={messageId}
+  >
     <div className="hub__chat-conversation__row-inner">
       {hasUnreadSeparator && (
         <UnreadSeparator visible={isUnreadSeparatorVisible} />

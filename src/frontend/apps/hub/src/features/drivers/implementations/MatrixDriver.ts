@@ -83,6 +83,7 @@ import {
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMeeting,
+  ChatFile,
   ChatMeetingDocument,
   ChatMessage,
   ChatMember,
@@ -149,6 +150,11 @@ import {
   MEETING_EVENT_TYPE,
   type MeetingStateEventContent,
 } from "./matrixMeetingMapping";
+import {
+  downloadRoomFile,
+  listRoomFiles,
+  uploadRoomFile,
+} from "./matrixRoomFiles";
 import {
   clearStoredConversationSearch,
   MATRIX_USER_STORAGE_KEY,
@@ -329,6 +335,7 @@ export class MatrixDriver extends Driver {
   override readonly supportsSpaces: boolean = true;
   override readonly supportsSpaceCreation: boolean = true;
   override readonly supportsMeetings: boolean = true;
+  override readonly supportsChatFiles: boolean = true;
   // Rust Crypto is initialised in `initMatrix`, so this driver can create
   // encrypted rooms and read them back within a session.
   override readonly supportsEncryption: boolean = true;
@@ -647,6 +654,22 @@ export class MatrixDriver extends Driver {
         };
       },
     );
+  }
+
+  async getChatFiles(chatId: string): Promise<ChatFile[]> {
+    const { mx, room } = this.requireRoom("getChatFiles", chatId);
+    return listRoomFiles(mx, room, room.hasEncryptionStateEvent());
+  }
+
+  async uploadChatFile(chatId: string, file: File): Promise<ChatFile> {
+    const { mx, room } = this.requireRoom("uploadChatFile", chatId);
+    // An encrypted room keeps its documents encrypted too.
+    return uploadRoomFile(mx, room, file, room.hasEncryptionStateEvent());
+  }
+
+  async downloadChatFile(chatId: string, fileId: string): Promise<Blob> {
+    const { mx } = this.requireRoom("downloadChatFile", chatId);
+    return downloadRoomFile(mx, chatId, fileId);
   }
 
   async getOpenIdToken(): Promise<string> {

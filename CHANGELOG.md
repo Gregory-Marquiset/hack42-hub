@@ -8,6 +8,9 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Share documents from the device in the Documents tab of a
+  conversation with its "+" button, list them and download them. They are
+  encrypted in the browser when the conversation is.
 - ✨(frontend) Open a whiteboard next to the call in the meeting window. The
   Excalidraw room is derived from the meeting, so every participant lands on
   the same board, and it is self-hosted alongside its collaboration server

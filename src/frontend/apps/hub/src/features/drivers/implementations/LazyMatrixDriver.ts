@@ -27,6 +27,7 @@ import type {
   AccountId,
   ChatMainTimelineUnread,
   ChatMeeting,
+  ChatFile,
   ChatMeetingDocument,
   ChatMessage,
   ChatMessagesPage,
@@ -126,6 +127,7 @@ export class LazyMatrixDriver extends BaseDriver {
   // Static capability mirroring the real `MatrixDriver`, read by the meeting
   // button before the SDK lazy-loads.
   override readonly supportsMeetings = true;
+  override readonly supportsChatFiles = true;
 
   private target: Driver | null = null;
   private targetPromise: Promise<Driver> | null = null;
@@ -377,6 +379,21 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) =>
       driver.endChatMeeting(chatId, meetingId),
     );
+  }
+
+  override async getChatFiles(chatId: string): Promise<ChatFile[]> {
+    return this.withTarget((driver) => driver.getChatFiles(chatId));
+  }
+
+  override async uploadChatFile(chatId: string, file: File): Promise<ChatFile> {
+    return this.withTarget((driver) => driver.uploadChatFile(chatId, file));
+  }
+
+  override async downloadChatFile(
+    chatId: string,
+    fileId: string,
+  ): Promise<Blob> {
+    return this.withTarget((driver) => driver.downloadChatFile(chatId, fileId));
   }
 
   override async getOpenIdToken(): Promise<string> {

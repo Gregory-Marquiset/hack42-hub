@@ -14,6 +14,7 @@ import {
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMeeting,
+  ChatFile,
   ChatMeetingDocument,
   ChatMessage,
   ChatMessageAuthor,
@@ -289,6 +290,35 @@ export abstract class Driver {
   readonly supportsSpaceCreation: boolean = false;
   /** Whether the driver can start/list meetings for a conversation. */
   readonly supportsMeetings: boolean = false;
+
+  /** Whether documents can be shared in a conversation. */
+  readonly supportsChatFiles: boolean = false;
+
+  /** The documents shared in a conversation, newest first. */
+  async getChatFiles(_chatId: string): Promise<ChatFile[]> {
+    void _chatId;
+    throw new Error(
+      `${this.constructor.name}.getChatFiles: documents are not supported by this driver.`,
+    );
+  }
+
+  /** Shares a document from the user's device in a conversation. */
+  async uploadChatFile(_chatId: string, _file: File): Promise<ChatFile> {
+    void _chatId;
+    void _file;
+    throw new Error(
+      `${this.constructor.name}.uploadChatFile: documents are not supported by this driver.`,
+    );
+  }
+
+  /** The content of a shared document, decrypted when needed. */
+  async downloadChatFile(_chatId: string, _fileId: string): Promise<Blob> {
+    void _chatId;
+    void _fileId;
+    throw new Error(
+      `${this.constructor.name}.downloadChatFile: documents are not supported by this driver.`,
+    );
+  }
 
   constructor(accountId: AccountId = "default") {
     this.accountId = accountId;

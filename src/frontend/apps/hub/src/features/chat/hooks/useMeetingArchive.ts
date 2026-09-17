@@ -7,16 +7,7 @@ import { getRegistry } from "@/features/drivers/DriverRegistry";
 import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
-/** Hands a file to the browser as a download. */
-const saveFile = (blob: Blob, fileName: string) => {
-  const href = URL.createObjectURL(blob);
-  const link = window.document.createElement("a");
-  link.href = href;
-  link.download = fileName;
-  link.click();
-  // Some browsers read the link after the click handler returns.
-  window.setTimeout(() => URL.revokeObjectURL(href), 0);
-};
+import { saveFile } from "../saveFile";
 
 export type UseMeetingArchiveResult = {
   /** Downloads the archive of a closed meeting of the conversation. */

@@ -31,9 +31,10 @@
   // bottom so the list can grow without the button moving.
   &__rail {
     flex: 0 0 auto;
-    // 1px of it is the border: 48 + 2x9 padding + 30 bubble left the bubble
-    // half a pixel off the whole-pixel grid, which is a blurred circle.
-    width: 49px;
+    // 1px of it is the border, so this is 52px of room: 2x8 padding around a
+    // 36px bubble, every edge on a whole pixel (a half pixel is a blurred
+    // circle).
+    width: 53px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -55,7 +56,7 @@
       align-self: stretch;
       box-sizing: border-box;
       min-height: 0;
-      padding: 6px 9px;
+      padding: 6px 8px;
       overflow-y: auto;
       scrollbar-width: none;
 
@@ -86,11 +87,11 @@
       // white-grounded logo inside and the border removed, a bubble was a
       // white disc on the panel's near-white grey - 1.07:1, no edge at all.
       .hub__avatar {
-        width: 30px;
-        height: 30px;
+        width: 36px;
+        height: 36px;
 
         .material-icons {
-          font-size: 18px;
+          font-size: 22px;
         }
 
         // A logo is not a face: `cover` scaled the 445x156 La Suite wordmark
@@ -151,34 +152,35 @@
       font-variant-numeric: tabular-nums;
     }
 
+    // A bubble like the espaces above it, so it reads as "one more of these",
+    // and filled rather than dashed-and-transparent: a dashed outline on the
+    // panel's own grey barely registered as a button at all.
     &__add {
       appearance: none;
       flex: 0 0 auto;
-      width: 30px;
-      height: 30px;
+      width: 36px;
+      height: 36px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: 1px dashed
+      border: 1.5px solid
         var(--c--contextuals--border--surface--primary, #dfe2ea);
       border-radius: 50%;
-      background: transparent;
+      background: var(--c--contextuals--background--surface--primary, #fff);
       cursor: pointer;
-      color: var(
-        --c--contextuals--content--semantic--neutral--secondary,
-        #555e74
-      );
+      color: var(--c--contextuals--content--semantic--brand--primary, #3e5de7);
 
       svg {
-        width: 16px;
-        height: 16px;
+        width: 20px;
+        height: 20px;
       }
 
       &:hover {
-        background: var(
-          --c--contextuals--background--surface--secondary,
-          #eef0f5
+        border-color: var(
+          --c--contextuals--border--semantic--brand--primary,
+          #3e5de7
         );
+        background: var(--c--globals--colors--brand-050, #edf0ff);
       }
 
       &:focus-visible {
@@ -196,7 +198,8 @@
   // never scrolls with them, so the panel gains its width rather than
   // borrowing it from the conversations.
   flex-direction: column;
-  width: 349px;
+  flex: 0 0 auto;
+  width: 353px;
   height: 100dvh;
   min-height: 0;
   padding: 0;

@@ -21,6 +21,8 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(frontend) Show an espace's own avatar on the rail, falling back to its
+  initials, and move the brand to the panel's corner above the rail.
 - ♻️(frontend) Rebuild the side panel around three fixed lists - Favourites,
   Rooms, Direct messages - each showing its five most recent, with a "see all"
   that gives it the whole panel and a scrollbar, and the espaces on a rail

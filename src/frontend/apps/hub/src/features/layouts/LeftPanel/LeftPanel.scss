@@ -1,4 +1,23 @@
 .hub__left-panel {
+  // The brand caps the panel; the rail and the lists share what is left.
+  &__brand {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    height: 56px;
+    padding: 0 12px;
+    border-bottom: 1px solid
+      var(--c--contextuals--border--surface--primary, #dfe2ea);
+  }
+
+  &__main {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   &__column {
     display: flex;
     flex-direction: column;
@@ -142,10 +161,10 @@
   --hub-lp-radius: 4px;
 
   display: flex;
-  // Rail on the edge, then the column of lists. The rail is fixed-width and
+  // The brand, then the rail beside the lists. The rail is fixed-width and
   // never scrolls with them, so the panel gains its width rather than
-  // borrowing it from the lists.
-  flex-direction: row;
+  // borrowing it from the conversations.
+  flex-direction: column;
   width: 356px;
   height: 100dvh;
   min-height: 0;

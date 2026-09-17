@@ -10,11 +10,12 @@ import { readChatRef, readSpaceId, spaceHref } from "@/features/chat/chatRefs";
 import { CreateSalonModal } from "@/features/chat/components/CreateSalonModal";
 import { CreateSpaceModal } from "@/features/chat/components/CreateSpaceModal";
 import { countUnread, formatUnreadBadge } from "@/features/chat/unreadBadge";
+import { useAvatarSrc } from "@/features/chat/hooks/useAvatarSrc";
 import { useChatUnread } from "@/features/chat/hooks/useChatUnread";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useSpaces } from "@/features/chat/hooks/useSpaces";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
-import type { Space } from "@/features/drivers/types";
+import type { AccountId, ChatVisual, Space } from "@/features/drivers/types";
 import { AccountSelector } from "@/features/layouts/components/AccountSelector/AccountSelector";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
 import { LanguagePickerUserMenu } from "@/features/ui/components/user-profile/LanguagePickerUserMenu";
@@ -135,72 +136,75 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
 
   return (
     <aside className="hub__left-panel" aria-label={t("Side panel")}>
-      <SpacesRail
-        spaces={spaces}
-        activeSpaceId={activeSpaceId}
-        canCreateSpace={canCreateSpace}
-        onCreateSpace={() => setIsSpaceModalOpen(true)}
-        unreadOfSpace={unreadOfSpace}
-        unreadTotal={unreadTotal}
-      />
-      <div className="hub__left-panel__column">
-        <div className="hub__left-panel__top">
-          <div className="hub__left-panel__logo">
-            <TchapLogo />
+      {/* The brand sits in the corner and everything else hangs below it,
+          rail included: it names the product once, and belongs to no list. */}
+      <div className="hub__left-panel__brand">
+        <TchapLogo />
+      </div>
+      <div className="hub__left-panel__main">
+        <SpacesRail
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          canCreateSpace={canCreateSpace}
+          onCreateSpace={() => setIsSpaceModalOpen(true)}
+          unreadOfSpace={unreadOfSpace}
+          unreadTotal={unreadTotal}
+        />
+        <div className="hub__left-panel__column">
+          <div className="hub__left-panel__top">
+            <nav
+              className="hub__left-panel__actions"
+              aria-label={t("Quick actions")}
+            >
+              {actions.map((action) => (
+                <ActionRow key={action.id} action={action} />
+              ))}
+            </nav>
           </div>
 
-          <nav
-            className="hub__left-panel__actions"
-            aria-label={t("Quick actions")}
-          >
-            {actions.map((action) => (
-              <ActionRow key={action.id} action={action} />
-            ))}
-          </nav>
-        </div>
-
-        {/* Three fixed lists, each showing its five most recent. "See all"
+          {/* Three fixed lists, each showing its five most recent. "See all"
           gives one of them the whole panel and its own scrollbar: three lists
           sharing one is what made the old panel hard to read. */}
-        <div
-          className="hub__left-panel__body"
-          data-expanded={expanded ?? undefined}
-        >
-          {SECTIONS.filter(
-            ({ id }) => expanded === null || expanded === id,
-          ).map(({ id, title, add }) => (
-            <LeftPanelSection
-              key={id}
-              title={t(title)}
-              chats={filterChatsBySpace(sections[id], activeChatIds)}
-              isExpanded={expanded === id}
-              onToggleExpanded={() =>
-                setExpanded((current) => (current === id ? null : id))
-              }
-              spaceId={activeSpaceId}
-              unreadLookup={unreadLookup}
-              accountLabels={accountLabels}
-              showAccountLabels={showAccountLabels}
-              addLabel={add && canCreateSalon ? t(add) : undefined}
-              onAdd={
-                add && canCreateSalon
-                  ? () => setIsSalonModalOpen(true)
-                  : undefined
-              }
-            />
-          ))}
-        </div>
+          <div
+            className="hub__left-panel__body"
+            data-expanded={expanded ?? undefined}
+          >
+            {SECTIONS.filter(
+              ({ id }) => expanded === null || expanded === id,
+            ).map(({ id, title, add }) => (
+              <LeftPanelSection
+                key={id}
+                title={t(title)}
+                chats={filterChatsBySpace(sections[id], activeChatIds)}
+                isExpanded={expanded === id}
+                onToggleExpanded={() =>
+                  setExpanded((current) => (current === id ? null : id))
+                }
+                spaceId={activeSpaceId}
+                unreadLookup={unreadLookup}
+                accountLabels={accountLabels}
+                showAccountLabels={showAccountLabels}
+                addLabel={add && canCreateSalon ? t(add) : undefined}
+                onAdd={
+                  add && canCreateSalon
+                    ? () => setIsSalonModalOpen(true)
+                    : undefined
+                }
+              />
+            ))}
+          </div>
 
-        <div className="hub__left-panel__footer">
-          <AccountSelector />
-          <div className="hub__left-panel__footer__end">
-            <Button
-              variant="tertiary"
-              color="neutral"
-              icon={<QuestionMark size={24} />}
-              aria-label={t("Help")}
-            />
-            <LanguagePickerUserMenu />
+          <div className="hub__left-panel__footer">
+            <AccountSelector />
+            <div className="hub__left-panel__footer__end">
+              <Button
+                variant="tertiary"
+                color="neutral"
+                icon={<QuestionMark size={24} />}
+                aria-label={t("Help")}
+              />
+              <LanguagePickerUserMenu />
+            </div>
           </div>
         </div>
       </div>
@@ -263,6 +267,36 @@ const ActionRow = ({ action }: { action: ActionItem }) => {
  * because a conversation needs no espace, and the "+" at the bottom so the
  * list of espaces can grow downwards without the button moving.
  */
+/**
+ * An espace's face on the rail: its avatar when it has one, its initials on a
+ * colour derived from the name otherwise. `useAvatarSrc` turns the `mxc://`
+ * into something the browser can load.
+ */
+const SpaceAvatar = ({
+  accountId,
+  label,
+  visual,
+}: {
+  accountId: AccountId;
+  label: string;
+  visual?: ChatVisual;
+}) => {
+  const src = useAvatarSrc(accountId, visual ?? { kind: "initials" });
+  if (visual?.kind === "image") {
+    return <Avatar label={label} src={src} decorative />;
+  }
+  if (visual?.kind === "icon") {
+    return (
+      <Avatar label={label} decorative>
+        <span className="material-icons" aria-hidden="true">
+          {visual.icon}
+        </span>
+      </Avatar>
+    );
+  }
+  return <Avatar label={label} decorative />;
+};
+
 const SpacesRail = ({
   spaces,
   activeSpaceId,
@@ -295,7 +329,8 @@ const SpacesRail = ({
     label: string,
     isActive: boolean,
     unread: number,
-    icon?: string,
+    visual?: ChatVisual,
+    accountId: AccountId = "",
   ) => (
     <Link
       key={key}
@@ -313,13 +348,7 @@ const SpacesRail = ({
         isActive && "hub__left-panel__rail__item--active",
       )}
     >
-      <Avatar label={label} decorative>
-        {icon ? (
-          <span className="material-icons" aria-hidden="true">
-            {icon}
-          </span>
-        ) : undefined}
-      </Avatar>
+      <SpaceAvatar accountId={accountId} label={label} visual={visual} />
       {unread > 0 && (
         // The words are in the link's label; this is for the eye.
         <span className="hub__left-panel__rail__badge" aria-hidden="true">
@@ -338,7 +367,7 @@ const SpacesRail = ({
           t("All conversations"),
           activeSpaceId === null,
           unreadTotal,
-          "forum",
+          { kind: "icon", icon: "forum" },
         )}
         {spaces.length > 0 && (
           <span
@@ -353,6 +382,8 @@ const SpacesRail = ({
             space.name,
             space.id === activeSpaceId,
             unreadOfSpace(space),
+            space.visual,
+            space.accountId,
           ),
         )}
       </div>

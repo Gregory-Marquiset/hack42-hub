@@ -11,7 +11,9 @@ import { useTranslation } from "react-i18next";
 
 import { chatHref } from "@/features/chat/chatRefs";
 import { SelectedUserChip } from "@/features/chat/components/SelectedUserChip";
+import { useAssistant } from "@/features/chat/hooks/useAssistant";
 import { useComposerAccountId } from "@/features/chat/hooks/useChatAccounts";
+import { useChatEncryptionSupport } from "@/features/chat/hooks/useChatEncryptionSupport";
 import { useChatUserSearch } from "@/features/chat/hooks/useChatUserSearch";
 import { useCreateChatForUsers } from "@/features/chat/hooks/useCreateChatForUsers";
 import type { ChatUser, Space } from "@/features/drivers/types";
@@ -41,7 +43,10 @@ export const CreateSalonModal = ({
   const router = useRouter();
   const accountId = useComposerAccountId();
   const { createChatForUsers, isCreating } = useCreateChatForUsers(accountId);
+  const canEncrypt = useChatEncryptionSupport(accountId);
+  const assistant = useAssistant();
   const [spaceId, setSpaceId] = useState<string | null>(defaultSpaceId);
+  const [encrypted, setEncrypted] = useState(false);
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<ChatUser[]>([]);
@@ -70,6 +75,7 @@ export const CreateSalonModal = ({
     setName("");
     setQuery("");
     setSelectedUsers([]);
+    setEncrypted(false);
   };
 
   const close = () => {
@@ -101,6 +107,11 @@ export const CreateSalonModal = ({
         // A named salon is always a genuinely new room, even if the same
         // people already share an unrelated chat elsewhere.
         forceNew: true,
+        encrypted,
+        // The driver invites her into a clear room and leaves an encrypted one
+        // alone: she could not read it, and a member she cannot follow would
+        // only be a lie in the list.
+        assistantUserId: assistant.userId || undefined,
       },
     )
       .then((ref) => {
@@ -175,6 +186,26 @@ export const CreateSalonModal = ({
           onChange={(event) => setName(event.target.value)}
           autoFocus
         />
+
+        {canEncrypt && (
+          // Decided here or never: Matrix has no way back, so the choice is
+          // offered while the room is still being described. Its consequences
+          // stay one hover away rather than crowding the dialog.
+          <label
+            className="hub__create-salon__encryption"
+            title={t(
+              "Messages will be readable only by the participants, and Ariane will not be able to answer here. This cannot be undone later.",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={encrypted}
+              disabled={isCreating}
+              onChange={(event) => setEncrypted(event.target.checked)}
+            />
+            <span>{t("Encrypt this conversation")}</span>
+          </label>
+        )}
 
         <div className="hub__create-salon__members">
           <span className="hub__create-salon__members-label">

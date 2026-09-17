@@ -21,6 +21,10 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(frontend) Offer the encryption choice when a salon is created from the
+  left panel, not only from New Chat - Matrix has no way back, so a choice
+  missing at creation is lost for good. A clear salon created this way also
+  invites Ariane, as one created anywhere else does.
 - ✨(meetings) Show on the meeting icon of a conversation when a meeting
   starts within 15 minutes or is in progress, and let Ariane tell every
   member in a private message when a meeting is scheduled, starts and ends.

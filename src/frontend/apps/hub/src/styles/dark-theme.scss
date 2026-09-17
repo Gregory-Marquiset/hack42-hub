@@ -1,0 +1,63 @@
+.cunningham-theme--dsfr-dark {
+  --c--contextuals--background--surface--primary: #22252b;
+  --c--contextuals--background--surface--secondary: #2a2e35;
+  --c--contextuals--background--surface--tertiary: #1b1e23;
+  --c--contextuals--background--semantic--neutral--secondary: #3a3f49;
+  --c--contextuals--background--semantic--neutral--secondary-hover: #424853;
+  --c--contextuals--background--semantic--neutral--tertiary: #323740;
+  --c--contextuals--background--semantic--neutral--tertiary-hover: #3a404a;
+  --c--contextuals--background--semantic--overlay--primary: #f5f7fa0d;
+  --c--contextuals--background--semantic--overlay--primary-hover: #f5f7fa1a;
+  --c--contextuals--content--semantic--neutral--primary: #eceef1;
+  --c--contextuals--content--semantic--neutral--secondary: #cdd1d7;
+  --c--contextuals--content--semantic--neutral--tertiary: #a8afb9;
+  --c--contextuals--content--semantic--neutral--on-neutral: #f1f2f4;
+  --c--contextuals--border--surface--primary: #3b414b;
+
+  .hub__layout__main {
+    background: var(--c--contextuals--background--surface--primary);
+  }
+
+  .hub__chat-composer,
+  .hub__chat-composer__mentions {
+    background: var(--c--contextuals--background--surface--secondary);
+  }
+
+  .hub__left-panel__tab--active,
+  .hub__left-panel__section__count,
+  .hub__left-panel__chat__badge {
+    background: var(--c--contextuals--background--semantic--brand--secondary);
+    color: var(--c--contextuals--content--semantic--brand--on-brand);
+  }
+
+  .c__modal:has(.hub__conversation-search) .c__modal__scroller--compact,
+  .hub__conversation-search [cmdk-list],
+  .hub__chat-conversation__list [data-virtuoso-scroller="true"],
+  .hub__left-panel__body {
+    scrollbar-color: var(
+        --c--contextuals--background--semantic--neutral--primary
+      )
+      var(--c--contextuals--background--semantic--contextual--transparent);
+
+    &::-webkit-scrollbar-track {
+      background: var(
+        --c--contextuals--background--semantic--contextual--transparent
+      );
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--c--contextuals--background--semantic--neutral--primary);
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: var(--c--contextuals--background--palette--gray--secondary);
+    }
+  }
+
+  .hub__message-search__highlight {
+    background-color: var(
+      --c--contextuals--background--semantic--brand--secondary
+    );
+    color: var(--c--contextuals--content--semantic--brand--on-brand);
+  }
+}

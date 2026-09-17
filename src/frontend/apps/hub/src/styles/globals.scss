@@ -2,6 +2,7 @@
 @use "@gouvfr-lasuite/ui-components/style";
 @use "@gouvfr-lasuite/ui-components/sass/fonts/material-icons";
 @use "./cunningham-tokens.css";
+@use "./dark-theme.scss";
 @use "./../pages/home.scss" as *;
 @use "./../features/layouts/HubLayout.scss";
 @use "./../features/layouts/LeftPanel/LeftPanel.scss";

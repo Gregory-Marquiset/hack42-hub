@@ -29,6 +29,7 @@ import { useSpaces } from "@/features/chat/hooks/useSpaces";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import type { Chat, ChatUnread, Space } from "@/features/drivers/types";
 import { AccountSelector } from "@/features/layouts/components/AccountSelector/AccountSelector";
+import { useTheme } from "@/features/theme/ThemeProvider";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
 import { ChatPresenceAvatar } from "@/features/ui/components/presence/ChatPresenceAvatar";
 import { LanguagePickerUserMenu } from "@/features/ui/components/user-profile/LanguagePickerUserMenu";
@@ -92,6 +93,7 @@ const buildTabs = (
 
 export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   const { t } = useTranslation();
+  const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const { spaces } = useSpaces();
   const selectedSpaceId = readSpaceId(router.query);
@@ -242,6 +244,19 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
       <div className="hub__left-panel__footer">
         <AccountSelector />
         <div className="hub__left-panel__footer__end">
+          <Button
+            variant="tertiary"
+            color="neutral"
+            icon={
+              <span className="material-icons" aria-hidden="true">
+                {theme === "light" ? "dark_mode" : "light_mode"}
+              </span>
+            }
+            aria-label={t(
+              theme === "light" ? "Enable dark mode" : "Enable light mode",
+            )}
+            onClick={toggleTheme}
+          />
           <Button
             variant="tertiary"
             color="neutral"

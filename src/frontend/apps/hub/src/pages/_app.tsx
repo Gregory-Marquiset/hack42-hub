@@ -22,6 +22,7 @@ import { Auth } from "@/features/auth/Auth";
 import { ActiveMeetingProvider } from "@/features/chat/meetings/ActiveMeeting";
 import { ConfigProvider } from "@/features/config/ConfigProvider";
 import type { AppPropsWithLayout } from "@/features/layouts/NextPageWithLayout";
+import { ThemeProvider, useTheme } from "@/features/theme/ThemeProvider";
 
 const onError = (error: Error, query: unknown) => {
   if ((query as Query).meta?.noGlobalError) {
@@ -53,8 +54,9 @@ const queryClient = new QueryClient({
   },
 });
 
-export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
+const ThemedApp = ({ Component, pageProps }: AppPropsWithLayout) => {
   const { t, i18n } = useTranslation();
+  const { theme, cunninghamTheme } = useTheme();
 
   useEffect(() => {
     document.documentElement.lang = i18n.language;
@@ -73,7 +75,10 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
         <link rel="icon" href="/assets/favicon.png" type="image/png" />
       </Head>
       <QueryClientProvider client={queryClient}>
-        <CunninghamProvider currentLocale={i18n.language} theme="dsfr-light">
+        <CunninghamProvider
+          currentLocale={i18n.language}
+          theme={cunninghamTheme}
+        >
           <ConfigProvider>
             <AnalyticsProvider>
               <Auth>
@@ -91,12 +96,20 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
           newestOnTop
           closeOnClick
           pauseOnFocusLoss={false}
-          theme="light"
+          theme={theme}
         />
         {process.env.NODE_ENV === "development" && (
           <ReactQueryDevtools initialIsOpen={false} />
         )}
       </QueryClientProvider>
     </>
+  );
+};
+
+export default function MyApp(props: AppPropsWithLayout) {
+  return (
+    <ThemeProvider>
+      <ThemedApp {...props} />
+    </ThemeProvider>
   );
 }

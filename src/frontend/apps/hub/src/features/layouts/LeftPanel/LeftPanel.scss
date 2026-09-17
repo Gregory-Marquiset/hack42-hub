@@ -968,3 +968,35 @@
   margin-left: 4px;
   color: var(--c--contextuals--content--semantic--neutral--secondary, #626a80);
 }
+
+// An espace's name, shown beside its bubble once the pointer has rested on it.
+// It lives at the end of the document (a portal), not inside the rail: the
+// rail scrolls, and a scroll container clips whatever its children paint
+// outside it, so a tooltip anchored inside the rail would be cut off by the
+// rail. Hence viewport coordinates, and `position: fixed`.
+.hub__rail-tooltip {
+  position: fixed;
+  z-index: 200;
+  // The anchor is the middle of the bubble; only the tooltip knows how tall
+  // it ended up being, so it centres itself on that line.
+  transform: translateY(-50%);
+  max-width: 220px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(
+    --c--contextuals--content--semantic--neutral--primary,
+    #222631
+  );
+  color: var(--c--contextuals--content--semantic--neutral--on-neutral, #fff);
+  font-family: var(--c--globals--font--families--base, "Marianne", sans-serif);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 2px 8px rgba(24, 27, 36, 0.18);
+  // A name is not something you reach for with the pointer, and a tooltip
+  // that can take the pointer flickers when you cross it.
+  pointer-events: none;
+}

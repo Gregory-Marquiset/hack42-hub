@@ -8,7 +8,14 @@ import {
 import clsx from "clsx";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { readChatRef, readSpaceId, spaceHref } from "@/features/chat/chatRefs";
@@ -32,6 +39,12 @@ import {
   partitionChats,
   ChatSectionId,
 } from "./chatSections";
+import { SpaceTooltip } from "./SpaceTooltip";
+import {
+  RAIL_TOOLTIP_DELAY_MS,
+  type RailTooltipAnchor,
+  anchorFromRect,
+} from "./railTooltip";
 import { assignSpaceIcons } from "./spaceIcons";
 
 type ActionItem =
@@ -363,6 +376,74 @@ const SpaceAvatar = ({
   );
 };
 
+/**
+ * Shows an espace's name once the pointer has rested on its bubble.
+ *
+ * A quarter of a second, so crossing the rail on the way somewhere else does
+ * not trail a name behind the pointer, and Escape dismisses it - a tooltip
+ * that cannot be dismissed is a tooltip in the way.
+ */
+const useRailTooltip = () => {
+  const [tooltip, setTooltip] = useState<
+    { label: string; anchor: RailTooltipAnchor } | undefined
+  >(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const cancel = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = undefined;
+  }, []);
+
+  const hide = useCallback(() => {
+    cancel();
+    setTooltip(undefined);
+  }, [cancel]);
+
+  const show = useCallback(
+    (target: HTMLElement, label: string) => {
+      cancel();
+      timer.current = setTimeout(() => {
+        setTooltip({
+          label,
+          anchor: anchorFromRect(
+            target.getBoundingClientRect(),
+            window.innerHeight,
+          ),
+        });
+      }, RAIL_TOOLTIP_DELAY_MS);
+    },
+    [cancel],
+  );
+
+  // A pending tooltip outliving the panel would set state on nothing.
+  useEffect(() => cancel, [cancel]);
+
+  useEffect(() => {
+    if (!tooltip) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [tooltip, hide]);
+
+  const handlers = useMemo(
+    () => (label: string) => ({
+      onMouseEnter: (event: { currentTarget: HTMLElement }) =>
+        show(event.currentTarget, label),
+      onMouseLeave: hide,
+      onFocus: (event: { currentTarget: HTMLElement }) =>
+        show(event.currentTarget, label),
+      onBlur: hide,
+      // Following the link leaves the name hanging over the new page.
+      onClick: hide,
+    }),
+    [show, hide],
+  );
+
+  return { tooltip, handlers, hide };
+};
+
 const SpacesRail = ({
   spaces,
   activeSpaceId,
@@ -387,6 +468,7 @@ const SpacesRail = ({
     () => assignSpaceIcons(spaces.map((space) => space.id)),
     [spaces],
   );
+  const { tooltip, handlers, hide: hideTooltip } = useRailTooltip();
 
   if (spaces.length === 0 && !canCreateSpace) {
     return null;
@@ -415,7 +497,7 @@ const SpacesRail = ({
           ? `${label}, ${t("{{count}} unread messages", { count: unread })}`
           : label
       }
-      title={label}
+      {...handlers(label)}
       className={clsx(
         "hub__left-panel__rail__item",
         isActive && "hub__left-panel__rail__item--active",
@@ -438,7 +520,14 @@ const SpacesRail = ({
 
   return (
     <nav className="hub__left-panel__rail" aria-label={t("Spaces")}>
-      <div className="hub__left-panel__rail__list">
+      {/* A tooltip carries the viewport position the bubble had when the
+          pointer stopped on it, so scrolling the rail has to take it away
+          rather than leave it pointing at nothing. */}
+      <div
+        className="hub__left-panel__rail__list"
+        onScroll={hideTooltip}
+        onMouseLeave={hideTooltip}
+      >
         {bubble(
           "all",
           spaceHref(null, currentChatRef),
@@ -471,11 +560,17 @@ const SpacesRail = ({
           type="button"
           className="hub__left-panel__rail__add"
           aria-label={t("New space")}
-          title={t("New space")}
-          onClick={onCreateSpace}
+          {...handlers(t("New space"))}
+          onClick={() => {
+            hideTooltip();
+            onCreateSpace();
+          }}
         >
           <Plus aria-hidden="true" />
         </button>
+      )}
+      {tooltip && (
+        <SpaceTooltip label={tooltip.label} anchor={tooltip.anchor} />
       )}
     </nav>
   );

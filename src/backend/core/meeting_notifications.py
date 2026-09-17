@@ -12,6 +12,7 @@ Someone who left Ariane's conversation is not invited again.
 """
 
 import logging
+import urllib.parse
 import zoneinfo
 from datetime import timedelta
 
@@ -22,6 +23,10 @@ from bots import matrix
 from core import models
 
 logger = logging.getLogger(__name__)
+
+# Field the Hub reads to offer a button joining the meeting (see the frontend
+# `matrixEventMapping.ts`).
+MEETING_INVITE_KEY = "io.lasuite.hub.meeting_invite"
 
 # Past this delay, a meeting is "scheduled" rather than started right away.
 SCHEDULED_AFTER = timedelta(minutes=1)
@@ -85,7 +90,31 @@ def direct_room(user_id):
     return room_id
 
 
-def _send_to_members(meeting, text):
+def hub_meeting_url(meeting):
+    """Where a member joins: the conversation in the Hub, call opened."""
+    # LOGIN_REDIRECT_URL is where the Hub itself answers, in every deployment.
+    base = (settings.LOGIN_REDIRECT_URL or "").rstrip("/")
+    if not base or not meeting.chat_id:
+        return ""
+    chat = urllib.parse.quote(meeting.chat_id, safe="")
+    return f"{base:s}/chat?chat={chat:s}&meeting={meeting.slug:s}"
+
+
+def meeting_invitation(meeting):
+    """What the Hub needs to offer a button joining the call in its window."""
+    if not (meeting.chat_id and meeting.url):
+        return None
+    return {
+        MEETING_INVITE_KEY: {
+            "chatId": meeting.chat_id,
+            "meetingId": meeting.slug,
+            "url": meeting.url,
+            **({"title": meeting.title} if meeting.title else {}),
+        }
+    }
+
+
+def _send_to_members(meeting, text, extra=None):
     try:
         members = recipients(meeting)
     except matrix.MatrixError as error:
@@ -95,7 +124,7 @@ def _send_to_members(meeting, text):
         try:
             room_id = direct_room(user_id)
             if room_id:
-                matrix.send_message(room_id, text)
+                matrix.send_message(room_id, text, extra=extra)
         except matrix.MatrixError as error:
             logger.warning("meeting %s: %s not told: %s", meeting.slug, user_id, error)
 
@@ -151,10 +180,15 @@ def scheduled_message(meeting):
 def started_message(meeting):
     """The message sent when a meeting starts."""
     title, room = _names(meeting)
-    text = f"🎥 La réunion « {title} » commence dans {room}."
+    lines = [f"🎥 La réunion « {title} » commence dans {room}."]
+    # The Hub turns the attached meeting into a button; the addresses stay in
+    # the text, for the clients that show a message as plain text.
+    hub = hub_meeting_url(meeting)
+    if hub:
+        lines.append(f"Ouvrir la conversation et rejoindre la réunion : {hub}")
     if meeting.url:
-        text += f"\nRejoignez-la depuis la conversation, ou par ce lien : {meeting.url}"
-    return text
+        lines.append(f"Lien de l'appel, à partager hors du salon : {meeting.url}")
+    return "\n".join(lines)
 
 
 def closed_message(meeting, document=None):
@@ -183,7 +217,7 @@ def notify_started(meeting_pk):
     """Tell the members a meeting starts, once."""
     meeting = models.Meeting.objects.get(pk=meeting_pk)
     if _claim(meeting, "started_notified_at"):
-        _send_to_members(meeting, started_message(meeting))
+        _send_to_members(meeting, started_message(meeting), meeting_invitation(meeting))
 
 
 def notify_closed(meeting_pk, document=None):

@@ -43,6 +43,7 @@ class FakeHomeserver:
         self.memberships = {}
         self.created = []
         self.sent = []
+        self.extras = []
         self.fail_for = set()
 
     def joined_members(self, room_id):
@@ -66,10 +67,11 @@ class FakeHomeserver:
         """Someone's membership in a private conversation."""
         return self.memberships.get((room_id, user_id))
 
-    def send_message(self, room_id, body):
-        """A message from Ariane, recorded with its recipient."""
+    def send_message(self, room_id, body, *, extra=None):
+        """A message from Ariane, recorded with its recipient and its extras."""
         user_id = next(u for r, u in self.created if r == room_id)
         self.sent.append((user_id, body))
+        self.extras.append(extra)
         return "$event"
 
 
@@ -231,6 +233,37 @@ def test_messages_name_the_espace():
     assert f"programmée dans {room}" in meeting_notifications.scheduled_message(meeting)
     assert f"commence dans {room}" in meeting_notifications.started_message(meeting)
     assert f"de {room} est terminée" in meeting_notifications.closed_message(meeting)
+
+
+@override_settings(**SETTINGS, LOGIN_REDIRECT_URL="https://hub.test/")
+@pytest.mark.usefixtures("homeserver")
+def test_started_message_carries_the_meeting():
+    """The Hub turns the attached meeting into a button joining the call."""
+    meeting = factories.MeetingFactory(
+        chat_id=ROOM, title="Point", url="https://meet.test/abc"
+    )
+
+    text = meeting_notifications.started_message(meeting)
+
+    assert "Ouvrir la conversation et rejoindre la réunion : " in text
+    # The address stays readable, and is the one to share outside the room.
+    assert "https://meet.test/abc" in text
+    assert f"https://hub.test/chat?chat=%21room%3Ahack42&meeting={meeting.slug}" in text
+    assert meeting_notifications.meeting_invitation(meeting) == {
+        "io.lasuite.hub.meeting_invite": {
+            "chatId": ROOM,
+            "meetingId": meeting.slug,
+            "url": "https://meet.test/abc",
+            "title": "Point",
+        }
+    }
+
+
+def test_no_invitation_without_a_call():
+    """A meeting without a call link offers no button."""
+    meeting = factories.MeetingFactory(chat_id=ROOM, url="")
+
+    assert meeting_notifications.meeting_invitation(meeting) is None
 
 
 @override_settings(**SETTINGS)

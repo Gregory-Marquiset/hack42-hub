@@ -96,7 +96,10 @@ export const useChatPresenceActivity = (): void => {
       session.idleTimer = null;
     };
     const activate = (session: ActivitySession) => {
-      if (session.preference === "offline") return;
+      // Neither "offline" nor "busy" is something activity should undo: both
+      // were chosen, and typing a message is not a request to become
+      // available again.
+      if (session.preference !== "online") return;
       publish(session, "online");
       clearIdleTimer(session);
       session.idleTimer = setTimeout(() => {
@@ -111,6 +114,9 @@ export const useChatPresenceActivity = (): void => {
 
     sessions.forEach((session) => {
       if (session.preference === "offline") publish(session, "offline");
+      // Busy is published as the closest standard value; the idle timer stays
+      // out of it, so it does not decay into anything else.
+      else if (session.preference === "busy") publish(session, "unavailable");
       else activate(session);
     });
     document.addEventListener("pointerdown", onActivity);

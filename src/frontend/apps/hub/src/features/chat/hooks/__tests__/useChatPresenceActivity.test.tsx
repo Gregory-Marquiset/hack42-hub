@@ -4,6 +4,8 @@ import { act, fireEvent, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ChatSelfPresencePreference } from "@/features/drivers/types";
+
 import { chatKeys } from "../../chatKeys";
 import {
   CHAT_PRESENCE_IDLE_MS,
@@ -49,7 +51,7 @@ describe("useChatPresenceActivity", () => {
     vi.useRealTimers();
   });
 
-  const seed = (accountId: string, preference: "online" | "offline") => {
+  const seed = (accountId: string, preference: ChatSelfPresencePreference) => {
     queryClient.setQueryData(
       chatKeys.selfPresencePreference(accountId),
       preference,
@@ -108,6 +110,27 @@ describe("useChatPresenceActivity", () => {
     window.dispatchEvent(new FocusEvent("focus"));
     document.dispatchEvent(new Event("visibilitychange"));
     expect(driver.setUserPresence.mock.calls).toEqual([["offline"]]);
+  });
+
+  it("never lets activity or idling touch a busy preference", () => {
+    // Busy is what silences notification sounds. Typing a message is not a
+    // request to become available, and going to lunch is not a request for
+    // quiet: neither may move it.
+    const driver = makeDriver();
+    entries = [{ accountId: "account-a", driver }];
+    seed("account-a", "busy");
+
+    renderHook(() => useChatPresenceActivity(), {
+      wrapper: wrapper(queryClient),
+    });
+
+    // Published as the closest value Matrix has, once.
+    expect(driver.setUserPresence.mock.calls).toEqual([["unavailable"]]);
+    act(() => vi.advanceTimersByTime(CHAT_PRESENCE_IDLE_MS));
+    fireEvent.pointerDown(document);
+    fireEvent.keyDown(document);
+    window.dispatchEvent(new FocusEvent("focus"));
+    expect(driver.setUserPresence.mock.calls).toEqual([["unavailable"]]);
   });
 
   it("isolates automatic and offline modes between accounts", () => {

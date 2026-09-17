@@ -933,16 +933,20 @@ export class MatrixDriver extends Driver {
     preference: ChatSelfPresencePreference,
   ): Promise<void> {
     const previous = this.getSelfPresencePreference();
-    if (previous === preference && this.syncPresence === preference) return;
+    // Matrix knows nothing of "busy": it is published as the closest standard
+    // value, and kept as itself only in the local preference, which is what
+    // decides whether notification sounds play.
+    const published = preference === "busy" ? "unavailable" : preference;
+    if (previous === preference && this.syncPresence === published) return;
 
-    await this.setUserPresence(preference);
+    await this.setUserPresence(published);
     writeChatSelfPresencePreference(this.accountId, preference);
 
     // The sync presence is authoritative. This best-effort PUT only shortens
     // the visible delay and must never roll back a correct sync intention.
     try {
       await this.requireClient("setSelfPresencePreference").setPresence({
-        presence: preference,
+        presence: published,
       });
     } catch (error) {
       console.info(

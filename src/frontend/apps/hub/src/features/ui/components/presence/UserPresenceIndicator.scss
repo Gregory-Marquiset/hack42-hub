@@ -10,12 +10,21 @@
   border-radius: 50%;
   vertical-align: middle;
 
+  // Green invites, red holds you off, grey says nobody is there. Never colour
+  // alone: each dot carries its own accessible name and title.
   &--online {
     background: var(--c--contextuals--background--semantic--success--primary);
   }
 
-  &--offline {
+  &--busy {
     background: var(--c--contextuals--background--semantic--error--primary);
+  }
+
+  &--offline {
+    background: var(
+      --c--contextuals--content--semantic--neutral--tertiary,
+      #8b93a7
+    );
   }
 
   &--avatar {

@@ -20,8 +20,11 @@ const PRESENCE_OPTIONS: ReadonlyArray<{
   state: ChatSelfPresencePreference;
   label: string;
 }> = [
-  { state: "online", label: "Online" },
-  { state: "offline", label: "Offline" },
+  { state: "online", label: "Available" },
+  // Chosen, not inferred: it is what silences notification sounds, so the
+  // idle timer must never reach it.
+  { state: "busy", label: "Busy" },
+  { state: "offline", label: "Appear offline" },
 ];
 
 const isPresencePreference = (

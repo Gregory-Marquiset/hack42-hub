@@ -347,6 +347,27 @@ describe("MatrixDriver.setUserPresence", () => {
   });
 });
 
+describe("MatrixDriver busy preference", () => {
+  it("publishes the closest standard value and keeps busy locally", async () => {
+    // Matrix has no "busy". It is the local preference that silences
+    // notification sounds, so it must survive as itself - while what the
+    // homeserver hears is a value it understands.
+    const setSyncPresence = vi.fn().mockResolvedValue(undefined);
+    const setPresence = vi.fn().mockResolvedValue(undefined);
+    const driver = driverWithClient({
+      setSyncPresence,
+      setPresence,
+    } as unknown as MatrixClient);
+
+    await driver.setSelfPresencePreference("busy");
+
+    expect(setSyncPresence).toHaveBeenCalledWith("unavailable");
+    expect(setPresence).toHaveBeenCalledWith({ presence: "unavailable" });
+    expect(readChatSelfPresencePreference("matrix-local")).toBe("busy");
+    expect(driver.getSelfPresencePreference()).toBe("busy");
+  });
+});
+
 describe("MatrixDriver self-presence preference", () => {
   it.each(["online", "offline"] as const)(
     "persists and applies the manual %s preference",

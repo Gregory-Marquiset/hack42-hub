@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(frontend) Tell the three presence states apart: green for available, red
+  for busy, grey for disconnected. Busy is chosen rather than inferred and
+  withholds the notification sound, which going idle never does.
 - 🐛(frontend) Stop a newly created espace from hiding every room outside it:
   none is active until one is picked, the switcher carries an "everything"
   entry, and a salon no longer has to belong to an espace.

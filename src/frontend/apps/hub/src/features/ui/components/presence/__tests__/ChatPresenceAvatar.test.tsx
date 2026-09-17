@@ -65,7 +65,7 @@ describe("ChatPresenceAvatar", () => {
     });
     render(<ChatPresenceAvatar chat={makeChat("direct")} />, { wrapper });
 
-    expect(screen.getByRole("img", { name: "Online" })).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Available" })).not.toBeNull();
     act(() => {
       queryClient.setQueryData(key, {
         userId: "@alice:localhost",
@@ -84,7 +84,7 @@ describe("ChatPresenceAvatar", () => {
     );
     render(<ChatPresenceAvatar chat={makeChat("group")} />, { wrapper });
 
-    expect(screen.queryByRole("img", { name: "Online" })).toBeNull();
+    expect(screen.queryByRole("img", { name: "Available" })).toBeNull();
     expect(getUserPresence).not.toHaveBeenCalled();
   });
 });

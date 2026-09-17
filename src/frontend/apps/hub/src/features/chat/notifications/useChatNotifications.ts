@@ -111,7 +111,13 @@ export const useChatNotifications = (userId?: string): void => {
         // Capture focus before a permission prompt can change it.
         const focused =
           document.visibilityState === "visible" && document.hasFocus();
-        current.sound.play();
+        // Busy is the one state that silences the sound, and it has to be the
+        // chosen one rather than the effective one: going idle for five
+        // minutes publishes `unavailable` too, and that is not a request for
+        // quiet. The banner still appears - only the sound is withheld.
+        if (driver.getSelfPresencePreference() !== "busy") {
+          current.sound.play();
+        }
         try {
           if (
             !focused &&

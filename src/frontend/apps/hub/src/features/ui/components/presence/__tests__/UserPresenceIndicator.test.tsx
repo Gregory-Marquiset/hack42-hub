@@ -9,22 +9,25 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("UserPresenceIndicator", () => {
+  // Three dots, three meanings: green invites, red holds you off, grey says
+  // nobody is there. Matrix's "away" is the same news as busy to whoever is
+  // looking, so it shares the red - but only "busy" is ever chosen.
   it.each([
-    ["online", "Online"],
-    ["unavailable", "Offline"],
-    ["offline", "Offline"],
-  ] as const)("renders an accessible %s indicator", (state, label) => {
+    ["online", "Available", "online"],
+    ["busy", "Busy", "busy"],
+    ["unavailable", "Busy", "busy"],
+    ["offline", "Offline", "offline"],
+  ] as const)("renders an accessible %s indicator", (state, label, tone) => {
     render(<UserPresenceIndicator state={state} />);
 
     const indicator = screen.getByRole("img", { name: label });
     expect(indicator.getAttribute("data-presence")).toBe(state);
     expect(indicator.getAttribute("title")).toBe(label);
-    expect(indicator.classList.contains("hub__user-presence--offline")).toBe(
-      state !== "online",
-    );
-    expect(indicator.classList.contains("hub__user-presence--online")).toBe(
-      state === "online",
-    );
+    for (const candidate of ["online", "busy", "offline"] as const) {
+      expect(
+        indicator.classList.contains(`hub__user-presence--${candidate}`),
+      ).toBe(candidate === tone);
+    }
   });
 
   it("supports the shared avatar overlay placement", () => {
@@ -32,7 +35,7 @@ describe("UserPresenceIndicator", () => {
 
     expect(
       screen
-        .getByRole("img", { name: "Online" })
+        .getByRole("img", { name: "Available" })
         .classList.contains("hub__user-presence--avatar"),
     ).toBe(true);
   });

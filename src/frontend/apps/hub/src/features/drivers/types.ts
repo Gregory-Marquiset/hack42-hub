@@ -361,7 +361,17 @@ export type ChatUser = ChatMessageAuthor & {
 export type ChatUserPresenceState = "online" | "unavailable" | "offline";
 
 /** User choice for this client; `online` enables automatic idle handling. */
-export type ChatSelfPresencePreference = "online" | "offline";
+/**
+ * What the person chose for themselves, which is not the same alphabet as
+ * `ChatUserPresenceState`.
+ *
+ * Matrix has three presence values and the idle timer already spends
+ * `unavailable` on "away for five minutes". "Busy" therefore cannot be that
+ * value: it is a deliberate choice, it mutes notification sounds, and going
+ * to lunch must not do the same. It is stored locally and published to Matrix
+ * as `unavailable`, the closest thing the protocol has to "not available".
+ */
+export type ChatSelfPresencePreference = "online" | "busy" | "offline";
 
 /** Current transport-level presence for one chat user. */
 export type ChatUserPresence = {

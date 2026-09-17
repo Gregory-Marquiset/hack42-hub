@@ -261,6 +261,7 @@ export const matrixRoomToLocalSpace = (room: Room): LocalSpace => ({
   name: explicitRoomName(room) || room.roomId,
   visual: { kind: "icon", icon: "workspaces" },
   memberCount: room.getJoinedMemberCount(),
+  chatIds: [...spaceChildRoomIds(room)],
 });
 
 /**

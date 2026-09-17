@@ -93,6 +93,12 @@ export type LocalSpace = {
   name: string;
   visual: ChatVisual;
   memberCount?: number;
+  /**
+   * Conversations this espace groups. Carried here so the switcher can total
+   * what is unread inside one without a query per espace; ids of rooms the
+   * person has not joined are harmless, they simply count as read.
+   */
+  chatIds: string[];
 };
 
 export type Space = LocalSpace & {

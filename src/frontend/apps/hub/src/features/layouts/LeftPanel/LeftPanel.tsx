@@ -10,7 +10,7 @@ import clsx from "clsx";
 import type { TFunction } from "i18next";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { ReactNode, useId, useMemo, useState } from "react";
+import { ReactNode, useCallback, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -24,6 +24,7 @@ import { compareChats } from "@/features/chat/chatSorting";
 import { CreateSalonModal } from "@/features/chat/components/CreateSalonModal";
 import { CreateSpaceModal } from "@/features/chat/components/CreateSpaceModal";
 import { formatChatListTimestamp } from "@/features/chat/formatTimestamp";
+import { countUnread, formatUnreadBadge } from "@/features/chat/unreadBadge";
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import { useChatUnread } from "@/features/chat/hooks/useChatUnread";
 import { useChats } from "@/features/chat/hooks/useChats";
@@ -109,6 +110,19 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   const unscopedChats = useChats();
   const scopedChats = useChats(activeSpaceId ?? undefined);
   const unreadLookup = useChatUnread();
+  // Totals from what the panel already holds: the espace carries its child
+  // ids and the lookup is in memory, so no espace costs a request. A child
+  // the person never joined simply counts as read.
+  const unreadOfSpace = useCallback(
+    (space: Space) =>
+      space.chatIds.reduce(
+        (total, chatId) =>
+          total +
+          countUnread(unreadLookup({ accountId: space.accountId, chatId })),
+        0,
+      ),
+    [unreadLookup],
+  );
   const entries = useDriverEntries();
   const accountLabels = new Map(
     entries.map((entry) => [entry.accountId, entry.label]),
@@ -121,6 +135,17 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   const roomsReactId = useId();
   const roomsTitleId = `${roomsReactId}-title`;
   const roomsPanelId = `${roomsReactId}-panel`;
+
+  // What "everything" is worth: the espace bubbles only cover their own
+  // children, and a direct message belongs to no espace at all.
+  const unreadTotal = useMemo(
+    () =>
+      [...unscopedChats.favourites, ...unscopedChats.all].reduce(
+        (total, chat) => total + countUnread(unreadLookup(chat.ref)),
+        0,
+      ),
+    [unscopedChats.favourites, unscopedChats.all, unreadLookup],
+  );
 
   const directChats = useMemo(
     () =>
@@ -190,6 +215,8 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
           activeSpaceId={activeSpaceId}
           canCreateSpace={canCreateSpace}
           onCreateSpace={() => setIsSpaceModalOpen(true)}
+          unreadOfSpace={unreadOfSpace}
+          unreadTotal={unreadTotal}
         />
       </div>
 
@@ -588,11 +615,15 @@ const EspacesRow = ({
   activeSpaceId,
   canCreateSpace,
   onCreateSpace,
+  unreadOfSpace,
+  unreadTotal,
 }: {
   spaces: Space[];
   activeSpaceId: string | null;
   canCreateSpace: boolean;
   onCreateSpace: () => void;
+  unreadOfSpace: (space: Space) => number;
+  unreadTotal: number;
 }) => {
   const { t } = useTranslation();
   const router = useRouter();
@@ -616,7 +647,11 @@ const EspacesRow = ({
               href={spaceHref(null, currentChatRef)}
               shallow
               aria-current={activeSpaceId === null ? "true" : undefined}
-              aria-label={t("All conversations")}
+              aria-label={
+                unreadTotal > 0
+                  ? `${t("All conversations")}, ${t("{{count}} unread messages", { count: unreadTotal })}`
+                  : t("All conversations")
+              }
               title={t("All conversations")}
               className={clsx(
                 "hub__left-panel__spaces__item",
@@ -632,17 +667,31 @@ const EspacesRow = ({
                   forum
                 </span>
               </Avatar>
+              {unreadTotal > 0 && (
+                // The words are in the link's label; this is for the eye.
+                <span
+                  className="hub__left-panel__spaces__badge"
+                  aria-hidden="true"
+                >
+                  {formatUnreadBadge(unreadTotal)}
+                </span>
+              )}
             </Link>
           )}
           {spaces.map((space) => {
             const isActive = space.id === activeSpaceId;
+            const unread = unreadOfSpace(space);
             return (
               <Link
                 key={space.id}
                 href={spaceHref(space.id, currentChatRef)}
                 shallow
                 aria-current={isActive ? "true" : undefined}
-                aria-label={space.name}
+                aria-label={
+                  unread > 0
+                    ? `${space.name}, ${t("{{count}} unread messages", { count: unread })}`
+                    : space.name
+                }
                 title={space.name}
                 className={clsx(
                   "hub__left-panel__spaces__item",
@@ -659,6 +708,14 @@ const EspacesRow = ({
                       : "workspaces"}
                   </span>
                 </Avatar>
+                {unread > 0 && (
+                  <span
+                    className="hub__left-panel__spaces__badge"
+                    aria-hidden="true"
+                  >
+                    {formatUnreadBadge(unread)}
+                  </span>
+                )}
               </Link>
             );
           })}

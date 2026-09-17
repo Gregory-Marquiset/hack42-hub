@@ -21,6 +21,8 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(frontend) Count what is unread inside each espace on its bubble, and the
+  total on the "everything" one, capped at `99+`.
 - ✨(frontend) Hold availability at busy and withhold notification sounds while
   a call is in progress, without writing the state the person chose - so
   leaving a call needs nothing undone.

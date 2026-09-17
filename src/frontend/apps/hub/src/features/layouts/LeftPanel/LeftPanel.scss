@@ -705,6 +705,36 @@
 // difference between two rows: it carries an accessible label.
 // The avatar is the anchor for what a row says without words: availability
 // owns the bottom-right corner, a call in progress the top-right.
+// The count of what is waiting inside an espace, on the corner of its bubble.
+.hub__left-panel__spaces__item {
+  position: relative;
+}
+
+.hub__left-panel__spaces__badge {
+  position: absolute;
+  top: 14px;
+  right: -4px;
+  z-index: 1;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid var(--c--contextuals--background--surface--primary, #fff);
+  background: var(
+    --c--contextuals--background--semantic--error--primary,
+    #ce0500
+  );
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 .hub__left-panel__chat__avatar {
   position: relative;
   display: inline-flex;

@@ -192,29 +192,41 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
           The arrow beside it pushes the whole list of conversations away and
           leaves the espaces, so the conversation gets the window. */}
       <div className="hub__left-panel__brand">
-        {!isCollapsed && <TchapLogo />}
-        <button
-          type="button"
-          className="hub__left-panel__collapse"
-          aria-label={
-            isCollapsed
-              ? t("Show the conversations")
-              : t("Hide the conversations")
-          }
-          title={
-            isCollapsed
-              ? t("Show the conversations")
-              : t("Hide the conversations")
-          }
-          aria-expanded={!isCollapsed}
-          onClick={toggleCollapsed}
-        >
-          {isCollapsed ? (
-            <ChevronRight aria-hidden="true" />
-          ) : (
-            <ChevronLeft aria-hidden="true" />
-          )}
-        </button>
+        {isCollapsed ? (
+          // Closed, the corner is 53px wide and the mark is what fits. The
+          // whole thing is the way back, so the arrow is a small badge on it
+          // rather than a second control taking the space the logo needs.
+          <button
+            type="button"
+            className="hub__left-panel__brand-toggle"
+            aria-label={t("Show the conversations")}
+            title={t("Show the conversations")}
+            aria-expanded={false}
+            onClick={toggleCollapsed}
+          >
+            <TchapLogo variant="mark" decorative />
+            <span
+              className="hub__left-panel__brand-toggle__chevron"
+              aria-hidden="true"
+            >
+              <ChevronRight />
+            </span>
+          </button>
+        ) : (
+          <>
+            <TchapLogo />
+            <button
+              type="button"
+              className="hub__left-panel__collapse"
+              aria-label={t("Hide the conversations")}
+              title={t("Hide the conversations")}
+              aria-expanded
+              onClick={toggleCollapsed}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </button>
+          </>
+        )}
       </div>
       <div className="hub__left-panel__main">
         <SpacesRail

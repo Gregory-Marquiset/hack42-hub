@@ -12,6 +12,68 @@
       var(--c--contextuals--border--surface--primary, #dfe2ea);
   }
 
+  // Closed, the logo itself is the way back: the mark with a small arrow
+  // badge on its corner, because 53px has room for one of the two and the
+  // product's mark is the half worth keeping.
+  &__brand-toggle {
+    appearance: none;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+
+    &__chevron {
+      position: absolute;
+      right: -1px;
+      bottom: 0;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      border: 1px solid var(--c--contextuals--border--surface--primary, #dfe2ea);
+      background: var(--c--contextuals--background--surface--primary, #fff);
+      color: var(
+        --c--contextuals--content--semantic--neutral--secondary,
+        #555e74
+      );
+
+      svg {
+        width: 12px;
+        height: 12px;
+      }
+    }
+
+    &:hover {
+      background: var(
+        --c--contextuals--background--surface--secondary,
+        #eef0f5
+      );
+    }
+
+    &:hover .hub__left-panel__brand-toggle__chevron {
+      border-color: var(
+        --c--contextuals--border--semantic--brand--primary,
+        #3e5de7
+      );
+      color: var(--c--contextuals--content--semantic--brand--primary, #3e5de7);
+    }
+
+    &:focus-visible {
+      outline: 2px solid
+        var(--c--contextuals--border--semantic--brand--primary, #3e5de7);
+      outline-offset: 1px;
+    }
+  }
+
   // The arrow that pushes the conversations aside. It stays put when the
   // panel is closed - it is the only way back - so it lives in the corner
   // rather than inside the part that goes away.

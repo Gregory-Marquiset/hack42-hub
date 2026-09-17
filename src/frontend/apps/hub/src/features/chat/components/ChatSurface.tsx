@@ -5,7 +5,6 @@ import { chatHref } from "@/features/chat/chatRefs";
 import type { ChatRef } from "@/features/drivers/types";
 
 import { useComposerFocusSignal } from "../hooks/useComposerFocusSignal";
-import { useMeetingFromUrl } from "../hooks/useMeetingFromUrl";
 import { useNewChatConversation } from "../hooks/useNewChatConversation";
 
 import { ChatView } from "./ChatView";
@@ -57,8 +56,6 @@ export const ChatSurface = ({ isNew, urlChatRef }: ChatSurfaceProps) => {
     lastChatRef.current = resolvedChatRef;
   }
   const chatRef = resolvedChatRef ?? (isNew ? null : lastChatRef.current);
-  // `?meeting=` in the address joins that call as soon as the room is there.
-  useMeetingFromUrl(chatRef);
 
   const renderNewChatHeader = useCallback(
     ({

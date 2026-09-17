@@ -96,9 +96,14 @@ export const MeetingsTool = ({
     if (isPending) {
       return;
     }
-    // A new call opens with its invitation link in view.
+    // A new call opens with its invitation link in view, and the panel gets
+    // out of the way: the meeting window is where everything happens now.
     void startMeeting(options)
-      .then((meeting) => join(meeting, true))
+      .then((meeting) => {
+        join(meeting, true);
+        setView("list");
+        onClose();
+      })
       .catch(() => {
         // useStartChatMeeting already surfaces a toast on failure.
       });

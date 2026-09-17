@@ -102,6 +102,23 @@ export const uploadMeetingDocument = async (
   return toAttachment((await response.json()) as RawAttachment);
 };
 
+/** Creates an empty Docs document owned by the member, for a meeting. */
+export const createMeetingDocsDocument = async (
+  slug: string,
+  title: string,
+  openIdToken?: string,
+): Promise<ChatMeetingDocument> => {
+  const response = await fetchAPI(
+    `${meetingPath(slug)}documents/new/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ title, openid_token: openIdToken ?? "" }),
+    },
+    { redirectOn40x: false },
+  );
+  return (await response.json()) as ChatMeetingDocument;
+};
+
 /** The content of one document of a meeting. */
 export const fetchMeetingDocumentFile = async (
   slug: string,

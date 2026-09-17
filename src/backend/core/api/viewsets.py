@@ -571,6 +571,59 @@ class MeetingDocumentsView(drf.views.APIView):
         )
 
 
+class MeetingDocumentCreateView(drf.views.APIView):
+    """API view creating a Docs document for a meeting, owned by its member."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "meeting_documents"
+
+    def post(self, request, slug):
+        """
+        POST /api/v1.0/meetings/<slug>/documents/new/
+            Create an empty Docs document named `title`, owned by the member
+            asking for it, and answer it (`id`, `title`, `url`). The Hub lists
+            it with the meeting; sharing it stays a Docs matter.
+        """
+        serializer = serializers.MeetingDocumentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            meeting = _member_meeting(
+                request, slug, serializer.validated_data["openid_token"]
+            )
+        except MatrixUnavailable:
+            return _matrix_unavailable()
+
+        if meeting.closed_at is not None:
+            return drf.response.Response(
+                {"detail": "The meeting is closed."},
+                status=drf.status.HTTP_409_CONFLICT,
+            )
+        if not docs.is_docs_configured():
+            return drf.response.Response(
+                {"detail": "Docs is not configured."},
+                status=drf.status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        title = serializer.validated_data["title"]
+        try:
+            document_id = docs.create_document_for_owner(
+                title=title, content=f"# {title:s}\n", user=request.user
+            )
+        except docs.DocsError:
+            return drf.response.Response(
+                {"detail": "Docs could not create the document."},
+                status=drf.status.HTTP_502_BAD_GATEWAY,
+            )
+        return drf.response.Response(
+            {
+                "id": document_id,
+                "title": title,
+                "url": docs.document_url(document_id),
+            },
+            status=drf.status.HTTP_201_CREATED,
+        )
+
+
 class MeetingAttachmentsView(drf.views.APIView):
     """API view adding a document to a meeting that is not closed."""
 

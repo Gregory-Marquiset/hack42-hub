@@ -12,6 +12,9 @@ and this project adheres to
   settings panel (who gets notified, where, and how), mute a whole
   conversation from its header menu or thread panel, and stop showing
   browser notifications/sound for muted conversations.
+- ✨(meetings) List a Docs document with a meeting, or create an empty one
+  from the Hub, as any member of the conversation. The form recalls that a
+  link alone opens for nobody: the document has to be shared in Docs.
 - ✨(meetings) Join a meeting from the message Ariane sends about it: her
   message carries the meeting, and the Hub turns it into a button opening the
   call in its own window. Starting a call closes the meetings panel.

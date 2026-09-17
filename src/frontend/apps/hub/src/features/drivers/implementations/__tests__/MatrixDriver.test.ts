@@ -1335,7 +1335,31 @@ describe("MatrixDriver.startChatMeeting", () => {
     );
   });
 
-  it("refuses to add a document to a meeting organized by someone else", async () => {
+  it("lets a member list a document with someone else's meeting", async () => {
+    const event = meetingEvent(MEET_ROOM.slug, {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now(),
+      organizerId: OTHER_ID,
+    });
+    const { mx, sendStateEvent } = makeClient(makeMeetingRoom([event]));
+    const document = { id: "doc", title: "Doc", url: "https://x/doc" };
+
+    // Documents belong to the conversation, unlike the meeting itself.
+    await driverWithClient(mx).addChatMeetingDocument(
+      ROOM_ID,
+      MEET_ROOM.slug,
+      document,
+    );
+
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      MEETING_EVENT_TYPE,
+      expect.objectContaining({ documents: [document] }),
+      MEET_ROOM.slug,
+    );
+  });
+
+  it("refuses to rename a meeting organized by someone else", async () => {
     const event = meetingEvent(MEET_ROOM.slug, {
       meetingUrl: MEET_ROOM.url,
       startedAt: Date.now(),
@@ -1344,11 +1368,7 @@ describe("MatrixDriver.startChatMeeting", () => {
     const { mx, sendStateEvent } = makeClient(makeMeetingRoom([event]));
 
     await expect(
-      driverWithClient(mx).addChatMeetingDocument(ROOM_ID, MEET_ROOM.slug, {
-        id: "doc",
-        title: "Doc",
-        url: "https://x/doc",
-      }),
+      driverWithClient(mx).renameChatMeeting(ROOM_ID, MEET_ROOM.slug, "Autre"),
     ).rejects.toBeInstanceOf(MeetingNotAllowedError);
     expect(sendStateEvent).not.toHaveBeenCalled();
   });

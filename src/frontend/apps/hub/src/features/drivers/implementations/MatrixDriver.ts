@@ -776,7 +776,9 @@ export class MatrixDriver extends Driver {
     meetingId: string,
     document: ChatMeetingDocument,
   ): Promise<void> {
-    await this.updateOwnMeeting(
+    // Any member may list a document with the meeting, as they may add files
+    // to it: only the meeting itself (its name, its end) is the organizer's.
+    await this.updateMeeting(
       "addChatMeetingDocument",
       chatId,
       meetingId,
@@ -829,11 +831,7 @@ export class MatrixDriver extends Driver {
 
   /** Rewrites one meeting's state, only for its organizer. */
   private async updateOwnMeeting(
-    method:
-      | "addChatMeetingDocument"
-      | "endChatMeeting"
-      | "extendChatMeeting"
-      | "renameChatMeeting",
+    method: "endChatMeeting" | "extendChatMeeting" | "renameChatMeeting",
     chatId: string,
     meetingId: string,
     change: (

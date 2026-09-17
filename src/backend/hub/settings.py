@@ -921,6 +921,9 @@ class Test(Base):
     MEETING_BOARD_SAVE_DELAY = 0
     # No real scene store either; the board tests set their own.
     MEETING_BOARD_SCENES_URL = None
+    # No real Docs either: a test must never create a document for good.
+    DOCS_BASE_URL = None
+    DOCS_SERVER_TO_SERVER_API_TOKEN = None
 
     def __init__(self):
         # pylint: disable=invalid-name

@@ -21,11 +21,12 @@ from rest_framework.status import (
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
     HTTP_502_BAD_GATEWAY,
+    HTTP_503_SERVICE_UNAVAILABLE,
 )
 from rest_framework.test import APIClient
 
 from bots import matrix
-from core import factories, models
+from core import docs, factories, models
 
 SETTINGS = {
     "MATRIX_AS_TOKEN": "as-token",
@@ -278,6 +279,73 @@ def test_api_meeting_documents_download_not_a_member():
     response = _download(_client(), meeting, attachment, openid_token="x")
 
     assert response.status_code == HTTP_404_NOT_FOUND
+
+
+@override_settings(
+    DOCS_BASE_URL="https://docs.test", DOCS_SERVER_TO_SERVER_API_TOKEN="docs-secret"
+)
+def test_api_meeting_documents_create_in_docs(monkeypatch):
+    """A member creates an empty Docs document owned by them."""
+    meeting = _meeting()
+    seen = {}
+
+    def create(*, title, content, user):
+        seen.update(title=title, content=content, user=user.email)
+        return "doc-1"
+
+    monkeypatch.setattr(docs, "create_document_for_owner", create)
+    client = _client()
+
+    response = client.post(
+        f"/api/v1.0/meetings/{meeting.slug}/documents/new/",
+        {"title": "Compte rendu", "openid_token": "bob-token"},
+        format="json",
+    )
+
+    assert response.status_code == HTTP_201_CREATED
+    assert response.json() == {
+        "id": "doc-1",
+        "title": "Compte rendu",
+        "url": "https://docs.test/docs/doc-1/",
+    }
+    assert seen["title"] == "Compte rendu"
+    assert seen["content"] == "# Compte rendu\n"
+
+
+@override_settings(
+    DOCS_BASE_URL="https://docs.test", DOCS_SERVER_TO_SERVER_API_TOKEN="docs-secret"
+)
+def test_api_meeting_documents_create_refused(monkeypatch):
+    """Someone outside the conversation, and a closed meeting, create nothing."""
+    monkeypatch.setattr(docs, "create_document_for_owner", lambda **kwargs: "never")
+    meeting = _meeting()
+    closed = _meeting(closed_at=CLOSED_AT)
+    body = {"title": "Compte rendu"}
+
+    outside = _client().post(
+        f"/api/v1.0/meetings/{meeting.slug}/documents/new/",
+        {**body, "openid_token": "someone-else"},
+        format="json",
+    )
+    over = _client(closed.organizer).post(
+        f"/api/v1.0/meetings/{closed.slug}/documents/new/", body, format="json"
+    )
+
+    assert outside.status_code == HTTP_404_NOT_FOUND
+    assert over.status_code == HTTP_409_CONFLICT
+
+
+def test_api_meeting_documents_create_without_docs():
+    """Without Docs configured, the Hub says so rather than failing."""
+    meeting = _meeting()
+
+    response = _client(meeting.organizer).post(
+        f"/api/v1.0/meetings/{meeting.slug}/documents/new/",
+        {"title": "Compte rendu"},
+        format="json",
+    )
+
+    assert response.status_code == HTTP_503_SERVICE_UNAVAILABLE
 
 
 def test_api_meeting_documents_in_the_archive():

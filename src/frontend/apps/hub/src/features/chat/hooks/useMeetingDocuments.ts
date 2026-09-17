@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { APIError } from "@/features/api/APIError";
 import {
+  createMeetingDocsDocument,
   fetchMeetingDocumentFile,
   fetchMeetingDocuments,
   type MeetingAttachmentInfo,
@@ -10,7 +11,7 @@ import {
   uploadMeetingDocument,
 } from "@/features/chat/api/meetings";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
-import type { ChatRef } from "@/features/drivers/types";
+import type { ChatMeetingDocument, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { chatKeys } from "../chatKeys";
@@ -41,6 +42,9 @@ export type UseMeetingDocumentsResult = {
   /** Adds documents from the device, one after the other. */
   addFiles: (files: File[]) => Promise<void>;
   isAdding: boolean;
+  /** Creates an empty Docs document for the meeting, owned by the member. */
+  createDocsDocument: (title: string) => Promise<ChatMeetingDocument | null>;
+  isCreatingDocument: boolean;
   download: (attachment: MeetingAttachmentInfo) => Promise<void>;
   /** The document being downloaded, if any. */
   pendingAttachmentId: string | null;
@@ -122,6 +126,30 @@ export const useMeetingDocuments = (
     meta: { noGlobalError: true },
   });
 
+  const createDocument = useMutation<ChatMeetingDocument, Error, string>({
+    mutationFn: async (title) => {
+      if (!target) {
+        throw new Error("useMeetingDocuments requires a meeting.");
+      }
+      return createMeetingDocsDocument(
+        target.meetingId,
+        title,
+        await proof(target),
+      );
+    },
+    onSuccess: () => {
+      notify.brand(t("The document was created in Docs."));
+    },
+    onError: (error) => {
+      notify.error(
+        error instanceof APIError && error.code === 503
+          ? t("Docs is not available on this Hub.")
+          : t("The document could not be created. Please try again."),
+      );
+    },
+    meta: { noGlobalError: true },
+  });
+
   const fetchFile = useMutation<void, Error, MeetingAttachmentInfo>({
     mutationFn: async (attachment) => {
       if (!target) {
@@ -157,6 +185,15 @@ export const useMeetingDocuments = (
       }
     },
     isAdding: add.isPending,
+    createDocsDocument: async (title) => {
+      try {
+        return await createDocument.mutateAsync(title);
+      } catch {
+        // The error is already shown.
+        return null;
+      }
+    },
+    isCreatingDocument: createDocument.isPending,
     download: async (attachment) => {
       try {
         await fetchFile.mutateAsync(attachment);

@@ -7,6 +7,11 @@ const getChatMeetingsMock = vi.hoisted(() => vi.fn());
 const endChatMeetingMock = vi.hoisted(() => vi.fn());
 const extendChatMeetingMock = vi.hoisted(() => vi.fn());
 const renameChatMeetingMock = vi.hoisted(() => vi.fn());
+const getNotificationRulesMock = vi.hoisted(() => vi.fn());
+const setNotificationRuleEnabledMock = vi.hoisted(() => vi.fn());
+const setNotificationRuleActionsMock = vi.hoisted(() => vi.fn());
+const isChatMutedMock = vi.hoisted(() => vi.fn());
+const setChatMutedMock = vi.hoisted(() => vi.fn());
 
 // The real driver pulls in matrix-js-sdk: only the meeting calls matter here.
 vi.mock("../MatrixDriver", () => ({
@@ -24,6 +29,11 @@ vi.mock("../MatrixDriver", () => ({
     endChatMeeting = endChatMeetingMock;
     extendChatMeeting = extendChatMeetingMock;
     renameChatMeeting = renameChatMeetingMock;
+    getNotificationRules = getNotificationRulesMock;
+    setNotificationRuleEnabled = setNotificationRuleEnabledMock;
+    setNotificationRuleActions = setNotificationRuleActionsMock;
+    isChatMuted = isChatMutedMock;
+    setChatMuted = setChatMutedMock;
   },
 }));
 
@@ -71,5 +81,54 @@ describe("LazyMatrixDriver meetings", () => {
       meeting.id,
       "Point hebdo",
     );
+  });
+});
+
+describe("LazyMatrixDriver notification rules", () => {
+  it("advertises notification-rule support before the SDK loads", () => {
+    expect(new LazyMatrixDriver("matrix").supportsNotificationRules).toBe(true);
+  });
+
+  it("forwards notification-rule calls to the real Matrix driver", async () => {
+    const rules = {
+      override: [],
+      content: [],
+      room: [],
+      sender: [],
+      underride: [],
+    };
+    getNotificationRulesMock.mockResolvedValue(rules);
+    setNotificationRuleEnabledMock.mockResolvedValue(undefined);
+    setNotificationRuleActionsMock.mockResolvedValue(undefined);
+    isChatMutedMock.mockResolvedValue(true);
+    setChatMutedMock.mockResolvedValue(undefined);
+    const driver = new LazyMatrixDriver("matrix");
+
+    await expect(driver.getNotificationRules()).resolves.toBe(rules);
+    await driver.setNotificationRuleEnabled({
+      kind: "override",
+      ruleId: ".m.rule.master",
+      enabled: true,
+    });
+    await driver.setNotificationRuleActions({
+      kind: "underride",
+      ruleId: ".m.rule.message",
+      actions: ["dont_notify"],
+    });
+    await expect(driver.isChatMuted(ROOM_ID)).resolves.toBe(true);
+    await driver.setChatMuted(ROOM_ID, true);
+
+    expect(setNotificationRuleEnabledMock).toHaveBeenCalledWith({
+      kind: "override",
+      ruleId: ".m.rule.master",
+      enabled: true,
+    });
+    expect(setNotificationRuleActionsMock).toHaveBeenCalledWith({
+      kind: "underride",
+      ruleId: ".m.rule.message",
+      actions: ["dont_notify"],
+    });
+    expect(isChatMutedMock).toHaveBeenCalledWith(ROOM_ID);
+    expect(setChatMutedMock).toHaveBeenCalledWith(ROOM_ID, true);
   });
 });

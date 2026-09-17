@@ -2,6 +2,8 @@ import {
   KnownMembership,
   type MatrixClient,
   type MatrixEvent,
+  PushRuleActionName,
+  PushRuleKind,
   type Room,
   type Thread,
 } from "matrix-js-sdk/lib/matrix";
@@ -380,6 +382,118 @@ describe("MatrixDriver room metadata", () => {
     room.tags[MATRIX_FAVOURITE_TAG] = {};
     await driver.setChatFavourite(ROOM_ID, false);
     expect(deleteRoomTag).toHaveBeenCalledWith(ROOM_ID, MATRIX_FAVOURITE_TAG);
+  });
+
+  it("maps every push-rule kind into the neutral shape", async () => {
+    const getPushRules = vi.fn(async () => ({
+      global: {
+        override: [
+          {
+            rule_id: ".m.rule.master",
+            default: true,
+            enabled: false,
+            actions: [],
+          },
+        ],
+        underride: [
+          {
+            rule_id: ".m.rule.message",
+            default: true,
+            enabled: true,
+            actions: [
+              PushRuleActionName.Notify,
+              { set_tweak: "sound", value: "default" },
+            ],
+          },
+        ],
+      },
+    }));
+    const mx = { getPushRules } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    const rules = await driver.getNotificationRules();
+
+    expect(rules.override).toEqual([
+      {
+        id: ".m.rule.master",
+        kind: "override",
+        isEnabled: false,
+        isDefault: true,
+        actions: [],
+        conditions: undefined,
+        pattern: undefined,
+      },
+    ]);
+    expect(rules.underride[0].actions).toEqual([
+      "notify",
+      { setTweak: "sound", value: "default" },
+    ]);
+    // A kind the server didn't send at all defaults to an empty array.
+    expect(rules.content).toEqual([]);
+  });
+
+  it("enables/disables and sets actions on a push rule", async () => {
+    const setPushRuleEnabled = vi.fn(async () => ({}));
+    const setPushRuleActions = vi.fn(async () => ({}));
+    const mx = {
+      setPushRuleEnabled,
+      setPushRuleActions,
+    } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    await driver.setNotificationRuleEnabled({
+      kind: "override",
+      ruleId: ".m.rule.master",
+      enabled: true,
+    });
+    expect(setPushRuleEnabled).toHaveBeenCalledWith(
+      "global",
+      PushRuleKind.Override,
+      ".m.rule.master",
+      true,
+    );
+
+    await driver.setNotificationRuleActions({
+      kind: "underride",
+      ruleId: ".m.rule.message",
+      actions: ["dont_notify"],
+    });
+    expect(setPushRuleActions).toHaveBeenCalledWith(
+      "global",
+      PushRuleKind.Underride,
+      ".m.rule.message",
+      [PushRuleActionName.DontNotify],
+    );
+  });
+
+  it("reads a room's mute state from its room-kind push rule", async () => {
+    const getRoomPushRule = vi.fn((_scope: string, roomId: string) =>
+      roomId === ROOM_ID
+        ? {
+            rule_id: ROOM_ID,
+            default: false,
+            enabled: true,
+            actions: [PushRuleActionName.DontNotify],
+          }
+        : undefined,
+    );
+    const mx = { getRoomPushRule } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    expect(await driver.isChatMuted(ROOM_ID)).toBe(true);
+    expect(await driver.isChatMuted("!other:localhost")).toBe(false);
+  });
+
+  it("delegates muting to the SDK's own setRoomMutePushRule", async () => {
+    const setRoomMutePushRule = vi.fn(async () => undefined);
+    const mx = { setRoomMutePushRule } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    await driver.setChatMuted(ROOM_ID, true);
+    expect(setRoomMutePushRule).toHaveBeenCalledWith("global", ROOM_ID, true);
+
+    await driver.setChatMuted(ROOM_ID, false);
+    expect(setRoomMutePushRule).toHaveBeenCalledWith("global", ROOM_ID, false);
   });
 
   it("hydrates and splits joined and invited room members", async () => {

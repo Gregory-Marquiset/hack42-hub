@@ -43,6 +43,14 @@ export const chatKeys = {
     ["chat-members", ref.accountId, ref.chatId] as const,
   meetings: (ref: ChatRef) =>
     ["chat-meetings", ref.accountId, ref.chatId] as const,
+  notificationRules: (accountId: AccountId) =>
+    ["notification-rules", accountId] as const,
+  chatMuted: (ref: ChatRef) =>
+    ["chat-muted", ref.accountId, ref.chatId] as const,
+  /** Prefix matching every chat's mute state for an account — used to
+   * invalidate all of them at once from the account-wide
+   * `notification-rules:changed` event, which carries no `chatId`. */
+  chatMutedOf: (accountId: AccountId) => ["chat-muted", accountId] as const,
   connection: (accountId: AccountId, userId: string | null) =>
     ["chat-connection", accountId, userId] as const,
   /** A `ChatVisual` image's driver-specific `url` resolved to a fetchable src. */

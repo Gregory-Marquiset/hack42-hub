@@ -1,13 +1,16 @@
 import { UserMenu } from "@gouvfr-lasuite/ui-components";
+import { useState } from "react";
 
 import { useAuth } from "@/features/auth/Auth";
 import { LoginButton } from "@/features/auth/components/LoginButton";
 import { useMyAvatarSrc } from "@/features/chat/hooks/useMyAvatarSrc";
+import { NotificationSettingsModal } from "@/features/chat/notifications/NotificationSettingsModal";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 
 import { useAvatarPortalOverlay } from "../avatar/useAvatarPortalOverlay";
 import { ChangeProfilePhotoAction } from "./ChangeProfilePhotoAction";
 import { LogoutAction } from "./LogoutAction";
+import { NotificationSettingsAction } from "./NotificationSettingsAction";
 
 export const UserProfile = () => {
   const { user } = useAuth();
@@ -27,6 +30,11 @@ export const UserProfile = () => {
     avatarSrc,
   );
 
+  const notificationAccount = entries.find(
+    (entry) => entry.driver.supportsNotificationRules,
+  );
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+
   if (!user) {
     return <LoginButton />;
   }
@@ -40,6 +48,11 @@ export const UserProfile = () => {
         actions={
           <>
             <ChangeProfilePhotoAction />
+            {notificationAccount && (
+              <NotificationSettingsAction
+                onOpen={() => setIsNotificationsOpen(true)}
+              />
+            )}
             <LogoutAction />
           </>
         }
@@ -50,6 +63,19 @@ export const UserProfile = () => {
           alt=""
           aria-hidden="true"
           className="hub__user-profile__avatar"
+        />
+      )}
+      {/* Rendered here, as a sibling of `UserMenu` rather than inside its
+       * `actions` slot, so the modal isn't a React descendant of the
+       * account popover (a react-aria-components `Popover`/`Dialog`). Its
+       * own focus/dismiss scoping otherwise ends up swallowing clicks and
+       * wheel events meant for this modal, even though the modal's DOM is
+       * portaled elsewhere. */}
+      {notificationAccount && (
+        <NotificationSettingsModal
+          accountId={notificationAccount.accountId}
+          isOpen={isNotificationsOpen}
+          onClose={() => setIsNotificationsOpen(false)}
         />
       )}
     </div>

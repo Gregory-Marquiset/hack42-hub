@@ -17,6 +17,7 @@ import {
   type EditingChatMessage,
 } from "../../ChatMessageEditContext";
 import { isSameChatDay } from "../../formatTimestamp";
+import { useChatMute } from "../../hooks/useChatMute";
 import { useChatThread } from "../../hooks/useChatThread";
 import { useChatThreadActions } from "../../hooks/useChatThreadActions";
 import { useEditChatMessage } from "../../hooks/useEditChatMessage";
@@ -165,15 +166,24 @@ export const ThreadDetail = ({
     return map;
   }, [thread]);
 
-  // Inert — thread mute is wired through the driver in a later change.
+  // Matrix has no stable thread-level push-rule granularity, so this mutes
+  // the whole conversation the thread lives in (see the `useChatMute` doc).
+  const {
+    isMuted,
+    setMuted,
+    isSupported: canMute,
+    isPending: isMutePending,
+  } = useChatMute(chatRef, isOpen);
   const muteAction = (
     <button
       type="button"
       className="hub__chat-tools-panel__header-button"
-      aria-label={t("Mute thread")}
+      aria-label={isMuted ? t("Unmute conversation") : t("Mute conversation")}
+      aria-pressed={isMuted}
       tabIndex={isOpen ? 0 : -1}
-      disabled
-      aria-disabled="true"
+      disabled={!canMute || isMutePending}
+      aria-disabled={!canMute || isMutePending}
+      onClick={() => setMuted(!isMuted)}
     >
       <Bell />
     </button>

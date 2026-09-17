@@ -261,6 +261,15 @@ const applyChatEvent = (
       });
       void queryClient.invalidateQueries({ queryKey: chatKeys.spacesAll() });
       return;
+
+    case "notification-rules:changed":
+      void queryClient.invalidateQueries({
+        queryKey: chatKeys.notificationRules(accountId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: chatKeys.chatMutedOf(accountId),
+      });
+      return;
   }
 };
 

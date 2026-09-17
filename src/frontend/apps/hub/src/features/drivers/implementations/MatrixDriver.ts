@@ -93,6 +93,9 @@ import {
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  NotificationRules,
+  SetNotificationRuleActionsParams,
+  SetNotificationRuleEnabledParams,
   StartMeetingOptions,
   User,
 } from "../types";
@@ -134,6 +137,12 @@ import {
   MEETING_EVENT_TYPE,
   type MeetingStateEventContent,
 } from "./matrixMeetingMapping";
+import {
+  ruleActionsAreDontNotify,
+  toNotificationRules,
+  toPushRuleActions,
+  toPushRuleKind,
+} from "./matrixPushRuleMapping";
 import {
   clearStoredConversationSearch,
   MATRIX_USER_STORAGE_KEY,
@@ -306,6 +315,7 @@ export class MatrixDriver extends Driver {
   override readonly supportsSpaces: boolean = true;
   override readonly supportsSpaceCreation: boolean = true;
   override readonly supportsMeetings: boolean = true;
+  override readonly supportsNotificationRules: boolean = true;
 
   private mx: MatrixClient | null = null;
   /** Subscribers to the single global event stream. */
@@ -522,6 +532,58 @@ export class MatrixDriver extends Driver {
       return;
     }
     await mx.deleteRoomTag(chatId, MATRIX_FAVOURITE_TAG);
+  }
+
+  async getNotificationRules(): Promise<NotificationRules> {
+    const mx = this.requireClient("getNotificationRules");
+    const raw = await mx.getPushRules();
+    return toNotificationRules(raw.global);
+  }
+
+  async setNotificationRuleEnabled({
+    kind,
+    ruleId,
+    enabled,
+  }: SetNotificationRuleEnabledParams): Promise<void> {
+    const mx = this.requireClient("setNotificationRuleEnabled");
+    await mx.setPushRuleEnabled(
+      "global",
+      toPushRuleKind(kind),
+      ruleId,
+      enabled,
+    );
+    this.emit({ type: "notification-rules:changed" });
+  }
+
+  async setNotificationRuleActions({
+    kind,
+    ruleId,
+    actions,
+  }: SetNotificationRuleActionsParams): Promise<void> {
+    const mx = this.requireClient("setNotificationRuleActions");
+    await mx.setPushRuleActions(
+      "global",
+      toPushRuleKind(kind),
+      ruleId,
+      toPushRuleActions(actions),
+    );
+    this.emit({ type: "notification-rules:changed" });
+  }
+
+  /**
+   * Push rules key off `rule_id`, not a loaded `Room` — unlike
+   * `setChatFavourite`, this doesn't need `requireRoom`/a joined room.
+   */
+  async isChatMuted(chatId: string): Promise<boolean> {
+    const mx = this.requireClient("isChatMuted");
+    const rule = mx.getRoomPushRule("global", chatId);
+    return Boolean(rule?.enabled && ruleActionsAreDontNotify(rule.actions));
+  }
+
+  async setChatMuted(chatId: string, muted: boolean): Promise<void> {
+    const mx = this.requireClient("setChatMuted");
+    await mx.setRoomMutePushRule("global", chatId, muted);
+    this.emit({ type: "notification-rules:changed" });
   }
 
   async getChatMeetings(chatId: string): Promise<ChatMeeting[]> {
@@ -2592,6 +2654,14 @@ export class MatrixDriver extends Driver {
         emitMainTimelineUnread(room);
       }
     };
+    // Global (not room-scoped) account data — `m.push_rules` is the only
+    // one this driver reacts to, so other tabs/sessions changing a
+    // notification rule are reflected here without a manual refresh.
+    const onGlobalAccountData = (event: MatrixEvent) => {
+      if (event.getType() === EventType.PushRules) {
+        this.emit({ type: "notification-rules:changed" });
+      }
+    };
     const onThreadNew = (thread: Thread, toStartOfTimeline: boolean) => {
       const reply = thread.replyToEvent ?? undefined;
       if (toStartOfTimeline || !reply) {
@@ -2695,6 +2765,7 @@ export class MatrixDriver extends Driver {
     mx.on(RoomEvent.Name, onName);
     mx.on(RoomEvent.Tags, onTags);
     mx.on(RoomEvent.AccountData, onAccountData);
+    mx.on(ClientEvent.AccountData, onGlobalAccountData);
     mx.on(ClientEvent.Room, onRoom);
     mx.on(ClientEvent.Sync, onSync);
     mx.on(RoomEvent.MyMembership, onMyMembership);
@@ -2718,6 +2789,7 @@ export class MatrixDriver extends Driver {
       mx.off(RoomEvent.Name, onName);
       mx.off(RoomEvent.Tags, onTags);
       mx.off(RoomEvent.AccountData, onAccountData);
+      mx.off(ClientEvent.AccountData, onGlobalAccountData);
       mx.off(ClientEvent.Room, onRoom);
       mx.off(ClientEvent.Sync, onSync);
       mx.off(RoomEvent.MyMembership, onMyMembership);

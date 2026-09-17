@@ -184,6 +184,68 @@ export type StartMeetingOptions = {
   startsAt?: Date;
 };
 
+/**
+ * The five Matrix push-rule kinds, checked server-side in this order
+ * (override > content > room > sender > underride) to decide whether — and
+ * how — an event notifies.
+ */
+export type NotificationRuleKind =
+  | "override"
+  | "content"
+  | "room"
+  | "sender"
+  | "underride";
+
+/**
+ * A push rule's effect, driver-neutral (camelCase) mirror of Matrix's own
+ * `PushRuleAction` — the Matrix ↔ neutral renaming happens once, in the
+ * driver's mapper, not at every call site.
+ */
+export type NotificationRuleAction =
+  | "notify"
+  | "dont_notify"
+  | "coalesce"
+  | { setTweak: "sound"; value?: string }
+  | { setTweak: "highlight"; value?: boolean };
+
+/** Minimal shape of a push condition the human-readable layer reads. */
+export type NotificationRuleCondition = {
+  kind: string;
+  key?: string;
+  pattern?: string;
+  is?: string;
+};
+
+export type NotificationRule = {
+  id: string;
+  kind: NotificationRuleKind;
+  isEnabled: boolean;
+  /** True for Matrix's own default rules (`.m.rule.*`); false for a custom
+   * rule (for example a per-room mute) the translation layer falls back to
+   * generic phrasing for. */
+  isDefault: boolean;
+  actions: NotificationRuleAction[];
+  conditions?: NotificationRuleCondition[];
+  pattern?: string;
+};
+
+export type NotificationRules = Record<
+  NotificationRuleKind,
+  NotificationRule[]
+>;
+
+export type SetNotificationRuleEnabledParams = {
+  kind: NotificationRuleKind;
+  ruleId: string;
+  enabled: boolean;
+};
+
+export type SetNotificationRuleActionsParams = {
+  kind: NotificationRuleKind;
+  ruleId: string;
+  actions: NotificationRuleAction[];
+};
+
 export type LocalChatSections = {
   favourites: LocalChat[];
   all: LocalChat[];

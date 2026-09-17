@@ -256,6 +256,39 @@ describe("MatrixDriver.getUserPresence", () => {
   });
 });
 
+describe("MatrixDriver.fetchUserPresence", () => {
+  it("maps the homeserver's own answer when the store is empty", async () => {
+    const getPresence = vi.fn(async () => ({ presence: "offline" }));
+    const mx = { getPresence } as unknown as MatrixClient;
+
+    await expect(
+      driverWithClient(mx).fetchUserPresence(OTHER_ID),
+    ).resolves.toEqual({ userId: OTHER_ID, state: "offline" });
+    expect(getPresence).toHaveBeenCalledWith(OTHER_ID);
+  });
+
+  it("stays quiet when the server refuses or answers nonsense", async () => {
+    const refusing = {
+      getPresence: async () => {
+        throw new Error("M_FORBIDDEN");
+      },
+    } as unknown as MatrixClient;
+    const nonsense = {
+      getPresence: async () => ({ presence: "dancing" }),
+    } as unknown as MatrixClient;
+
+    await expect(
+      driverWithClient(refusing).fetchUserPresence(OTHER_ID),
+    ).resolves.toBeNull();
+    await expect(
+      driverWithClient(nonsense).fetchUserPresence(OTHER_ID),
+    ).resolves.toBeNull();
+    await expect(
+      driverWithClient(null).fetchUserPresence(OTHER_ID),
+    ).resolves.toBeNull();
+  });
+});
+
 describe("MatrixDriver.setUserPresence", () => {
   it.each(["online", "unavailable", "offline"] as const)(
     "makes Matrix %s authoritative for subsequent syncs",

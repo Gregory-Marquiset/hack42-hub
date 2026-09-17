@@ -10,10 +10,11 @@ import type { Chat } from "@/features/drivers/types";
 import { ChatPresenceAvatar } from "../ChatPresenceAvatar";
 
 const getUserPresence = vi.fn();
+const fetchUserPresence = vi.fn(async () => null);
 
 vi.mock("@/features/drivers/DriverRegistry", () => ({
   useDriverEntries: () => [
-    { accountId: "account-a", driver: { getUserPresence } },
+    { accountId: "account-a", driver: { getUserPresence, fetchUserPresence } },
   ],
 }));
 vi.mock("@/features/chat/hooks/useAvatarSrc", () => ({

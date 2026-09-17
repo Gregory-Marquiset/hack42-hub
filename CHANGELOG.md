@@ -21,6 +21,9 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- 🐛(frontend) Show the availability dot for someone who has been offline for
+  a while: `/sync` never repeated their presence, so the row could not tell
+  "offline" from "not known" and showed nothing.
 - 💄(frontend) Replace the SDK's multi-line decryption diagnostic with a short
   tombstone - a padlock and one line - for a message this device holds no key
   for, and skip those events in the conversation list preview.

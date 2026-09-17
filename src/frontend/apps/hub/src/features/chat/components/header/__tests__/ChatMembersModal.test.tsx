@@ -26,13 +26,14 @@ const members: ChatMember[] = [
   },
 ];
 const getUserPresence = vi.fn(() => null);
+const fetchUserPresence = vi.fn(async () => null);
 const subscribeToEvents = vi.fn();
 
 vi.mock("@/features/drivers/DriverRegistry", () => ({
   useDriverEntries: () => [
     {
       accountId: "account-a",
-      driver: { getUserPresence, subscribeToEvents },
+      driver: { getUserPresence, fetchUserPresence, subscribeToEvents },
     },
   ],
 }));

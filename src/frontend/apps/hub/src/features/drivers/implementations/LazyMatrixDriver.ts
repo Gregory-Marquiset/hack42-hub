@@ -212,6 +212,12 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.target?.getUserPresence(userId) ?? null;
   }
 
+  override async fetchUserPresence(
+    userId: string,
+  ): Promise<ChatUserPresence | null> {
+    return this.withTarget((driver) => driver.fetchUserPresence(userId));
+  }
+
   override readonly supportsPresence = true;
 
   getCurrentUserId(): string | null {

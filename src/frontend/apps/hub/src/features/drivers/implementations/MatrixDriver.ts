@@ -144,7 +144,10 @@ import {
   readChatSelfPresencePreference,
   writeChatSelfPresencePreference,
 } from "../presencePreference";
-import { matrixUserToChatUserPresence } from "./matrixPresence";
+import {
+  matrixPresenceResponseToChatUserPresence,
+  matrixUserToChatUserPresence,
+} from "./matrixPresence";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
@@ -897,6 +900,23 @@ export class MatrixDriver extends Driver {
 
   getUserPresence(userId: string): ChatUserPresence | null {
     return matrixUserToChatUserPresence(this.mx?.getUser(userId) ?? null);
+  }
+
+  override async fetchUserPresence(
+    userId: string,
+  ): Promise<ChatUserPresence | null> {
+    const mx = this.mx;
+    if (!mx) return null;
+    try {
+      return matrixPresenceResponseToChatUserPresence(
+        userId,
+        await mx.getPresence(userId),
+      );
+    } catch {
+      // A presence nobody is allowed to see, or a server that does not keep
+      // any: the dot stays off rather than the row failing.
+      return null;
+    }
   }
 
   override readonly supportsPresence = true;

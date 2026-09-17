@@ -278,6 +278,8 @@ export abstract class Driver {
   readonly supportsConversationCreation: boolean = false;
   /** Whether the driver exposes a Matrix-Space-like grouping (`getSpaces`). */
   readonly supportsSpaces: boolean = false;
+  /** Whether the driver can create a new espace (see `createSpace`). */
+  readonly supportsSpaceCreation: boolean = false;
   /** Whether the driver can start/list meetings for a conversation. */
   readonly supportsMeetings: boolean = false;
 
@@ -293,6 +295,16 @@ export abstract class Driver {
    */
   async getSpaces(): Promise<LocalSpace[]> {
     return [];
+  }
+  /**
+   * Creates a new espace and resolves with it. Unsupported by default so
+   * drivers opt in (see `supportsSpaceCreation`).
+   */
+  async createSpace(_name: string): Promise<LocalSpace> {
+    void _name;
+    throw new Error(
+      `${this.constructor.name}.createSpace: creating an espace is not supported by this driver.`,
+    );
   }
   /** People available when composing a new chat. */
   abstract getChatUsers(filters?: ChatUserFilters): Promise<ChatUser[]>;
@@ -488,14 +500,31 @@ export abstract class Driver {
 
   /**
    * Creates a brand-new conversation for exactly these participants (a direct
-   * chat for one, a group for several) and resolves with it. Idempotent where it
-   * can be: a driver that already has a conversation for the set SHOULD return it
-   * rather than create a duplicate. Drives the New Chat "start a conversation"
-   * flow — the UI creates the conversation lazily, on confirming the selection.
-   * Unsupported by default so drivers opt in (see `supportsConversationCreation`).
+   * chat for one, a group for several) and resolves with it. Idempotent by
+   * default where it can be: a driver that already has a conversation for the
+   * set SHOULD return it rather than create a duplicate — `name` and `spaceId`
+   * are only applied on that actual-creation path, so they're silently ignored
+   * when an existing conversation is reused. `spaceId` attaches the new
+   * conversation as that espace's child (the Salon creation flow), so it
+   * actually shows up under it. Set `forceNew` to skip the reuse check
+   * entirely — the Salon flow does this: naming a salon and picking its espace
+   * is an explicit request for a new room, even if the same people already
+   * share an unrelated chat elsewhere; silently redirecting into that chat
+   * instead would just look like the salon never got created. Drives the New
+   * Chat "start a conversation" flow — the UI creates the conversation lazily,
+   * on confirming the selection. Unsupported by default so drivers opt in (see
+   * `supportsConversationCreation`).
    */
-  async createChatForUsers(_userIds: string[]): Promise<LocalChat> {
+  async createChatForUsers(
+    _userIds: string[],
+    _name?: string,
+    _spaceId?: string,
+    _forceNew?: boolean,
+  ): Promise<LocalChat> {
     void _userIds;
+    void _name;
+    void _spaceId;
+    void _forceNew;
     throw new Error(
       `${this.constructor.name}.createChatForUsers: creating a conversation is not supported by this driver.`,
     );

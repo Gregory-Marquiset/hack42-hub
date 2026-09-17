@@ -115,6 +115,7 @@ export class LazyMatrixDriver extends BaseDriver {
   // the New Chat composer before the SDK lazy-loads.
   override readonly supportsConversationCreation = true;
   override readonly supportsSpaces = true;
+  override readonly supportsSpaceCreation = true;
   // Static capability mirroring the real `MatrixDriver`, read by the meeting
   // button before the SDK lazy-loads.
   override readonly supportsMeetings = true;
@@ -184,6 +185,10 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) => driver.getSpaces());
   }
 
+  async createSpace(name: string): Promise<LocalSpace> {
+    return this.withTarget((driver) => driver.createSpace(name));
+  }
+
   async getChatUsers(filters?: ChatUserFilters): Promise<ChatUser[]> {
     return this.withTarget((driver) => driver.getChatUsers(filters));
   }
@@ -196,8 +201,15 @@ export class LazyMatrixDriver extends BaseDriver {
     return this.withTarget((driver) => driver.getChatForUsers(userIds));
   }
 
-  async createChatForUsers(userIds: string[]): Promise<LocalChat> {
-    return this.withTarget((driver) => driver.createChatForUsers(userIds));
+  async createChatForUsers(
+    userIds: string[],
+    name?: string,
+    spaceId?: string,
+    forceNew?: boolean,
+  ): Promise<LocalChat> {
+    return this.withTarget((driver) =>
+      driver.createChatForUsers(userIds, name, spaceId, forceNew),
+    );
   }
 
   // Static capability mirroring the real `MatrixDriver`, read synchronously

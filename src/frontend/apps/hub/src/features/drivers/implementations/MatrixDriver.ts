@@ -304,6 +304,7 @@ export class MatrixDriver extends Driver {
   override readonly supportsConversationHistoryRemoval: boolean = true;
   override readonly supportsConversationCreation: boolean = true;
   override readonly supportsSpaces: boolean = true;
+  override readonly supportsSpaceCreation: boolean = true;
   override readonly supportsMeetings: boolean = true;
 
   private mx: MatrixClient | null = null;
@@ -420,6 +421,22 @@ export class MatrixDriver extends Driver {
       .getVisibleRooms()
       .filter((room) => room.isSpaceRoom() && joinedRoomIds.has(room.roomId))
       .map((room) => matrixRoomToLocalSpace(room));
+  }
+
+  async createSpace(name: string): Promise<LocalSpace> {
+    const mx = this.requireClient("createSpace");
+    const { room_id: roomId } = await mx.createRoom({
+      name,
+      preset: Preset.PrivateChat,
+      creation_content: { type: "m.space" },
+    });
+    const room = await this.waitForRoom(mx, roomId);
+    if (!room) {
+      throw new Error(
+        `MatrixDriver.createSpace: room "${roomId}" not found after creation.`,
+      );
+    }
+    return matrixRoomToLocalSpace(room);
   }
 
   /** Room ids listed as children of `spaceId`'s `m.space.child` state, if joined. */
@@ -697,6 +714,12 @@ export class MatrixDriver extends Driver {
     const joinedRoomIds = await this.getJoinedRoomIds(mx);
     const match = mx
       .getVisibleRooms()
+      // Espaces are a separate hierarchy level (see `getSpaces`), never a
+      // conversation — without this, an espace whose invite list happens to
+      // match `userIds` (e.g. every seeded espace shares the same invitees)
+      // gets misread as "the existing chat for these participants" and
+      // hijacked instead of creating a real room for them.
+      .filter((room) => !room.isSpaceRoom())
       .filter((room) => joinedRoomIds.has(room.roomId))
       .find(
         (room) =>
@@ -715,7 +738,12 @@ export class MatrixDriver extends Driver {
    * creating a second one. Concurrent local calls for the same participant set
    * share one promise.
    */
-  async createChatForUsers(userIds: string[]): Promise<LocalChat> {
+  async createChatForUsers(
+    userIds: string[],
+    name?: string,
+    spaceId?: string,
+    forceNew?: boolean,
+  ): Promise<LocalChat> {
     const mx = this.requireClient("createChatForUsers");
     const participantIds = [...new Set(userIds)].filter(Boolean);
     if (participantIds.length === 0) {
@@ -724,13 +752,22 @@ export class MatrixDriver extends Driver {
       );
     }
 
-    const creationKey = participantSetKey(participantIds);
+    // `forceNew` calls (Salon creation) never share an in-flight promise with
+    // a reuse-eligible one for the same participants — each is asking a
+    // different question ("the existing chat, if any" vs. "a brand-new one").
+    const creationKey = `${forceNew ? "new:" : ""}${participantSetKey(participantIds)}`;
     const inFlight = this.chatCreations.get(creationKey);
     if (inFlight) {
       return inFlight;
     }
 
-    const creation = this.resolveOrCreateChatForUsers(mx, participantIds);
+    const creation = this.resolveOrCreateChatForUsers(
+      mx,
+      participantIds,
+      name,
+      spaceId,
+      forceNew,
+    );
     this.chatCreations.set(creationKey, creation);
     try {
       return await creation;
@@ -795,13 +832,18 @@ export class MatrixDriver extends Driver {
   private async resolveOrCreateChatForUsers(
     mx: MatrixClient,
     participantIds: string[],
+    name?: string,
+    spaceId?: string,
+    forceNew?: boolean,
   ): Promise<LocalChat> {
-    // Creation is rare and duplicate rooms are permanent, so bypass the cached
-    // joined set for this last-chance check against the homeserver.
-    await this.refreshJoinedRoomIds(mx);
-    const existing = await this.getChatForUsers(participantIds);
-    if (existing) {
-      return existing;
+    if (!forceNew) {
+      // Creation is rare and duplicate rooms are permanent, so bypass the
+      // cached joined set for this last-chance check against the homeserver.
+      await this.refreshJoinedRoomIds(mx);
+      const existing = await this.getChatForUsers(participantIds);
+      if (existing) {
+        return existing;
+      }
     }
 
     if (participantIds.length === 1) {
@@ -849,10 +891,21 @@ export class MatrixDriver extends Driver {
       preset: Preset.PrivateChat,
       is_direct: isDirect,
       invite: participantIds,
+      ...(name ? { name } : {}),
       // Every member may start a meeting, which is recorded as room state
       // (moderator-only by default).
       power_level_content_override: { events: { [MEETING_EVENT_TYPE]: 0 } },
     });
+
+    if (spaceId) {
+      const domain = mx.getDomain();
+      await mx.sendStateEvent(
+        spaceId,
+        EventType.SpaceChild,
+        { via: domain ? [domain] : [] },
+        roomId,
+      );
+    }
 
     const room = await this.waitForRoom(mx, roomId);
     if (room) {
@@ -863,7 +916,7 @@ export class MatrixDriver extends Driver {
     // real name/kind firm up once `getChat` reads the synced room.
     return {
       id: roomId,
-      name: participantIds[0],
+      name: name ?? participantIds[0],
       section: "all",
       kind: isDirect ? "direct" : "group",
       participantIds,

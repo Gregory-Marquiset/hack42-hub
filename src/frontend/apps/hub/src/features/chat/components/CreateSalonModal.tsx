@@ -22,7 +22,7 @@ type CreateSalonModalProps = {
   isOpen: boolean;
   onClose: () => void;
   spaces: Space[];
-  /** Pre-selected when the modal opens — the currently-active espace, if
+  /** Preselected when the modal opens — the currently-active espace, if
    * any — but the user picks (and can change) which one the new salon
    * actually joins before creating it. */
   defaultSpaceId: string | null;

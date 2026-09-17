@@ -303,6 +303,21 @@ class Base(Configuration):
                 environ_name="API_MEETING_CREATION_THROTTLE_RATE",
                 environ_prefix=None,
             ),
+            "meeting_transcript": values.Value(
+                default="30/minute",
+                environ_name="API_MEETING_TRANSCRIPT_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "meeting_archive": values.Value(
+                default="20/minute",
+                environ_name="API_MEETING_ARCHIVE_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "meeting_documents": values.Value(
+                default="60/minute",
+                environ_name="API_MEETING_DOCUMENTS_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
         },
     }
     MONITORED_THROTTLE_FAILURE_CALLBACK = (
@@ -364,8 +379,9 @@ class Base(Configuration):
     MATRIX_HS_TOKEN = values.Value(
         None, environ_name="MATRIX_HS_TOKEN", environ_prefix=None
     )
-    # 🔒️ Synapse admin rights. The only way into a room nobody invited Ariane
-    # to - the client API answers M_FORBIDDEN there.
+    # 🔒️ Synapse admin rights, read-only and for one thing: listing a room's
+    # members so the backend can decide who may download a meeting archive.
+    # It is no longer a way into a room - Ariane enters on invitation only.
     MATRIX_ADMIN_TOKEN = values.Value(
         None, environ_name="MATRIX_ADMIN_TOKEN", environ_prefix=None
     )
@@ -494,6 +510,62 @@ class Base(Configuration):
     )
     MEET_API_TIMEOUT = values.PositiveIntegerValue(
         10, environ_name="MEET_API_TIMEOUT", environ_prefix=None
+    )
+
+    # Meeting transcripts: the scribe service relays the live subtitles of Hub
+    # meetings with this token, and the transcript is saved in Docs when the
+    # organizer closes the meeting. Without these settings, nothing is kept.
+    MEETING_SCRIBE_TOKEN = SecretFileValue(
+        None, environ_name="MEETING_SCRIBE_TOKEN", environ_prefix=None
+    )
+    # How long after its creation a meeting is still followed by the scribe.
+    MEETING_SCRIBE_MAX_AGE_HOURS = values.PositiveIntegerValue(
+        24, environ_name="MEETING_SCRIBE_MAX_AGE_HOURS", environ_prefix=None
+    )
+    # Ariane tells the members when a meeting is scheduled, starts and ends,
+    # in a private message (needs her Matrix tokens).
+    MEETING_NOTIFICATIONS_ENABLED = values.BooleanValue(
+        True, environ_name="MEETING_NOTIFICATIONS_ENABLED", environ_prefix=None
+    )
+    DOCS_BASE_URL = values.Value(
+        None, environ_name="DOCS_BASE_URL", environ_prefix=None
+    )
+    DOCS_SERVER_TO_SERVER_API_TOKEN = SecretFileValue(
+        None, environ_name="DOCS_SERVER_TO_SERVER_API_TOKEN", environ_prefix=None
+    )
+    # Docs converts the markdown before answering: allow it some time.
+    DOCS_API_TIMEOUT = values.PositiveIntegerValue(
+        60, environ_name="DOCS_API_TIMEOUT", environ_prefix=None
+    )
+
+    # Whiteboard shown next to the call, as a self-hosted Excalidraw. Without
+    # this setting the meeting window shows the call alone.
+    MEETING_BOARD_BASE_URL = values.Value(
+        None, environ_name="MEETING_BOARD_BASE_URL", environ_prefix=None
+    )
+    # Where that Excalidraw keeps the scenes of its rooms (a Firestore
+    # collection), to put the board in the archive. Without it, the archive
+    # has no whiteboard.
+    MEETING_BOARD_SCENES_URL = values.Value(
+        None, environ_name="MEETING_BOARD_SCENES_URL", environ_prefix=None
+    )
+    MEETING_BOARD_TIMEOUT = values.PositiveIntegerValue(
+        15, environ_name="MEETING_BOARD_TIMEOUT", environ_prefix=None
+    )
+    # The boards still open save their last strokes when the call window
+    # closes: the scene is read back that many seconds after the closing.
+    MEETING_BOARD_SAVE_DELAY = values.PositiveIntegerValue(
+        15, environ_name="MEETING_BOARD_SAVE_DELAY", environ_prefix=None
+    )
+
+    # Documents added to a meeting, kept by the Hub for its members and archive.
+    MEETING_ATTACHMENT_MAX_BYTES = values.PositiveIntegerValue(
+        20 * 1024 * 1024,
+        environ_name="MEETING_ATTACHMENT_MAX_BYTES",
+        environ_prefix=None,
+    )
+    MEETING_ATTACHMENTS_MAX = values.PositiveIntegerValue(
+        30, environ_name="MEETING_ATTACHMENTS_MAX", environ_prefix=None
     )
 
     OIDC_AUTHENTICATE_CLASS = values.Value(
@@ -751,6 +823,11 @@ class Base(Configuration):
                 environment=cls.__name__.lower(),
                 release=get_release(),
                 integrations=[DjangoIntegration()],
+                # Request bodies are attached regardless of `send_default_pii`,
+                # and the default scrubber only matches a fixed list of key
+                # names - so a body carrying a credential would be shipped
+                # verbatim on any 500. Nothing here needs them.
+                max_request_body_size="never",
             )
             sentry_sdk.set_tag("application", "backend")
 
@@ -837,6 +914,13 @@ class Test(Base):
     STATIC_ROOT = None
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+
+    # No real Matrix in tests: the notification tests turn it back on with
+    # a fake homeserver.
+    MEETING_NOTIFICATIONS_ENABLED = False
+    MEETING_BOARD_SAVE_DELAY = 0
+    # No real scene store either; the board tests set their own.
+    MEETING_BOARD_SCENES_URL = None
 
     def __init__(self):
         # pylint: disable=invalid-name

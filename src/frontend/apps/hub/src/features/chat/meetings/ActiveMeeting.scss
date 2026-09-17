@@ -148,16 +148,98 @@
       color: var(--c--contextuals--content--semantic--error--primary, #ce0500);
     }
 
+    &[data-active] {
+      background: var(
+        --c--contextuals--background--semantic--overlay--primary,
+        rgba(24, 27, 36, 0.08)
+      );
+    }
+
     svg {
       width: 18px;
       height: 18px;
     }
   }
 
+  &__body {
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+    // Under ~720px the two frames would both be unusable: the whiteboard goes
+    // under the call instead of beside it.
+    @media (max-width: 720px) {
+      flex-direction: column;
+    }
+  }
+
+  // Invitation link, for people outside the conversation.
+  &__share {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--xxxs, 4px);
+    padding: var(--c--globals--spacings--xs, 8px);
+    background: var(--c--contextuals--background--surface--secondary, #f6f7f9);
+    border-bottom: 1px solid
+      var(--c--contextuals--border--surface--primary, #dfe2ea);
+  }
+
+  &__share-text {
+    margin: 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(
+      --c--contextuals--content--semantic--neutral--secondary,
+      #3a3f4c
+    );
+  }
+
+  &__share-row {
+    display: flex;
+    gap: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__share-link {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    padding: 0 var(--c--globals--spacings--xs, 8px);
+    border: 1px solid var(--c--contextuals--border--surface--primary, #dfe2ea);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--c--contextuals--content--semantic--neutral--primary, #222631);
+    background: var(--c--contextuals--background--surface--primary, #fff);
+  }
+
   &__frame {
     flex: 1 1 auto;
-    width: 100%;
+    min-width: 0;
+    min-height: 0;
     border: 0;
     background: #000;
+  }
+
+  &__board {
+    flex: 0 0 45%;
+    min-width: 0;
+    min-height: 0;
+    border: 0;
+    border-left: 1px solid
+      var(--c--contextuals--border--surface--primary, #dfe2ea);
+    background: var(--c--contextuals--background--surface--primary, #fff);
+
+    // `hidden` must win over the flex display above: the frame stays mounted
+    // so the call and the drawing survive closing the panel.
+    &[hidden] {
+      display: none;
+    }
+
+    @media (max-width: 720px) {
+      flex-basis: 50%;
+      border-left: 0;
+      border-top: 1px solid
+        var(--c--contextuals--border--surface--primary, #dfe2ea);
+    }
   }
 }

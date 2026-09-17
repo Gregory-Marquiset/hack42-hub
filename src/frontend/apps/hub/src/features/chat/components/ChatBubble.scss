@@ -59,6 +59,43 @@
     font-style: italic;
   }
 
+  // A link keeps the colour of its bubble, underlined to be seen as one.
+  &__link {
+    color: inherit;
+    text-decoration: underline;
+    overflow-wrap: anywhere;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration-thickness: 2px;
+    }
+  }
+
+  // Joins the meeting a message invites to, in the Hub window.
+  &__meeting {
+    appearance: none;
+    display: block;
+    margin-top: var(--c--globals--spacings--xs, 8px);
+    padding: var(--c--globals--spacings--xxs, 6px)
+      var(--c--globals--spacings--sm, 12px);
+    background: var(--c--contextuals--background--surface--primary, #fff);
+    border: 1px solid currentcolor;
+    border-radius: var(--c--globals--spacings--xxxs, 4px);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--c--contextuals--content--semantic--brand--primary, #3e5de7);
+
+    &:hover,
+    &:focus-visible {
+      background: var(
+        --c--contextuals--background--semantic--overlay--primary,
+        rgba(24, 27, 36, 0.05)
+      );
+    }
+  }
+
   &__edited {
     margin-left: var(--c--globals--spacings--xxs, 6px);
     font-size: 11px;

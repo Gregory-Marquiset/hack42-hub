@@ -18,17 +18,27 @@ const URL_A = "https://meet.example.com/abc-defg-hij";
 const URL_B = "https://meet.example.com/klm-nopq-rst";
 const CHAT_REF: ChatRef = { accountId: "matrix", chatId: "!room:localhost" };
 
-const state = vi.hoisted(() => ({ meetings: [] as ChatMeeting[] }));
+const BOARD_URL = "https://board.example.com/#room=abc,key";
+
+const state = vi.hoisted(() => ({
+  meetings: [] as ChatMeeting[],
+  boardUrl: null as string | null,
+  boardName: undefined as string | undefined,
+}));
 const endMeeting = vi.hoisted(() => vi.fn(async () => undefined));
 const extendMeeting = vi.hoisted(() => vi.fn(async () => undefined));
 const renameMeeting = vi.hoisted(() => vi.fn(async () => undefined));
+const setBoard = vi.hoisted(() => vi.fn(async () => undefined));
 const notifyBrand = vi.hoisted(() => vi.fn());
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock("@/features/auth/Auth", () => ({
-  useAuth: () => ({ chatUser: { userId: SELF_ID } }),
+  useAuth: () => ({
+    chatUser: { userId: SELF_ID },
+    user: { full_name: "Greg Marquiset" },
+  }),
 }));
 vi.mock("@/features/chat/hooks/useChatMeetings", () => ({
   useChatMeetings: () => ({
@@ -42,8 +52,17 @@ vi.mock("@/features/chat/hooks/useChatMeetingActions", () => ({
     endMeeting,
     extendMeeting,
     renameMeeting,
+    setBoard,
     isPending: false,
   }),
+}));
+// The board URL derivation needs Web Crypto, which jsdom does not provide;
+// it has its own unit test.
+vi.mock("../meetingBoard", () => ({
+  useMeetingBoardUrl: (seed: string | undefined, name?: string) => {
+    state.boardName = name;
+    return state.boardUrl;
+  },
 }));
 vi.mock("@/features/ui/components/toast", () => ({
   notify: { brand: notifyBrand, error: vi.fn() },
@@ -79,6 +98,12 @@ const Opener = () => {
       <button type="button" onClick={() => openMeeting({ url: URL_B })}>
         open B
       </button>
+      <button
+        type="button"
+        onClick={() => openMeeting({ url: URL_B, showInvitation: true })}
+      >
+        open new
+      </button>
       <span data-testid="state">{isMinimized ? "minimized" : "expanded"}</span>
     </>
   );
@@ -96,6 +121,7 @@ const dialog = () => screen.getByRole("dialog");
 describe("ActiveMeetingProvider", () => {
   beforeEach(() => {
     state.meetings = [meetingA()];
+    state.boardUrl = null;
   });
 
   afterEach(() => {
@@ -188,6 +214,98 @@ describe("ActiveMeetingProvider", () => {
     expect(progress.hasAttribute("data-overdue")).toBe(true);
   });
 
+  it("offers no whiteboard when the deployment configures none", () => {
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    expect(screen.queryByLabelText("Show the whiteboard")).toBeNull();
+    expect(screen.queryByTestId("meeting-board")).toBeNull();
+  });
+
+  it("shows the whiteboard next to the call, without touching the call", () => {
+    state.boardUrl = BOARD_URL;
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+    const call = frame();
+
+    fireEvent.click(screen.getByLabelText("Show the whiteboard"));
+
+    const board = screen.getByTestId("meeting-board") as HTMLIFrameElement;
+    expect(board.getAttribute("src")).toBe(BOARD_URL);
+    expect(board.hidden).toBe(false);
+    // The call must survive the split: a remounted frame would drop the user.
+    expect(frame()).toBe(call);
+  });
+
+  it("opens the whiteboard for every participant", () => {
+    state.boardUrl = BOARD_URL;
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    fireEvent.click(screen.getByLabelText("Show the whiteboard"));
+
+    expect(setBoard).toHaveBeenCalledWith("abc-defg-hij", true);
+    // The participant's name travels with the board link.
+    expect(state.boardName).toBe("Greg Marquiset");
+
+    fireEvent.click(screen.getByLabelText("Hide the whiteboard"));
+    expect(setBoard).toHaveBeenLastCalledWith("abc-defg-hij", false);
+  });
+
+  it("follows a whiteboard another participant opened", () => {
+    state.boardUrl = BOARD_URL;
+    const { rerender } = render(app());
+    fireEvent.click(screen.getByText("open A"));
+    expect(screen.queryByTestId("meeting-board")).toBeNull();
+
+    state.meetings = [meetingA({ isBoardOpen: true })];
+    rerender(app());
+
+    const board = screen.getByTestId("meeting-board") as HTMLIFrameElement;
+    expect(board.hidden).toBe(false);
+    expect(setBoard).not.toHaveBeenCalled();
+  });
+
+  it("keeps the whiteboard open here when the room refuses the change", async () => {
+    state.boardUrl = BOARD_URL;
+    setBoard.mockRejectedValueOnce(new Error("forbidden"));
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Show the whiteboard"));
+    });
+
+    const board = screen.getByTestId("meeting-board") as HTMLIFrameElement;
+    expect(board.hidden).toBe(false);
+  });
+
+  it("keeps the whiteboard mounted when it is hidden again", () => {
+    state.boardUrl = BOARD_URL;
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+    fireEvent.click(screen.getByLabelText("Show the whiteboard"));
+    const board = screen.getByTestId("meeting-board") as HTMLIFrameElement;
+
+    fireEvent.click(screen.getByLabelText("Hide the whiteboard"));
+
+    expect(screen.getByTestId("meeting-board")).toBe(board);
+    expect(board.hidden).toBe(true);
+  });
+
+  it("hides the whiteboard while the window is minimized", () => {
+    state.boardUrl = BOARD_URL;
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+    fireEvent.click(screen.getByLabelText("Show the whiteboard"));
+
+    fireEvent.click(screen.getByLabelText("Minimize the meeting"));
+
+    const board = screen.getByTestId("meeting-board") as HTMLIFrameElement;
+    expect(screen.queryByLabelText("Hide the whiteboard")).toBeNull();
+    expect(board.hidden).toBe(true);
+  });
+
   it("lets the organizer extend and close the meeting", () => {
     render(app());
     fireEvent.click(screen.getByText("open A"));
@@ -196,7 +314,7 @@ describe("ActiveMeetingProvider", () => {
     fireEvent.click(screen.getByText("Close the meeting"));
 
     expect(extendMeeting).toHaveBeenCalledWith("abc-defg-hij", 15);
-    expect(endMeeting).toHaveBeenCalledWith("abc-defg-hij");
+    expect(endMeeting).toHaveBeenCalledWith("abc-defg-hij", "Point hebdo");
   });
 
   it("lets the organizer rename the meeting", () => {
@@ -226,6 +344,60 @@ describe("ActiveMeetingProvider", () => {
     expect(screen.getByText("Point hebdo")).toBeTruthy();
   });
 
+  it("shows the invitation link to every participant", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    state.meetings = [meetingA({ organizerId: OTHER_ID })];
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+    expect(screen.queryByLabelText("Invitation link")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Invite people from outside"));
+
+    const link = screen.getByRole("textbox", {
+      name: "Invitation link",
+    }) as HTMLInputElement;
+    expect(link.value).toBe(URL_A);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Copy the link"));
+    });
+    expect(writeText).toHaveBeenCalledWith(URL_A);
+    expect(notifyBrand).toHaveBeenCalledWith(
+      "Invitation link copied: anyone with it can join the call.",
+    );
+
+    fireEvent.click(screen.getByLabelText("Invite people from outside"));
+    expect(screen.queryByLabelText("Invitation link")).toBeNull();
+  });
+
+  it("opens a call just created with its invitation link", () => {
+    render(app());
+    fireEvent.click(screen.getByText("open new"));
+
+    const link = screen.getByRole("textbox", {
+      name: "Invitation link",
+    }) as HTMLInputElement;
+    expect(link.value).toBe(URL_B);
+    expect(
+      screen
+        .getByLabelText("Invite people from outside")
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("restores a minimized window to show the invitation link", () => {
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+    fireEvent.click(screen.getByLabelText("Minimize the meeting"));
+
+    fireEvent.click(screen.getByLabelText("Invite people from outside"));
+
+    expect(dialog().hasAttribute("data-minimized")).toBe(false);
+    expect(
+      screen.getByRole("textbox", { name: "Invitation link" }),
+    ).toBeTruthy();
+  });
+
   it("hides the organizer actions from the other participants", () => {
     state.meetings = [meetingA({ organizerId: OTHER_ID })];
     render(app());
@@ -234,6 +406,21 @@ describe("ActiveMeetingProvider", () => {
     expect(screen.queryByLabelText("Rename the meeting")).toBeNull();
     expect(screen.queryByText("+15 min")).toBeNull();
     expect(screen.queryByText("Close the meeting")).toBeNull();
+  });
+
+  it("tells everyone when the meeting closed on its own", () => {
+    const { rerender } = render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    state.meetings = [
+      meetingA({ endedAt: new Date().toISOString(), endedBy: "auto" }),
+    ];
+    act(() => rerender(app()));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(notifyBrand).toHaveBeenCalledWith(
+      "The meeting was closed automatically.",
+    );
   });
 
   it("closes the window when the organizer closes the meeting", () => {

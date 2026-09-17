@@ -8,7 +8,9 @@
 @use "./../features/layouts/LeftPanel/TchapLogo.scss";
 @use "./../features/layouts/components/AccountSelector/AccountSelector.scss";
 @use "./../features/ui/components/avatar/Avatar.scss";
+@use "./../features/ui/components/presence/UserPresenceIndicator.scss";
 @use "./../features/ui/components/user-profile/UserProfile.scss";
+@use "./../features/roles/roles.scss";
 @use "./../features/ui/components/toast/Toast.scss";
 @use "./../features/chat/components/header/ChatHeader.scss";
 @use "./../features/chat/components/ChatBubble.scss";
@@ -36,6 +38,7 @@
 @use "./../features/chat/components/tools-panel/ChatToolsPanel.scss";
 @use "./../features/chat/components/tools-panel/ThreadsTool.scss";
 @use "./../features/chat/components/tools-panel/MeetingsTool.scss";
+@use "./../features/chat/components/tools-panel/DocumentsTool.scss";
 @use "./../features/chat/meetings/ActiveMeeting.scss";
 @use "./toast.scss";
 

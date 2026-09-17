@@ -7,6 +7,8 @@ export type AccountId = string;
 export type ChatRef = {
   accountId: AccountId;
   chatId: string;
+  /** Message to jump to and flash once the chat is open, if any. */
+  eventId?: string;
 };
 
 /** A Meet room created through the Hub backend. */
@@ -15,6 +17,21 @@ export type MeetRoom = {
   url: string;
   /** Meet's room identifier, unique per room. */
   slug: string;
+};
+
+/** When the call of a new Meet room takes place, as the driver records it. */
+export type MeetRoomSchedule = {
+  startsAt: Date;
+  /** Past it, the server closes the meeting once nobody is in the call. */
+  plannedEndAt?: Date;
+  /** Espace the conversation belongs to, named in the assistant's messages. */
+  spaceName?: string;
+};
+
+/** A text file attached to a meeting when it is planned. */
+export type MeetingAttachment = {
+  name: string;
+  content: string;
 };
 
 export type ChatAccountConfig = {
@@ -123,6 +140,14 @@ export type LocalChat = {
    * chats always set it.
    */
   membership?: ChatMembership;
+  /**
+   * Whether the conversation is end-to-end encrypted.
+   *
+   * Carried on the chat rather than read from the room on demand because the
+   * consequences are user-visible and permanent: only the participants can
+   * read these messages, and the state can never be turned back off.
+   */
+  encrypted?: boolean;
   /** Invitation metadata; present only when `membership === "invite"`. */
   invitation?: ChatInvitation;
   /** Last main-timeline message, for the conversation list row's preview line. */
@@ -168,12 +193,31 @@ export type ChatMeeting = {
   startedAt: string;
   /** Planned length. The call stays joinable past it until it is closed. */
   plannedDurationMinutes?: number;
-  /** ISO 8601 time the organizer closed the meeting. */
+  /** ISO 8601 time the meeting was closed. */
   endedAt?: string;
+  /** Who closed it: its organizer, or the server once it was over and empty. */
+  endedBy?: "organizer" | "auto";
   /** Documents shared for this meeting (agenda, support…), newest first. */
   documents: ChatMeetingDocument[];
   /** Recap/summary document, once attached. */
   summary?: ChatMeetingDocument;
+  /** Whether the whiteboard is open: opening it opens it for everyone. */
+  isBoardOpen?: boolean;
+};
+
+/** A document shared in a conversation. */
+export type ChatFile = {
+  id: string;
+  name: string;
+  /** Bytes. */
+  size?: number;
+  mimeType?: string;
+  senderId: string;
+  senderName?: string;
+  /** ISO 8601. */
+  sentAt: string;
+  /** Encrypted in the browser before it was uploaded. */
+  isEncrypted: boolean;
 };
 
 /** How a meeting is created from the meetings panel. */
@@ -182,6 +226,12 @@ export type StartMeetingOptions = {
   plannedDurationMinutes?: number;
   /** Future start of a scheduled meeting; omitted to start the call now. */
   startsAt?: Date;
+  /** Agenda typed in the form, kept by the Hub for the archive. */
+  agenda?: string;
+  /** Text files picked in the form, kept by the Hub for the archive. */
+  attachments?: MeetingAttachment[];
+  /** Links shown to every member in the meeting documents. */
+  documents?: ChatMeetingDocument[];
 };
 
 /**
@@ -282,6 +332,8 @@ export type ApiConfig = {
   FRONTEND_EXTERNAL_HOME_URL?: string;
   FRONTEND_CSS_URL?: string;
   FRONTEND_JS_URL?: string;
+  /** Base URL of the self-hosted whiteboard shown next to a call. */
+  MEETING_BOARD_BASE_URL?: string | null;
   theme_customization?: ThemeCustomization;
 };
 
@@ -305,6 +357,18 @@ export type ChatUser = ChatMessageAuthor & {
   subtitle: string;
 };
 
+/** Presence values exposed by chat backends, kept separate from product labels. */
+export type ChatUserPresenceState = "online" | "unavailable" | "offline";
+
+/** User choice for this client; `online` enables automatic idle handling. */
+export type ChatSelfPresencePreference = "online" | "offline";
+
+/** Current transport-level presence for one chat user. */
+export type ChatUserPresence = {
+  userId: string;
+  state: ChatUserPresenceState;
+};
+
 /**
  * A member of one conversation. Kept separate from `ChatUser`: room membership
  * comes from the room state and may expose less profile data than directory
@@ -314,6 +378,49 @@ export type ChatMember = {
   id: string;
   name: string;
   secondaryText: string;
+};
+
+/**
+ * How a conversation should be created.
+ *
+ * `encrypted` is opt-in and decided once, at creation: Matrix has no way back.
+ * Turning `m.room.encryption` on is a one-way door - the state event can be
+ * added but never removed, and every later message in the room is encrypted for
+ * good.
+ */
+export type CreateChatOptions = {
+  /** Name of the new room, applied only when one is actually created. */
+  name?: string;
+  /** Espace to attach the new room to, as an `m.space.child` of it. */
+  spaceId?: string;
+  /**
+   * Skip the reuse check and create a room even when these people already
+   * share one: naming a salon and picking its espace is a request for a new
+   * room, not for whatever conversation happens to exist.
+   */
+  forceNew?: boolean;
+  /** Enable end-to-end encryption on the new room. */
+  encrypted?: boolean;
+  /**
+   * Matrix id of the assistant, when the account has one.
+   *
+   * The driver needs it for two decisions it cannot make from the participant
+   * list alone: a group room invites her automatically, and a conversation
+   * with her alone is not encrypted - she could not read it, and there is no
+   * human on the other side whose privacy the encryption would protect.
+   */
+  assistantUserId?: string;
+};
+
+/**
+ * Which existing conversation to look for.
+ *
+ * The same people can share a clear room and an encrypted one, and the two
+ * are not interchangeable. `encrypted` says which one is wanted; when omitted,
+ * either will do.
+ */
+export type ChatLookupOptions = {
+  encrypted?: boolean;
 };
 
 /** Read-only membership snapshot used by the conversation members modal. */
@@ -367,6 +474,21 @@ export type ChatMessage = {
   canDelete?: boolean;
   /** Set when this message opened a thread; omitted otherwise. */
   thread?: ChatThreadSummary;
+  /** A meeting the message invites to, shown as a button joining the call. */
+  meetingInvite?: ChatMeetingInvite;
+};
+
+/**
+ * The meeting a message invites to: the assistant attaches it to what it
+ * writes, so the Hub opens the call in its own window, with its whiteboard
+ * and its documents, rather than sending the member to the bare call page.
+ */
+export type ChatMeetingInvite = {
+  /** Conversation holding the meeting, which is not the one of the message. */
+  chatId: string;
+  meetingId: string;
+  url: string;
+  title?: string;
 };
 
 /** Volatile room member identity used only by the typing indicator. */

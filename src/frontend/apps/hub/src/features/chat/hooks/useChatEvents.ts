@@ -113,11 +113,20 @@ const applyChatEvent = (
         };
 
   switch (event.type) {
+    case "user:presence-changed":
+      queryClient.setQueryData(
+        chatKeys.userPresence(accountId, event.presence.userId),
+        event.presence,
+      );
+      return;
+
     case "message:new":
       queryClient.setQueryData<ChatMessagesData>(
         chatKeys.messages(ref),
         (data) => (data ? appendMessage(data, event) : data),
       );
+      // The message may be a document; only an open documents list refetches.
+      void queryClient.invalidateQueries({ queryKey: chatKeys.files(ref) });
       // Touches list ordering / last activity. Read state has its own slice.
       void queryClient.invalidateQueries({
         queryKey: chatKeys.chatsOf(accountId),

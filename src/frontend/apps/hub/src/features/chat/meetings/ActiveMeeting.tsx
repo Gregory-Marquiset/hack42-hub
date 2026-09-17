@@ -3,6 +3,7 @@ import {
   ExternalLink,
   Maximize,
   Minimize,
+  UserAdd,
   XMark,
 } from "@gouvfr-lasuite/ui-components/icons";
 import {
@@ -11,6 +12,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -18,6 +20,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { useAuth } from "@/features/auth/Auth";
+import { Whiteboard } from "@/features/chat/components/tools-panel/MeetingIcons";
 import { useChatMeetingActions } from "@/features/chat/hooks/useChatMeetingActions";
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import {
@@ -28,6 +31,8 @@ import {
 import type { ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
+import { copyMeetingLink } from "./copyMeetingLink";
+import { useMeetingBoardUrl } from "./meetingBoard";
 import { useNow } from "./useNow";
 
 /** Minutes added by the organizer's extend button. */
@@ -38,6 +43,8 @@ export type ActiveMeetingTarget = {
   url: string;
   meetingId?: string;
   chatRef?: ChatRef;
+  /** Opens with the invitation link shown, as for a call just created. */
+  showInvitation?: boolean;
 };
 
 type ActiveMeetingContextValue = {
@@ -84,14 +91,26 @@ const MeetingWindow = ({
   onLeave,
 }: MeetingWindowProps) => {
   const { t } = useTranslation();
-  const { chatUser } = useAuth();
+  const { user, chatUser } = useAuth();
   const now = useNow(15_000);
   const chatRef = target.chatRef ?? null;
   const { meetings } = useChatMeetings(chatRef, chatRef !== null);
-  const { endMeeting, extendMeeting, renameMeeting, isPending } =
+  const { endMeeting, extendMeeting, renameMeeting, setBoard, isPending } =
     useChatMeetingActions(chatRef);
   const [draftTitle, setDraftTitle] = useState<string | null>(null);
+  // What the others see, and what this window shows until they answer: the
+  // whiteboard is opened for the whole meeting, not for one participant.
+  const [ownBoard, setOwnBoard] = useState<boolean | null>(null);
+  const [wasBoardOpened, setWasBoardOpened] = useState(false);
+  const [isSharing, setIsSharing] = useState(target.showInvitation ?? false);
+  const shareId = useId();
   const isRenamingRef = useRef(false);
+  // The whiteboard follows the meeting, so everyone in the call lands on the
+  // same board; a call opened outside a meeting falls back on its own link.
+  const boardUrl = useMeetingBoardUrl(
+    target.meetingId ?? target.url,
+    user?.full_name || user?.short_name || undefined,
+  );
 
   const meeting = target.meetingId
     ? meetings.find((candidate) => candidate.id === target.meetingId)
@@ -100,16 +119,41 @@ const MeetingWindow = ({
   const progress = meeting ? getMeetingProgress(meeting, now) : undefined;
   const isOrganizer =
     meeting !== undefined && meeting.organizerId === chatUser?.userId;
+  const sharedBoard = meeting?.isBoardOpen ?? false;
+  const isBoardOpen = ownBoard ?? sharedBoard;
 
-  // Closed by its organizer (here or on another device): leave the call.
+  // Someone else opened or closed the board: follow them.
   useEffect(() => {
-    if (meeting?.endedAt) {
-      if (!isOrganizer) {
-        notify.brand(t("The meeting was closed by its organizer."));
-      }
-      onLeave();
+    setOwnBoard(null);
+    if (sharedBoard) {
+      setWasBoardOpened(true);
     }
-  }, [meeting?.endedAt, isOrganizer, onLeave, t]);
+  }, [sharedBoard]);
+
+  const toggleBoard = () => {
+    const next = !isBoardOpen;
+    setWasBoardOpened(true);
+    setOwnBoard(next);
+    if (meeting) {
+      void setBoard(meeting.id, next).catch(() => {
+        // The room refuses the change: the board stays open here only.
+      });
+    }
+  };
+
+  // Closed by its organizer (here or on another device), or by the server
+  // once it was over and empty: leave the call.
+  useEffect(() => {
+    if (!meeting?.endedAt) {
+      return;
+    }
+    if (meeting.endedBy === "auto") {
+      notify.brand(t("The meeting was closed automatically."));
+    } else if (!isOrganizer) {
+      notify.brand(t("The meeting was closed by its organizer."));
+    }
+    onLeave();
+  }, [meeting?.endedAt, meeting?.endedBy, isOrganizer, onLeave, t]);
 
   const title =
     meeting?.title ?? (isMinimized ? t("Meeting in progress") : t("Meeting"));
@@ -234,7 +278,10 @@ const MeetingWindow = ({
                   data-danger="true"
                   disabled={isPending}
                   onClick={() => {
-                    void endMeeting(meeting.id).catch(() => {
+                    void endMeeting(
+                      meeting.id,
+                      meeting.title ?? t("Meeting"),
+                    ).catch(() => {
                       // useChatMeetingActions already surfaces a toast.
                     });
                   }}
@@ -243,6 +290,43 @@ const MeetingWindow = ({
                 </button>
               </>
             )}
+            {boardUrl && !isMinimized && (
+              <button
+                type="button"
+                className="hub__meeting-window__button"
+                aria-label={
+                  isBoardOpen
+                    ? t("Hide the whiteboard")
+                    : t("Show the whiteboard")
+                }
+                title={
+                  isBoardOpen
+                    ? t("Hide the whiteboard")
+                    : t("Show the whiteboard")
+                }
+                aria-pressed={isBoardOpen}
+                onClick={toggleBoard}
+              >
+                <Whiteboard />
+              </button>
+            )}
+            <button
+              type="button"
+              className="hub__meeting-window__button"
+              aria-label={t("Invite people from outside")}
+              title={t("Invite people from outside")}
+              aria-expanded={isSharing}
+              aria-controls={shareId}
+              data-active={isSharing || undefined}
+              onClick={() => {
+                if (isMinimized) {
+                  onRestore();
+                }
+                setIsSharing((current) => !current || isMinimized);
+              }}
+            >
+              <UserAdd />
+            </button>
             <a
               className="hub__meeting-window__button"
               href={target.url}
@@ -285,13 +369,60 @@ const MeetingWindow = ({
             </button>
           </span>
         </header>
-        <iframe
-          className="hub__meeting-window__frame"
-          src={target.url}
-          title={t("Meeting")}
-          allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write"
-          allowFullScreen
-        />
+        {isSharing && !isMinimized && (
+          <div
+            id={shareId}
+            className="hub__meeting-window__share"
+            role="region"
+            aria-label={t("Invitation link")}
+          >
+            <p className="hub__meeting-window__share-text">
+              {t(
+                "Anyone with this link can join the call, even without an account.",
+              )}
+            </p>
+            <div className="hub__meeting-window__share-row">
+              <input
+                type="text"
+                readOnly
+                className="hub__meeting-window__share-link"
+                value={target.url}
+                aria-label={t("Invitation link")}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button
+                type="button"
+                className="hub__meeting-window__text-button"
+                onClick={() => void copyMeetingLink(target.url, t)}
+              >
+                {t("Copy the link")}
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="hub__meeting-window__body">
+          <iframe
+            className="hub__meeting-window__frame"
+            src={target.url}
+            title={t("Meeting")}
+            allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write"
+            allowFullScreen
+          />
+          {/* Hidden rather than unmounted once opened: reloading the frame
+              would drop the drawer out of the collaboration and lose their
+              local scene. The thumbnail has no room for it, so minimizing the
+              window hides it too. */}
+          {boardUrl && wasBoardOpened && (
+            <iframe
+              className="hub__meeting-window__board"
+              data-testid="meeting-board"
+              src={boardUrl}
+              title={t("Whiteboard")}
+              allow="clipboard-read; clipboard-write"
+              hidden={!isBoardOpen || isMinimized}
+            />
+          )}
+        </div>
       </section>
     </>
   );

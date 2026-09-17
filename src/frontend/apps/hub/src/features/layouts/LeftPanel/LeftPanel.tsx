@@ -1,6 +1,7 @@
 import { Button } from "@gouvfr-lasuite/ui-components";
 import {
   ArrowDropDown,
+  Lock,
   Plus,
   QuestionMark,
 } from "@gouvfr-lasuite/ui-components/icons";
@@ -22,7 +23,6 @@ import { compareChats } from "@/features/chat/chatSorting";
 import { CreateSalonModal } from "@/features/chat/components/CreateSalonModal";
 import { CreateSpaceModal } from "@/features/chat/components/CreateSpaceModal";
 import { formatChatListTimestamp } from "@/features/chat/formatTimestamp";
-import { useAvatarSrc } from "@/features/chat/hooks/useAvatarSrc";
 import { useChatUnread } from "@/features/chat/hooks/useChatUnread";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useSpaces } from "@/features/chat/hooks/useSpaces";
@@ -30,6 +30,7 @@ import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import type { Chat, ChatUnread, Space } from "@/features/drivers/types";
 import { AccountSelector } from "@/features/layouts/components/AccountSelector/AccountSelector";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
+import { ChatPresenceAvatar } from "@/features/ui/components/presence/ChatPresenceAvatar";
 import { LanguagePickerUserMenu } from "@/features/ui/components/user-profile/LanguagePickerUserMenu";
 
 import { TchapLogo } from "./TchapLogo";
@@ -403,23 +404,27 @@ const ChatRow = ({
     ? formatChatListTimestamp(chat.lastActivityAt, locale)
     : null;
   const previewText = formatPreview(t, chat);
+  // An explicit label replaces the link's content for assistive technology,
+  // so the lock is spoken here or not at all.
+  const linkLabel = [
+    showAccountLabel && accountLabel
+      ? `${chat.name} ${accountLabel}`
+      : chat.name,
+    ...(chat.encrypted ? [t("End-to-end encrypted")] : []),
+  ].join(", ");
 
   return (
     <Link
       href={chatHref(chat.ref, spaceId)}
       shallow
-      aria-label={
-        showAccountLabel && accountLabel
-          ? `${chat.name} ${accountLabel}`
-          : chat.name
-      }
+      aria-label={linkLabel}
       aria-current={isActive ? "page" : undefined}
       className={clsx(
         "hub__left-panel__chat",
         isActive && "hub__left-panel__chat--active",
       )}
     >
-      <ChatAvatar chat={chat} />
+      <ChatPresenceAvatar chat={chat} />
       <span className="hub__left-panel__chat__body">
         <span className="hub__left-panel__chat__row">
           <span
@@ -429,6 +434,15 @@ const ChatRow = ({
             )}
           >
             {chat.name}
+            {chat.encrypted && (
+              // Two conversations with the same person, one clear and one
+              // encrypted, are otherwise indistinguishable in this list. The
+              // link's label already says it; the icon is for the eye.
+              <Lock
+                className="hub__left-panel__chat__encrypted"
+                aria-hidden="true"
+              />
+            )}
             {showAccountLabel && accountLabel && (
               <span className="hub__left-panel__chat__account">
                 {" "}
@@ -452,30 +466,6 @@ const ChatRow = ({
       )}
     </Link>
   );
-};
-
-const ChatAvatar = ({ chat }: { chat: Chat }) => {
-  const src = useAvatarSrc(chat.accountId, chat.visual);
-  if (chat.visual.kind === "image") {
-    return <Avatar label={chat.name} src={src} decorative />;
-  }
-  if (chat.visual.kind === "emoji") {
-    return (
-      <Avatar label={chat.name} variant="soft" decorative>
-        {chat.visual.emoji}
-      </Avatar>
-    );
-  }
-  if (chat.visual.kind === "icon") {
-    return (
-      <Avatar label={chat.name} decorative>
-        <span className="material-icons" aria-hidden="true">
-          {chat.visual.icon}
-        </span>
-      </Avatar>
-    );
-  }
-  return <Avatar label={chat.name} decorative />;
 };
 
 /**

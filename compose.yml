@@ -104,6 +104,23 @@ services:
         createbuckets:
           condition: service_started
 
+  # Relays the live subtitles of Hub meetings (see src/scribe). Optional:
+  # started only with the `transcript` profile.
+  meeting-scribe:
+    profiles: [transcript]
+    build:
+      context: src/scribe
+      target: production
+    image: hub:meeting-scribe
+    restart: unless-stopped
+    env_file:
+      - env.d/development/scribe
+      - path: env.d/development/scribe.local
+        required: false
+    depends_on:
+      app-dev:
+        condition: service_started
+
   frontend-development:
     user: "${DOCKER_USER:-1000}"
     build:
@@ -119,6 +136,31 @@ services:
       - /home/frontend/apps/hub/node_modules
     ports:
       - "9800:9800"
+
+  # Whiteboard shown next to the call in the meeting window. Self-hosted so
+  # no drawing leaves the deployment: the app is served here and its live
+  # collaboration goes through `excalidraw-room` below.
+  excalidraw:
+    build:
+      context: ./docker/excalidraw
+      args:
+        WS_SERVER_URL: "http://localhost:9815"
+    image: hub:excalidraw
+    ports:
+      - "9814:80"
+    depends_on:
+      excalidraw-room:
+        condition: service_started
+
+  # Socket.IO server relaying the whiteboard between participants. It only
+  # forwards encrypted payloads: the scene key stays in the browsers.
+  excalidraw-room:
+    image: excalidraw/excalidraw-room:latest
+    environment:
+      PORT: "80"
+      CORS_ORIGIN: "http://localhost:9814"
+    ports:
+      - "9815:80"
 
   nginx:
     image: nginx:1.25

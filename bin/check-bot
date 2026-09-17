@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
-"""Dev-only: prove the assistant can reach a private room it was never invited to.
+"""Dev-only: prove Ariane only enters a room she was invited to.
 
 Run with `make check-bot` after `make provision-bot`.
 
-This is the acceptance test of the omnipresence design. It creates a throwaway
-private room as a human, then checks three things in order:
+This is the acceptance test of the consent rule. It creates a throwaway private
+room as a human, then checks four things in order:
 
-  1. the bot CANNOT join on its own       -> M_FORBIDDEN, and that is correct;
-  2. the admin token lets it in           -> this is what "everywhere" costs;
-  3. it can then post as itself           -> masquerading through the AS token.
+  1. she cannot join on her own          -> M_FORBIDDEN, and that is the point;
+  2. an invitation lets her in           -> the only door there is;
+  3. she can then post as herself        -> masquerading through the AS token;
+  4. invited and mentioned at once       -> she accepts and answers, which is
+                                            what the Hub does when someone
+                                            writes `@Ariane` in a room she has
+                                            not joined.
 
-Step 1 failing to fail would mean the room is not private, and the test proves
-nothing. So it is asserted, not skipped.
+Step 1 failing to fail would mean the room is not private, and the rest proves
+nothing. So it is asserted, not skipped. Step 4 needs the assistant service
+itself, not only the homeserver, and is skipped when it is not running.
+
+An earlier version proved the opposite: that a Synapse admin token could walk
+her into any room. That token is gone, and so is that test.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -56,7 +63,7 @@ def read_env() -> dict[str, str]:
 def call(method: str, path: str, token: str, body: dict | None = None) -> dict:
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(HOMESERVER + path, data=data, method=method)
-    request.add_header("Authorization", f"Bearer {token}")
+    request.add_header("Authorization", f"Bearer {token:s}")
     if data:
         request.add_header("Content-Type", "application/json")
     try:
@@ -87,11 +94,86 @@ def human_token() -> str:
     fail(f"could not issue a token for @{HUMAN}: {issued.stderr.strip()}")
 
 
+HEALTH_URL = "http://localhost:9801/bots/health/"
+ANSWER_TIMEOUT_S = 25
+
+
+def discard(room_id: str, owner: str, bot: str, as_token: str) -> None:
+    """Leave and forget a throwaway room, whatever happened to it.
+
+    Each step is attempted on its own: a room the bot never joined must not
+    stop the human from forgetting it.
+    """
+    steps = (
+        ("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave?user_id={quote(bot)}", as_token),
+        ("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave", owner),
+        ("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/forget", owner),
+    )
+    for method, path, token in steps:
+        try:
+            call(method, path, token, {})
+        except SystemExit:
+            raise
+        except Exception as error:  # pylint: disable=broad-except
+            print(f"  --  nettoyage incomplet ({path}): {error}")
+
+
+def service_up() -> bool:
+    try:
+        with urllib.request.urlopen(HEALTH_URL, timeout=3) as response:
+            return b"ok" in response.read()
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def check_mention_after_invite(owner: str, bot: str, as_token: str) -> int:
+    """Invite her and mention her in the same breath, as the Hub does."""
+    room = call("POST", "/_matrix/client/v3/createRoom", owner,
+                {"name": "check-bot mention (jetable)", "preset": "private_chat"})
+    if "room_id" not in room:
+        print(f"{KO}salon de la 4e verification impossible: {room}")
+        return 1
+    room_id = room["room_id"]
+    failures = 0
+    try:
+        # Asserted, not fired and forgotten: Synapse rate-limits invitations per
+        # receiver (`rc_invites.per_user`), and a refused invitation would look
+        # exactly like an assistant that never answers.
+        invited = call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/invite",
+                       owner, {"user_id": bot})
+        if "errcode" in invited:
+            print(f"{KO}invitation refusee: {invited}")
+            return 1
+        txn = f"checkbot-mention{int(time.time() * 1000)}"
+        sent = call("PUT",
+                    f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{txn}",
+                    owner, {"msgtype": "m.text", "body": "@Ariane /aide"})
+        if "event_id" not in sent:
+            print(f"{KO}mention refusee: {sent}")
+            return 1
+        deadline = time.time() + ANSWER_TIMEOUT_S
+        answered = None
+        while time.time() < deadline and answered is None:
+            time.sleep(1)
+            page = call("GET", f"/_matrix/client/v3/rooms/{quote(room_id)}/messages?dir=b&limit=20", owner)
+            for event in page.get("chunk", []):
+                if event.get("sender") == bot and event.get("type") == "m.room.message":
+                    answered = event
+                    break
+        if answered:
+            print(f"{OK}invitee et mentionnee dans la foulee, elle a repondu ({answered['event_id'][:24]}...)")
+        else:
+            print(f"{KO}invitee et mentionnee, pas de reponse en {ANSWER_TIMEOUT_S} s")
+            failures += 1
+    finally:
+        discard(room_id, owner, bot, as_token)
+    return failures
+
+
 def main() -> None:
     env = read_env()
     bot = env["MATRIX_BOT_USER_ID"]
     as_token = env["MATRIX_AS_TOKEN"]
-    admin_token = env["MATRIX_ADMIN_TOKEN"]
     failures = 0
 
     print("check-bot")
@@ -104,44 +186,52 @@ def main() -> None:
     room_id = room["room_id"]
     print(f"  salon prive {room_id}")
 
-    # 1. The bot must NOT be able to walk in. If it can, the room is not private
+    # 1. She must not be able to walk in. If she can, the room is not private
     #    and everything below proves nothing.
     walked_in = call("POST", f"/_matrix/client/v3/join/{quote(room_id)}?user_id={quote(bot)}", as_token, {})
     if walked_in.get("errcode") == "M_FORBIDDEN":
         print(f"{OK}sans invitation, l'entree est refusee (M_FORBIDDEN)")
     else:
-        print(f"{KO}le bot est entre sans jeton d'admin: {walked_in}")
+        print(f"{KO}elle est entree sans invitation: {walked_in}")
         failures += 1
 
-    # 2. The admin token is the door.
-    forced = call("POST", f"/_synapse/admin/v1/join/{quote(room_id)}", admin_token, {"user_id": bot})
-    if forced.get("room_id") == room_id:
-        print(f"{OK}le jeton d'admin le fait entrer")
+    # 2. The invitation is the only door.
+    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/invite", owner, {"user_id": bot})
+    joined = call("POST", f"/_matrix/client/v3/join/{quote(room_id)}?user_id={quote(bot)}", as_token, {})
+    if joined.get("room_id") == room_id:
+        print(f"{OK}l'invitation la fait entrer")
     else:
-        print(f"{KO}force-join refuse: {forced}")
+        print(f"{KO}invitee, elle n'a pas pu entrer: {joined}")
         failures += 1
 
-    # 3. And it speaks as itself, not as the service account.
+    # 3. And she speaks as herself, not as the service account.
     txn = f"checkbot{int(time.time() * 1000)}"
     sent = call("PUT",
                 f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{txn}?user_id={quote(bot)}",
-                as_token, {"msgtype": "m.text", "body": "Assistant present."})
+                as_token, {"msgtype": "m.text", "body": "Ariane presente."})
     if "event_id" in sent:
-        print(f"{OK}il poste dans le salon ({sent['event_id'][:24]}...)")
+        print(f"{OK}elle poste dans le salon ({sent['event_id'][:24]}...)")
     else:
         print(f"{KO}envoi refuse: {sent}")
         failures += 1
 
     # Clean up: a throwaway room should not outlive the test.
-    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave?user_id={quote(bot)}", as_token, {})
-    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/leave", owner, {})
-    call("POST", f"/_matrix/client/v3/rooms/{quote(room_id)}/forget", owner, {})
+    discard(room_id, owner, bot, as_token)
+
+    # 4. Mentioning her is how she gets in: the Hub invites her and sends the
+    #    message right behind. She must accept and answer. The message is
+    #    `/aide`, whose reply is written by the Hub itself - so this proves the
+    #    invite-then-mention sequence, not Albert, and needs no model budget.
+    if not service_up():
+        print(f"  --  service absent ({HEALTH_URL}): la 4e verification est sautee")
+    else:
+        failures += check_mention_after_invite(owner, bot, as_token)
     print("  salon jetable quitte et oublie")
 
     if failures:
         print(f"\n{failures} verification(s) en echec.")
         sys.exit(1)
-    print("\nles 3 verifications passent.")
+    print("\ntoutes les verifications passent.")
 
 
 if __name__ == "__main__":

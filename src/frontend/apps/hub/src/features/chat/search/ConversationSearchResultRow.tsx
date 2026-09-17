@@ -4,6 +4,11 @@ import {
 } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 
+import { AssistantAvatar } from "@/features/chat/components/UserAvatar";
+import {
+  isAssistantConversation,
+  useAssistant,
+} from "@/features/chat/hooks/useAssistant";
 import type { Chat } from "@/features/drivers/types";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
 
@@ -25,6 +30,7 @@ export const ConversationSearchResultRow = ({
   onSelect,
 }: ConversationSearchResultRowProps) => {
   const { t } = useTranslation();
+  const assistant = useAssistant();
   const description = [subtitle, accountLabel].filter(Boolean).join(" · ");
 
   return (
@@ -33,13 +39,17 @@ export const ConversationSearchResultRow = ({
         alwaysShowRight
         left={
           <>
-            <Avatar
-              label={chat.name}
-              decorative
-              variant={chat.visual.kind === "emoji" ? "soft" : "solid"}
-            >
-              {renderChatAvatarContent(chat.visual)}
-            </Avatar>
+            {isAssistantConversation(chat, assistant) ? (
+              <AssistantAvatar label={chat.name} decorative />
+            ) : (
+              <Avatar
+                label={chat.name}
+                decorative
+                variant={chat.visual.kind === "emoji" ? "soft" : "solid"}
+              >
+                {renderChatAvatarContent(chat.visual)}
+              </Avatar>
+            )}
             <span className="hub__conversation-search__text">
               <span className="hub__conversation-search__name">
                 {chat.name}

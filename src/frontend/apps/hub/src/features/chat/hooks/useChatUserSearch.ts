@@ -2,8 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { getRegistry } from "@/features/drivers/DriverRegistry";
+// A driver-implementation import in a driver-neutral hook, knowingly: the
+// assistant is a Matrix account by construction, and this mapper is what makes
+// her look identical to everyone else in search, chips and bubbles.
+import { matrixDirectoryUserToChatUser } from "@/features/drivers/implementations/matrixIdentity";
 import type { ChatUser } from "@/features/drivers/types";
 
+import { useAssistant } from "./useAssistant";
 import { useComposerAccountId } from "./useChatAccounts";
 
 export type UseChatUserSearchResult = {
@@ -38,8 +43,40 @@ export const useChatUserSearch = (
     meta: { noGlobalError: true },
   });
 
+  // The assistant is an Application Service account, and Synapse keeps those
+  // out of the user directory with no option to change it. Without this she
+  // cannot be found, and a conversation with her cannot be started. She is
+  // offered on the same terms as anyone: only when the query matches her name.
+  const assistant = useAssistant();
+  const users = useMemo(() => {
+    const found = search.data ?? [];
+    const needle = normalizedQuery.toLowerCase();
+    if (
+      !assistant.userId ||
+      needle.length === 0 ||
+      excludedKey.includes(assistant.userId) ||
+      !assistant.names.some((name) => name.includes(needle))
+    ) {
+      return found;
+    }
+    return [
+      matrixDirectoryUserToChatUser({
+        user_id: assistant.userId,
+        display_name: assistant.displayName,
+      }),
+      ...found.filter((user) => user.id !== assistant.userId),
+    ];
+  }, [
+    assistant.displayName,
+    assistant.names,
+    assistant.userId,
+    excludedKey,
+    normalizedQuery,
+    search.data,
+  ]);
+
   return {
-    users: search.data ?? [],
+    users,
     isInitialLoading: search.isPending && normalizedQuery.length > 0,
     isError: search.isError,
   };

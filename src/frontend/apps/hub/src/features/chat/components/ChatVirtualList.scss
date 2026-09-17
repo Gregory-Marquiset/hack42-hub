@@ -65,6 +65,12 @@
     justify-content: center;
     padding: 0 var(--c--globals--spacings--md, 24px);
     box-sizing: border-box;
+
+    // Jump-to-message landing: the full-width strip (not just the bubble)
+    // flashes so the eye catches it immediately, wherever it lands.
+    &--highlighted {
+      animation: hub-chat-row-highlight-pulse 2.8s ease-out;
+    }
   }
 
   &__row-inner {
@@ -133,6 +139,23 @@
   }
 }
 
+@keyframes hub-chat-row-highlight-pulse {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  15%,
+  55% {
+    background-color: var(
+      --c--contextuals--background--semantic--warning--tertiary,
+      #f8f0e9
+    );
+  }
+  35% {
+    background-color: transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hub__chat-conversation__top-loader .material-icons,
   .hub__chat-conversation__bottom-loader .material-icons {
@@ -141,5 +164,13 @@
 
   .hub__chat-conversation__scroll-to-bottom {
     animation: none;
+  }
+
+  .hub__chat-conversation__row--highlighted {
+    animation: none;
+    background-color: var(
+      --c--contextuals--background--semantic--warning--tertiary,
+      #f8f0e9
+    );
   }
 }

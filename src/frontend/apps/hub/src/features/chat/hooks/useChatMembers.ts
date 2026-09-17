@@ -11,6 +11,12 @@ const EMPTY_MEMBERS: ChatMember[] = [];
 export type UseChatMembersResult = {
   present: ChatMember[];
   pendingInvites: ChatMember[];
+  /**
+   * Whether the lists below are the room's, rather than the empty stand-in
+   * shown while the query is pending or after it failed. "Nobody is in this
+   * room" and "we do not know yet" are different answers.
+   */
+  isLoaded: boolean;
   isInitialLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -35,6 +41,7 @@ export const useChatMembers = (
   return {
     present: query.data?.present ?? EMPTY_MEMBERS,
     pendingInvites: query.data?.pendingInvites ?? EMPTY_MEMBERS,
+    isLoaded: query.data !== undefined,
     isInitialLoading: query.isPending && query.fetchStatus !== "idle",
     isError: query.isError,
     refetch,

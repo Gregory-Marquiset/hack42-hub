@@ -17,6 +17,8 @@ import {
   type EditingChatMessage,
 } from "../../ChatMessageEditContext";
 import { isSameChatDay } from "../../formatTimestamp";
+import { useAssistantMention } from "../../hooks/useAssistantMention";
+import { useChat } from "../../hooks/useChat";
 import { useChatMute } from "../../hooks/useChatMute";
 import { useChatThread } from "../../hooks/useChatThread";
 import { useChatThreadActions } from "../../hooks/useChatThreadActions";
@@ -57,8 +59,18 @@ export const ThreadDetail = ({
     threadId,
   );
   const { editMessage, isEditing } = useEditChatMessage(chatRef, threadId);
-  // Same candidates as the main composer: a thread is still the same room.
-  const { present: mentionCandidates } = useChatMembers(chatRef, true);
+  // Same candidates as the main composer: a thread is still the same room,
+  // and mentioning the assistant here invites her just the same.
+  const { chat } = useChat(chatRef);
+  const { present } = useChatMembers(chatRef, true);
+  const { candidate: assistantCandidate, ensureInvited } = useAssistantMention(
+    chatRef,
+    chat,
+  );
+  const mentionCandidates = useMemo(
+    () => (assistantCandidate ? [...present, assistantCandidate] : present),
+    [assistantCandidate, present],
+  );
   const [editingMessage, setEditingMessage] =
     useState<EditingChatMessage | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -78,6 +90,8 @@ export const ThreadDetail = ({
 
   const handleSubmit = useCallback(
     async (content: string) => {
+      // Before the edit branch too: an edited body pings her just the same.
+      await ensureInvited(content);
       if (editingMessage) {
         const message = await editMessage(editingMessage.id, content);
         setEditingMessage(null);
@@ -85,7 +99,7 @@ export const ThreadDetail = ({
       }
       return sendReply(content);
     },
-    [editMessage, editingMessage, sendReply],
+    [editMessage, editingMessage, ensureInvited, sendReply],
   );
   const editContext = useMemo(() => ({ startEditing: setEditingMessage }), []);
 

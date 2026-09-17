@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import {
   KnownMembership,
   type MatrixClient,
@@ -7,12 +8,15 @@ import {
   type Room,
   type Thread,
 } from "matrix-js-sdk/lib/matrix";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { timelineEventToChatEvent } from "../matrixEventMapping";
+import { LazyMatrixDriver } from "../LazyMatrixDriver";
 import { MatrixDriver } from "../MatrixDriver";
+import { readChatSelfPresencePreference } from "../../presencePreference";
 import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
 import { MeetingNotAllowedError } from "../../meetingErrors";
+import type { MeetRoom, MeetRoomSchedule } from "../../types";
 import {
   matrixJoinedRoomToLocalChat,
   MATRIX_FAVOURITE_TAG,
@@ -98,6 +102,9 @@ const makeRoom = (
   ({
     roomId: ROOM_ID,
     getMember: (id: string) => ({ name: id === SELF_ID ? "Me" : id }),
+    // Read by the room mapper on every joined room; a fixture without it
+    // throws instead of describing a clear room.
+    hasEncryptionStateEvent: () => false,
     currentState: { maySendRedactionForEvent: () => false },
     getThread: (threadId: string) => threadsById[threadId] ?? null,
     findEventById: (eventId: string) => eventsById[eventId],
@@ -129,12 +136,216 @@ const makeThread = (
     },
   }) as unknown as Thread;
 
+/**
+ * A joined room with the fields the room mapper reads, for lookup tests: who
+ * else is in it and whether it is encrypted are the two facts that matter.
+ */
+const makeJoinedRoom = (
+  roomId: string,
+  otherIds: string[],
+  encrypted: boolean,
+): Room =>
+  ({
+    roomId,
+    tags: {},
+    // Read by the joined-room filter: a space is not a conversation.
+    isSpaceRoom: () => false,
+    getMyMembership: () => KnownMembership.Join,
+    getMember: (id: string) => ({ name: id }),
+    getMembers: () =>
+      otherIds.map((userId) => ({
+        userId,
+        name: userId,
+        membership: KnownMembership.Join,
+        getMxcAvatarUrl: () => undefined,
+      })),
+    getLastActiveTimestamp: () => 0,
+    currentState: { getStateEvents: () => undefined },
+    getLiveTimeline: () => ({ getEvents: () => [] }),
+    getMxcAvatarUrl: () => null,
+    hasEncryptionStateEvent: () => encrypted,
+  }) as unknown as Room;
+
 /** Injects a live client without driving the OIDC/`connect` flow. */
 const driverWithClient = (mx: MatrixClient | null): MatrixDriver => {
   const driver = new MatrixDriver();
   (driver as unknown as { mx: MatrixClient | null }).mx = mx;
   return driver;
 };
+
+beforeEach(() => {
+  localStorage.clear();
+  startClientMock.mockReset();
+  startClientMock.mockResolvedValue(undefined);
+});
+
+describe("MatrixDriver.getUserPresence", () => {
+  it("reads the current presence from the Matrix client store", () => {
+    const getUser = vi.fn((userId: string) =>
+      userId === OTHER_ID
+        ? {
+            userId: OTHER_ID,
+            events: {
+              presence: { getContent: () => ({ presence: "online" }) },
+            },
+          }
+        : null,
+    );
+    const mx = { getUser } as unknown as MatrixClient;
+
+    expect(driverWithClient(mx).getUserPresence(OTHER_ID)).toEqual({
+      userId: OTHER_ID,
+      state: "online",
+    });
+    expect(getUser).toHaveBeenCalledWith(OTHER_ID);
+  });
+
+  it("returns null without a connected client or known user", () => {
+    expect(driverWithClient(null).getUserPresence(OTHER_ID)).toBeNull();
+    expect(
+      driverWithClient({
+        getUser: () => null,
+      } as unknown as MatrixClient).getUserPresence(OTHER_ID),
+    ).toBeNull();
+  });
+});
+
+describe("MatrixDriver.setUserPresence", () => {
+  it.each(["online", "unavailable", "offline"] as const)(
+    "makes Matrix %s authoritative for subsequent syncs",
+    async (state) => {
+      const setSyncPresence = vi.fn().mockResolvedValue(undefined);
+      const setPresence = vi.fn().mockResolvedValue(undefined);
+      const mx = {
+        getUserId: () => OTHER_ID,
+        setSyncPresence,
+        setPresence,
+      } as unknown as MatrixClient;
+      const driver = driverWithClient(mx);
+
+      expect(driver.getCurrentUserId()).toBe(OTHER_ID);
+      await driver.setUserPresence(state);
+
+      expect(setSyncPresence).toHaveBeenCalledWith(state);
+      expect(setPresence).not.toHaveBeenCalled();
+    },
+  );
+
+  it("deduplicates an unchanged effective state", async () => {
+    const setSyncPresence = vi.fn().mockResolvedValue(undefined);
+    const driver = driverWithClient({
+      setSyncPresence,
+    } as unknown as MatrixClient);
+
+    await driver.setUserPresence("online");
+    await driver.setUserPresence("online");
+
+    expect(setSyncPresence.mock.calls).toEqual([["online"]]);
+  });
+
+  it("rejects a non-standard busy state before calling the SDK", async () => {
+    const setSyncPresence = vi.fn().mockResolvedValue(undefined);
+    const setPresence = vi.fn().mockResolvedValue(undefined);
+    const driver = driverWithClient({
+      setSyncPresence,
+      setPresence,
+    } as unknown as MatrixClient);
+
+    await expect(driver.setUserPresence("busy" as never)).rejects.toThrowError(
+      'invalid state "busy"',
+    );
+    expect(setSyncPresence).not.toHaveBeenCalled();
+    expect(setPresence).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the Matrix account is not connected", async () => {
+    const driver = driverWithClient(null);
+
+    expect(driver.getCurrentUserId()).toBeNull();
+    await expect(driver.setUserPresence("online")).rejects.toThrowError(
+      "client is not connected",
+    );
+  });
+});
+
+describe("MatrixDriver self-presence preference", () => {
+  it.each(["online", "offline"] as const)(
+    "persists and applies the manual %s preference",
+    async (preference) => {
+      const setSyncPresence = vi.fn().mockResolvedValue(undefined);
+      const setPresence = vi.fn().mockResolvedValue(undefined);
+      const driver = driverWithClient({
+        setSyncPresence,
+        setPresence,
+      } as unknown as MatrixClient);
+
+      await driver.setSelfPresencePreference(preference);
+
+      expect(readChatSelfPresencePreference("matrix-local")).toBe(preference);
+      expect(setSyncPresence).toHaveBeenCalledWith(preference);
+      expect(setPresence).toHaveBeenCalledWith({ presence: preference });
+    },
+  );
+
+  it("keeps the sync intention and preference when the immediate PUT fails", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
+    const setSyncPresence = vi.fn().mockResolvedValue(undefined);
+    const setPresence = vi.fn().mockRejectedValue(new Error("rate limited"));
+    const driver = driverWithClient({
+      setSyncPresence,
+      setPresence,
+    } as unknown as MatrixClient);
+
+    await expect(
+      driver.setSelfPresencePreference("offline"),
+    ).resolves.toBeUndefined();
+
+    expect(setSyncPresence.mock.calls).toEqual([["offline"]]);
+    expect(readChatSelfPresencePreference("matrix-local")).toBe("offline");
+    expect(consoleInfo).toHaveBeenCalledOnce();
+    consoleInfo.mockRestore();
+  });
+});
+
+describe("profile identity", () => {
+  it("uses the live client's token, including after a refresh", async () => {
+    const getAccessToken = vi.fn().mockReturnValue("initial-token");
+    const driver = driverWithClient({
+      getAccessToken,
+    } as unknown as MatrixClient);
+
+    expect(driver.supportsProfileRoles).toBe(true);
+    await expect(driver.getProfileIdentityToken()).resolves.toBe(
+      "initial-token",
+    );
+    getAccessToken.mockReturnValue("refreshed-token");
+    await expect(driver.getProfileIdentityToken()).resolves.toBe(
+      "refreshed-token",
+    );
+  });
+
+  it("rejects when no authenticated chat client is available", async () => {
+    await expect(
+      driverWithClient(null).getProfileIdentityToken(),
+    ).rejects.toThrow();
+    const driver = driverWithClient({
+      getAccessToken: () => null,
+    } as unknown as MatrixClient);
+    await expect(driver.getProfileIdentityToken()).rejects.toThrow();
+  });
+
+  it("exposes profile roles through the lazy driver used by the account registry", async () => {
+    const driver = new LazyMatrixDriver();
+    (driver as unknown as { target: MatrixDriver }).target = driverWithClient({
+      getAccessToken: () => "current-token",
+    } as unknown as MatrixClient);
+
+    expect(driver.supportsProfileRoles).toBe(true);
+    await expect(driver.getProfileIdentityToken()).resolves.toBe(
+      "current-token",
+    );
+  });
+});
 
 describe("timelineEventToChatEvent (real-time sync mapping)", () => {
   it("keeps a thread root on the main timeline", () => {
@@ -354,6 +565,7 @@ describe("MatrixDriver room metadata", () => {
       currentState: { getStateEvents: () => undefined },
       getLiveTimeline: () => ({ getEvents: () => [] }),
       getMxcAvatarUrl: () => null,
+      hasEncryptionStateEvent: () => false,
     } as unknown as Room;
 
     expect(matrixJoinedRoomToLocalChat(room, SELF_ID).section).toBe(
@@ -674,6 +886,8 @@ describe("MatrixDriver.startChatMeeting", () => {
   ): Room =>
     ({
       roomId: ROOM_ID,
+      // A conversation, not an espace: it is never its own parent.
+      isSpaceRoom: () => false,
       currentState: {
         getStateEvents: (_type: string, stateKey?: string) =>
           stateKey === undefined
@@ -704,6 +918,8 @@ describe("MatrixDriver.startChatMeeting", () => {
       getRoom: () => room,
       getUserId: () => SELF_ID,
       getJoinedRooms: async () => ({ joined_rooms: [ROOM_ID] }),
+      // The espace of a conversation is looked for among the joined rooms.
+      getRooms: () => [room],
       sendStateEvent,
     } as unknown as MatrixClient;
     return { mx, sendStateEvent };
@@ -711,14 +927,18 @@ describe("MatrixDriver.startChatMeeting", () => {
 
   it("creates a Meet room and records its link in the room state", async () => {
     const { mx, sendStateEvent } = makeClient(makeMeetingRoom());
-    const createRoom = vi.fn(async () => MEET_ROOM);
+    const createRoom = vi.fn<(schedule: MeetRoomSchedule) => Promise<MeetRoom>>(
+      async () => MEET_ROOM,
+    );
 
     const meeting = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
     );
 
+    // Without a planned duration, the server has no end to close it at.
     expect(createRoom).toHaveBeenCalledOnce();
+    expect(createRoom).toHaveBeenCalledWith({ startsAt: expect.any(Date) });
     expect(sendStateEvent).toHaveBeenCalledWith(
       ROOM_ID,
       MEETING_EVENT_TYPE,
@@ -736,22 +956,76 @@ describe("MatrixDriver.startChatMeeting", () => {
     });
   });
 
+  it("tells the Hub which espace the conversation belongs to", async () => {
+    const room = makeMeetingRoom();
+    const espace = {
+      roomId: "!espace:localhost",
+      name: "Direction du numérique",
+      isSpaceRoom: () => true,
+      currentState: {
+        getStateEvents: () => [
+          {
+            getStateKey: () => ROOM_ID,
+            getContent: () => ({ via: ["localhost"] }),
+          },
+        ],
+      },
+    } as unknown as Room;
+    const { mx } = makeClient(room);
+    // The espaces list their children; a room does not name its parent.
+    (mx as unknown as { getRooms: () => Room[] }).getRooms = () => [
+      room,
+      espace,
+    ];
+    const createRoom = vi.fn<(schedule: MeetRoomSchedule) => Promise<MeetRoom>>(
+      async () => MEET_ROOM,
+    );
+
+    await driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom);
+
+    expect(createRoom).toHaveBeenCalledWith({
+      startsAt: expect.any(Date),
+      spaceName: "Direction du numérique",
+    });
+  });
+
   it("schedules a meeting with its title and duration next to an ongoing one", async () => {
     const ongoing = meetingEvent("xyz-abcd-efg", {
       meetingUrl: "https://meet.example.com/xyz-abcd-efg",
       startedAt: Date.now(),
     });
     const { mx, sendStateEvent } = makeClient(makeMeetingRoom([ongoing]));
-    const createRoom = vi.fn(async () => MEET_ROOM);
+    const createRoom = vi.fn<(schedule: MeetRoomSchedule) => Promise<MeetRoom>>(
+      async () => MEET_ROOM,
+    );
     const startsAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    const link = {
+      id: "doc-1",
+      title: "Compte rendu",
+      url: "https://docs.example.com/docs/1/",
+    };
 
     const meeting = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
-      { title: " Point hebdo ", plannedDurationMinutes: 30, startsAt },
+      {
+        title: " Point hebdo ",
+        plannedDurationMinutes: 30,
+        startsAt,
+        agenda: "Ordre du jour",
+        attachments: [{ name: "notes.md", content: "# Notes" }],
+        documents: [link],
+      },
     );
 
+    // The server is told when the call takes place, for its closing.
     expect(createRoom).toHaveBeenCalledOnce();
+    expect(createRoom).toHaveBeenCalledWith({
+      startsAt,
+      plannedEndAt: new Date(startsAt.getTime() + 30 * 60_000),
+    });
+    // The agenda and the files only go to the server, the links to everyone.
     expect(sendStateEvent).toHaveBeenCalledWith(
       ROOM_ID,
       MEETING_EVENT_TYPE,
@@ -761,6 +1035,7 @@ describe("MatrixDriver.startChatMeeting", () => {
         organizerId: SELF_ID,
         title: "Point hebdo",
         plannedDurationMinutes: 30,
+        documents: [link],
       },
       MEET_ROOM.slug,
     );
@@ -768,6 +1043,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       title: "Point hebdo",
       startedAt: startsAt.toISOString(),
       plannedDurationMinutes: 30,
+      documents: [link],
     });
   });
 
@@ -787,7 +1063,7 @@ describe("MatrixDriver.startChatMeeting", () => {
     expect(sendStateEvent).toHaveBeenCalledWith(
       ROOM_ID,
       MEETING_EVENT_TYPE,
-      { ...content, endedAt: expect.any(Number) },
+      { ...content, endedAt: expect.any(Number), endedBy: "organizer" },
       MEET_ROOM.slug,
     );
   });
@@ -863,10 +1139,63 @@ describe("MatrixDriver.startChatMeeting", () => {
     );
   });
 
+  it("adds a document to the meeting, replacing an older version", async () => {
+    const kept = { id: "agenda", title: "Ordre du jour", url: "https://x/a" };
+    const content = {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now(),
+      organizerId: SELF_ID,
+      documents: [
+        kept,
+        { id: "doc-123", title: "Ancienne version", url: "https://x/old" },
+      ],
+    };
+    const { mx, sendStateEvent } = makeClient(
+      makeMeetingRoom([meetingEvent(MEET_ROOM.slug, content)]),
+    );
+    const transcript = {
+      id: "doc-123",
+      title: "Transcription : Point hebdo",
+      url: "https://docs.example.com/docs/doc-123/",
+    };
+
+    await driverWithClient(mx).addChatMeetingDocument(
+      ROOM_ID,
+      MEET_ROOM.slug,
+      transcript,
+    );
+
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      MEETING_EVENT_TYPE,
+      { ...content, documents: [kept, transcript] },
+      MEET_ROOM.slug,
+    );
+  });
+
+  it("refuses to add a document to a meeting organized by someone else", async () => {
+    const event = meetingEvent(MEET_ROOM.slug, {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now(),
+      organizerId: OTHER_ID,
+    });
+    const { mx, sendStateEvent } = makeClient(makeMeetingRoom([event]));
+
+    await expect(
+      driverWithClient(mx).addChatMeetingDocument(ROOM_ID, MEET_ROOM.slug, {
+        id: "doc",
+        title: "Doc",
+        url: "https://x/doc",
+      }),
+    ).rejects.toBeInstanceOf(MeetingNotAllowedError);
+    expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+
   it("extends a meeting without planned duration from the time spent", async () => {
     const content = {
       meetingUrl: MEET_ROOM.url,
-      startedAt: Date.now() - 20 * 60 * 1000,
+      // 19 min 30 s: rounded up to 20 whatever the milliseconds of the run.
+      startedAt: Date.now() - 20 * 60 * 1000 + 30_000,
       organizerId: SELF_ID,
     };
     const { mx, sendStateEvent } = makeClient(
@@ -884,16 +1213,21 @@ describe("MatrixDriver.startChatMeeting", () => {
   });
 
   it("rejoins the ongoing meeting without creating a Meet room", async () => {
+    // Fixed before the call: a start read later could fall after the
+    // driver's "now" and look scheduled.
+    const startedAt = Date.now() - 60_000;
     const ongoing = {
       getContent: () => ({
         meetingUrl: "https://meet.example.com/xyz-abcd-efg",
-        startedAt: Date.now(),
+        startedAt,
       }),
       getSender: () => OTHER_ID,
       getStateKey: () => "xyz-abcd-efg",
     } as unknown as MatrixEvent;
     const { mx, sendStateEvent } = makeClient(makeMeetingRoom([ongoing]));
-    const createRoom = vi.fn(async () => MEET_ROOM);
+    const createRoom = vi.fn<(schedule: MeetRoomSchedule) => Promise<MeetRoom>>(
+      async () => MEET_ROOM,
+    );
 
     const meeting = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
@@ -915,6 +1249,22 @@ describe("MatrixDriver.startChatMeeting", () => {
       driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom),
     ).rejects.toThrow("Meet unavailable");
     expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("MatrixDriver.getOpenIdToken", () => {
+  it("answers the token the homeserver issues", async () => {
+    const getOpenIdToken = vi.fn(async () => ({
+      access_token: "openid-token",
+      token_type: "Bearer",
+      matrix_server_name: "localhost",
+      expires_in: 3600,
+    }));
+    const mx = { getOpenIdToken } as unknown as MatrixClient;
+
+    await expect(driverWithClient(mx).getOpenIdToken()).resolves.toBe(
+      "openid-token",
+    );
   });
 });
 
@@ -977,5 +1327,220 @@ describe("MatrixDriver.startChatMeeting permissions", () => {
         },
       }),
     );
+  });
+});
+
+describe("createChatForUsers (encryption and the assistant)", () => {
+  const ASSISTANT_ID = "@hub-as_ariane:localhost";
+  const BOB = "@bob:localhost";
+  const CAROL = "@carol:localhost";
+
+  /**
+   * The narrowest client that lets `createChatForUsers` run to the end. No
+   * existing room ever matches, so every call reaches `createRoom` - the one
+   * method whose arguments these tests are about. `getRoom` stays empty so
+   * `waitForRoom` falls back on its timer, which fake timers then skip.
+   */
+  const clientFor = (rooms: Room[] = []) => {
+    // The signature is given so `mock.calls[0][0]` is typed: an untyped
+    // `vi.fn` records its calls as an empty tuple, and the assertions below
+    // read the arguments `createRoom` was given.
+    const createRoom = vi.fn<
+      (opts: Record<string, unknown>) => Promise<{ room_id: string }>
+    >(async () => ({ room_id: "!new:localhost" }));
+    const mx = {
+      getUserId: () => SELF_ID,
+      getJoinedRooms: vi.fn(async () => ({
+        joined_rooms: rooms.map((room) => room.roomId),
+      })),
+      getVisibleRooms: () => rooms,
+      getRoom: (roomId: string) =>
+        rooms.find((room) => room.roomId === roomId) ?? null,
+      on: vi.fn(),
+      off: vi.fn(),
+      createRoom,
+    } as unknown as MatrixClient;
+    return { mx, createRoom };
+  };
+
+  const create = async (
+    userIds: string[],
+    options?: Parameters<MatrixDriver["createChatForUsers"]>[1],
+  ) => {
+    const { mx, createRoom } = clientFor();
+    vi.useFakeTimers();
+    try {
+      const pending = driverWithClient(mx).createChatForUsers(userIds, options);
+      await vi.advanceTimersByTimeAsync(5000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+    return createRoom.mock.calls[0][0] as {
+      is_direct?: boolean;
+      invite?: string[];
+      initial_state?: { type: string }[];
+    };
+  };
+
+  type StateEvent = {
+    type: string;
+    state_key?: string;
+    content?: { algorithm?: string };
+  };
+  const encryptionEvent = (opts: { initial_state?: StateEvent[] }) =>
+    opts.initial_state?.find((s) => s.type === "m.room.encryption");
+  const encryptionOf = (opts: { initial_state?: StateEvent[] }) =>
+    encryptionEvent(opts) !== undefined;
+  // The only room algorithm the spec defines; a different one, or a non-empty
+  // state key, would be silently ignored by the homeserver.
+  const MEGOLM = "m.megolm.v1.aes-sha2";
+
+  it("always encrypts a one-to-one conversation", async () => {
+    const opts = await create([BOB]);
+    expect(opts.is_direct).toBe(true);
+    expect(opts.invite).toEqual([BOB]);
+    expect(encryptionEvent(opts)).toEqual({
+      type: "m.room.encryption",
+      state_key: "",
+      content: { algorithm: MEGOLM },
+    });
+  });
+
+  it("leaves a group room clear unless asked otherwise", async () => {
+    const opts = await create([BOB, CAROL]);
+    expect(opts.is_direct).toBe(false);
+    expect(opts.invite).toEqual([BOB, CAROL]);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("encrypts a group room on request", async () => {
+    const opts = await create([BOB, CAROL], { encrypted: true });
+    expect(opts.invite).toEqual([BOB, CAROL]);
+    expect(encryptionEvent(opts)?.content?.algorithm).toBe(MEGOLM);
+  });
+
+  it("reuses the encrypted one-to-one instead of creating a twin", async () => {
+    // Every private message created before encryption existed is a clear
+    // room; the encrypted one next to it is the conversation being asked for.
+    const clear = makeJoinedRoom("!clear:localhost", [BOB], false);
+    const e2ee = makeJoinedRoom("!e2ee:localhost", [BOB], true);
+    const { mx, createRoom } = clientFor([clear, e2ee]);
+
+    const chat = await driverWithClient(mx).createChatForUsers([BOB]);
+
+    expect(chat.id).toBe("!e2ee:localhost");
+    expect(chat.encrypted).toBe(true);
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("reuses the clear group and ignores its encrypted twin", async () => {
+    const e2ee = makeJoinedRoom("!e2ee:localhost", [BOB, CAROL], true);
+    const clear = makeJoinedRoom("!clear:localhost", [BOB, CAROL], false);
+    const { mx, createRoom } = clientFor([e2ee, clear]);
+
+    const chat = await driverWithClient(mx).createChatForUsers([BOB, CAROL]);
+
+    expect(chat.id).toBe("!clear:localhost");
+    expect(chat.encrypted).toBeUndefined();
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("never encrypts a one-to-one with the assistant", async () => {
+    const opts = await create([ASSISTANT_ID], {
+      assistantUserId: ASSISTANT_ID,
+    });
+    expect(opts.is_direct).toBe(true);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("invites the assistant into a clear group", async () => {
+    const opts = await create([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+      encrypted: false,
+    });
+    expect(opts.invite).toEqual([BOB, CAROL, ASSISTANT_ID]);
+    expect(encryptionOf(opts)).toBe(false);
+  });
+
+  it("keeps the assistant out of an encrypted group", async () => {
+    const opts = await create([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+      encrypted: true,
+    });
+    expect(opts.invite).toEqual([BOB, CAROL]);
+    expect(encryptionOf(opts)).toBe(true);
+  });
+});
+
+describe("getChatForUsers (encryption-aware lookup)", () => {
+  const BOB = "@bob:localhost";
+  const clear = makeJoinedRoom("!clear:localhost", [BOB], false);
+  const e2ee = makeJoinedRoom("!e2ee:localhost", [BOB], true);
+  const mx = {
+    getUserId: () => SELF_ID,
+    getJoinedRooms: async () => ({
+      joined_rooms: [clear.roomId, e2ee.roomId],
+    }),
+    getVisibleRooms: () => [clear, e2ee],
+  } as unknown as MatrixClient;
+
+  it("returns the room in the requested encryption state", async () => {
+    const driver = driverWithClient(mx);
+    expect((await driver.getChatForUsers([BOB], { encrypted: true }))?.id).toBe(
+      "!e2ee:localhost",
+    );
+    expect(
+      (await driver.getChatForUsers([BOB], { encrypted: false }))?.id,
+    ).toBe("!clear:localhost");
+  });
+
+  it("takes the first match when no state is requested", async () => {
+    expect((await driverWithClient(mx).getChatForUsers([BOB]))?.id).toBe(
+      "!clear:localhost",
+    );
+  });
+
+  it("finds nothing when only the other state exists", async () => {
+    const onlyClear = {
+      ...mx,
+      getJoinedRooms: async () => ({ joined_rooms: [clear.roomId] }),
+      getVisibleRooms: () => [clear],
+    } as unknown as MatrixClient;
+    expect(
+      await driverWithClient(onlyClear).getChatForUsers([BOB], {
+        encrypted: true,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("inviteToChat", () => {
+  it("sends a plain invitation as the current user", async () => {
+    const invite = vi.fn(async () => ({}));
+    const mx = {
+      getUserId: () => SELF_ID,
+      getRoom: () => ({ roomId: ROOM_ID }),
+      invite,
+    } as unknown as MatrixClient;
+
+    await driverWithClient(mx).inviteToChat(
+      ROOM_ID,
+      "@hub-as_ariane:localhost",
+    );
+
+    expect(invite).toHaveBeenCalledWith(ROOM_ID, "@hub-as_ariane:localhost");
+  });
+
+  it("refuses a room the client does not know", async () => {
+    const mx = {
+      getUserId: () => SELF_ID,
+      getRoom: () => null,
+      invite: vi.fn(),
+    } as unknown as MatrixClient;
+
+    await expect(
+      driverWithClient(mx).inviteToChat("!missing:localhost", "@bob:localhost"),
+    ).rejects.toThrow();
   });
 });

@@ -72,6 +72,30 @@ describe("chatRefs", () => {
     ).toEqual(ref);
   });
 
+  it("carries a target eventId through the URL when set", () => {
+    const ref = {
+      accountId: "matrix-main",
+      chatId: "!abc:def.example",
+      eventId: "$found:def.example",
+    };
+
+    expect(chatHref(ref)).toEqual({
+      pathname: "/chat",
+      query: {
+        account: "matrix-main",
+        chat: "!abc:def.example",
+        event: "$found:def.example",
+      },
+    });
+    expect(
+      readChatRef({
+        account: "matrix-main",
+        chat: "!abc:def.example",
+        event: "$found:def.example",
+      }),
+    ).toEqual(ref);
+  });
+
   it("compares full refs instead of local chat ids only", () => {
     expect(
       sameChatRef(

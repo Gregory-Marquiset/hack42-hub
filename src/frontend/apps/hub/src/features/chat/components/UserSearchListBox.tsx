@@ -4,7 +4,9 @@ import { ListBox, ListBoxItem } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 
 import type { ChatUser } from "@/features/drivers/types";
-import { Avatar } from "@/features/ui/components/avatar/Avatar";
+import { UserRoleBadge } from "@/features/roles/RoleBadge";
+
+import { UserAvatar } from "./UserAvatar";
 
 type UserSearchListBoxProps = {
   isLoading: boolean;
@@ -34,12 +36,18 @@ export const UserSearchListBox = ({ isLoading }: UserSearchListBoxProps) => {
               )
             }
           >
-            <Avatar label={user.name} color={user.color} size="sm" decorative>
-              {user.initials}
-            </Avatar>
+            <UserAvatar
+              userId={user.id}
+              label={user.name}
+              color={user.color}
+              initials={user.initials}
+              size="sm"
+              decorative
+            />
             <span className="hub__new-chat-dropdown__user-body">
               <span className="hub__new-chat-dropdown__user-name">
                 {user.name}
+                <UserRoleBadge userId={user.id} />
               </span>
               <span className="hub__new-chat-dropdown__user-subtitle">
                 {user.subtitle}

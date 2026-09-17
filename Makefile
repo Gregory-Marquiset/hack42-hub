@@ -246,7 +246,7 @@ run-backend-e2e: ## Start the backend with the e2e DB; always reset the postgres
 run: ## start the wsgi (production) and development server
 run:
 	@$(MAKE) run-backend
-	@$(COMPOSE) up --force-recreate -d frontend-development
+	@$(COMPOSE) up --force-recreate -d frontend-development excalidraw
 .PHONY: run
 
 run-matrix: ## Start the local Matrix stack (Synapse + MAS + Element) beside the base stack
@@ -262,11 +262,11 @@ seed-matrix: ## seed the local Matrix stack with a DM and a group room (needs ru
 	@python3 bin/seed-matrix
 .PHONY: seed-matrix
 
-provision-bot: ## provision the Hub assistant and its Synapse admin token (needs run-matrix)
+provision-bot: ## provision Ariane, the Hub assistant (needs run-matrix)
 	@python3 bin/provision-bot
 .PHONY: provision-bot
 
-check-bot: ## prove the assistant reaches a private room it was never invited to
+check-bot: ## prove the assistant enters a room only when invited, and answers a mention
 	@python3 bin/check-bot
 .PHONY: check-bot
 

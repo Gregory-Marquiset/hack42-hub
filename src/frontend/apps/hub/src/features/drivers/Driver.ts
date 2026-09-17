@@ -14,6 +14,8 @@ import {
   ChatLocalUser,
   ChatMainTimelineUnread,
   ChatMeeting,
+  ChatFile,
+  ChatMeetingDocument,
   ChatMessage,
   ChatMessageAuthor,
   ChatMessagesPage,
@@ -25,10 +27,15 @@ import {
   ChatTypingUser,
   ChatUnread,
   ChatUser,
+  ChatLookupOptions,
+  ChatUserPresence,
+  ChatSelfPresencePreference,
+  CreateChatOptions,
   LocalChat,
   LocalChatSections,
   LocalSpace,
   MeetRoom,
+  MeetRoomSchedule,
   NotificationRules,
   SetNotificationRuleActionsParams,
   SetNotificationRuleEnabledParams,
@@ -164,6 +171,7 @@ export type ChatConnectionState = {
  */
 export type ChatEvent =
   | { type: "search:changed" }
+  | { type: "user:presence-changed"; presence: ChatUserPresence }
   // Delivery signals are independent from timeline/cache patches.
   | {
       type: "message:received";
@@ -290,6 +298,35 @@ export abstract class Driver {
    * `getNotificationRules`) rather than only playing a local sound. */
   readonly supportsNotificationRules: boolean = false;
 
+  /** Whether documents can be shared in a conversation. */
+  readonly supportsChatFiles: boolean = false;
+
+  /** The documents shared in a conversation, newest first. */
+  async getChatFiles(_chatId: string): Promise<ChatFile[]> {
+    void _chatId;
+    throw new Error(
+      `${this.constructor.name}.getChatFiles: documents are not supported by this driver.`,
+    );
+  }
+
+  /** Shares a document from the user's device in a conversation. */
+  async uploadChatFile(_chatId: string, _file: File): Promise<ChatFile> {
+    void _chatId;
+    void _file;
+    throw new Error(
+      `${this.constructor.name}.uploadChatFile: documents are not supported by this driver.`,
+    );
+  }
+
+  /** The content of a shared document, decrypted when needed. */
+  async downloadChatFile(_chatId: string, _fileId: string): Promise<Blob> {
+    void _chatId;
+    void _fileId;
+    throw new Error(
+      `${this.constructor.name}.downloadChatFile: documents are not supported by this driver.`,
+    );
+  }
+
   constructor(accountId: AccountId = "default") {
     this.accountId = accountId;
   }
@@ -315,10 +352,59 @@ export abstract class Driver {
   }
   /** People available when composing a new chat. */
   abstract getChatUsers(filters?: ChatUserFilters): Promise<ChatUser[]>;
+  /**
+   * Current presence already known by the backend client, without requesting it
+   * from the network. Live changes arrive through `subscribeToEvents`.
+   */
+  getUserPresence(_userId: string): ChatUserPresence | null {
+    void _userId;
+    return null;
+  }
+  /** Whether this backend lets the current user publish presence. */
+  readonly supportsPresence: boolean = false;
+  /** Current backend user id, when the account has an active connection. */
+  getCurrentUserId(): string | null {
+    return null;
+  }
+  /** Persisted manual mode for this client (`online` means automatic). */
+  getSelfPresencePreference(): ChatSelfPresencePreference {
+    return "online";
+  }
+  /** Persists and applies the manual mode for this client. */
+  async setSelfPresencePreference(
+    _preference: ChatSelfPresencePreference,
+  ): Promise<void> {
+    void _preference;
+    throw new Error(
+      `${this.constructor.name}.setSelfPresencePreference: presence is not supported by this driver.`,
+    );
+  }
+  /** Publishes an effective transport state; automatic transitions use this. */
+  async setUserPresence(_state: ChatUserPresence["state"]): Promise<void> {
+    void _state;
+    throw new Error(
+      `${this.constructor.name}.setUserPresence: presence is not supported by this driver.`,
+    );
+  }
   /** Joined members and pending invitees of one conversation. */
   abstract getChatMembers(chatId: string): Promise<ChatMembers>;
-  /** Existing conversation for exactly these participants, or `null`. */
-  abstract getChatForUsers(userIds: string[]): Promise<LocalChat | null>;
+  /**
+   * Invites one user into a conversation. The default refuses: a backend that
+   * cannot invite must not pretend it did.
+   */
+  async inviteToChat(chatId: string, userId: string): Promise<void> {
+    throw new Error(
+      `Driver.inviteToChat: inviting ${userId} into ${chatId} is not supported.`,
+    );
+  }
+  /**
+   * Existing conversation for exactly these participants, or `null`. With
+   * `options.encrypted`, only a room in that state counts.
+   */
+  abstract getChatForUsers(
+    userIds: string[],
+    options?: ChatLookupOptions,
+  ): Promise<LocalChat | null>;
   /** Single conversation, fetched by id. */
   abstract getChat(chatId: string): Promise<LocalChat>;
   abstract getChatMessages(
@@ -433,7 +519,7 @@ export abstract class Driver {
    */
   async startChatMeeting(
     _chatId: string,
-    _createRoom: () => Promise<MeetRoom>,
+    _createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     _options?: StartMeetingOptions,
   ): Promise<ChatMeeting> {
     void _chatId;
@@ -450,6 +536,44 @@ export abstract class Driver {
     void _meetingId;
     throw new Error(
       `${this.constructor.name}.endChatMeeting: meetings are not supported by this driver.`,
+    );
+  }
+
+  /**
+   * A short-lived OpenID token of the current account, for the Hub backend to
+   * check which user it is (meeting archives) without its access token.
+   */
+  async getOpenIdToken(): Promise<string> {
+    throw new Error(
+      `${this.constructor.name}.getOpenIdToken: identity proofs are not supported by this driver.`,
+    );
+  }
+
+  /** Adds a document to a meeting, for every member. Only its organizer may do it. */
+  /** Opens or closes the whiteboard of a meeting, for every participant. */
+  async setChatMeetingBoard(
+    _chatId: string,
+    _meetingId: string,
+    _isOpen: boolean,
+  ): Promise<void> {
+    void _chatId;
+    void _meetingId;
+    void _isOpen;
+    throw new Error(
+      `${this.constructor.name}.setChatMeetingBoard: meetings are not supported by this driver.`,
+    );
+  }
+
+  async addChatMeetingDocument(
+    _chatId: string,
+    _meetingId: string,
+    _document: ChatMeetingDocument,
+  ): Promise<void> {
+    void _chatId;
+    void _meetingId;
+    void _document;
+    throw new Error(
+      `${this.constructor.name}.addChatMeetingDocument: meetings are not supported by this driver.`,
     );
   }
 
@@ -562,11 +686,12 @@ export abstract class Driver {
    * Creates a brand-new conversation for exactly these participants (a direct
    * chat for one, a group for several) and resolves with it. Idempotent by
    * default where it can be: a driver that already has a conversation for the
-   * set SHOULD return it rather than create a duplicate — `name` and `spaceId`
-   * are only applied on that actual-creation path, so they're silently ignored
-   * when an existing conversation is reused. `spaceId` attaches the new
-   * conversation as that espace's child (the Salon creation flow), so it
-   * actually shows up under it. Set `forceNew` to skip the reuse check
+   * set SHOULD return it rather than create a duplicate — `options.name` and
+   * `options.spaceId` are only applied on that actual-creation path, so they're
+   * silently ignored when an existing conversation is reused. `spaceId`
+   * attaches the new conversation as that espace's child (the Salon creation
+   * flow), so it actually shows up under it. Set `options.forceNew` to skip
+   * the reuse check
    * entirely — the Salon flow does this: naming a salon and picking its espace
    * is an explicit request for a new room, even if the same people already
    * share an unrelated chat elsewhere; silently redirecting into that chat
@@ -577,18 +702,35 @@ export abstract class Driver {
    */
   async createChatForUsers(
     _userIds: string[],
-    _name?: string,
-    _spaceId?: string,
-    _forceNew?: boolean,
+    _options?: CreateChatOptions,
   ): Promise<LocalChat> {
     void _userIds;
-    void _name;
-    void _spaceId;
-    void _forceNew;
+    void _options;
     throw new Error(
       `${this.constructor.name}.createChatForUsers: creating a conversation is not supported by this driver.`,
     );
   }
+
+  /**
+   * Whether this driver can prove the signed-in person's chat identity.
+   *
+   * Off by default so drivers opt in; gates the role editor, which cannot
+   * link a label to an identity the driver is unable to vouch for.
+   */
+  readonly supportsProfileRoles: boolean = false;
+
+  /** Current proof of chat identity, sent to Hub only when saving a role. */
+  async getProfileIdentityToken(): Promise<string> {
+    throw new Error("Profile identity is not supported by this driver.");
+  }
+
+  /**
+   * Whether this driver can create end-to-end encrypted conversations.
+   *
+   * Off by default so drivers opt in; gates the encryption toggle in the New
+   * Chat screen. A driver that cannot encrypt must not be offered the choice.
+   */
+  readonly supportsEncryption: boolean = false;
 
   // --- Avatars -------------------------------------------------------------
   // Unsupported by default so drivers opt in; gates the photo-change actions

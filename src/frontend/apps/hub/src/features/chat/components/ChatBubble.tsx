@@ -1,17 +1,20 @@
 import { Trash } from "@gouvfr-lasuite/ui-components/icons";
+import { UserRoleBadge } from "@/features/roles/RoleBadge";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  ChatMeetingInvite,
   ChatRef,
   ChatMessage,
   ChatMessageAuthor,
   ChatReaction,
   ChatThreadSummary,
 } from "@/features/drivers/types";
-import { Avatar } from "@/features/ui/components/avatar/Avatar";
 
 import { useChatPanel } from "../ChatPanelContext";
+import { MeetingInviteButton } from "./MeetingInviteButton";
+import { MessageText } from "./MessageText";
 import { useChatMessageEdit } from "../ChatMessageEditContext";
 import { copyTextToClipboard } from "../copyTextToClipboard";
 import { formatChatGroupTimestamp } from "../formatTimestamp";
@@ -24,6 +27,7 @@ import { notify } from "@/features/ui/components/toast";
 import { MessageHoverToolbar } from "./MessageHoverToolbar";
 import { MessageReactions } from "./MessageReactions";
 import { ThreadButton } from "./ThreadButton";
+import { UserAvatar } from "./UserAvatar";
 
 type ChatBubbleReceivedProps = {
   variant: "received";
@@ -43,6 +47,8 @@ type ChatBubbleReceivedProps = {
   threadId?: string;
   /** Drops Reply while keeping reactions and message actions. */
   compactToolbar?: boolean;
+  /** Meeting this message invites to, joined from the bubble. */
+  meetingInvite?: ChatMeetingInvite;
   showHeader: boolean;
   showAvatar: boolean;
 };
@@ -64,6 +70,8 @@ type ChatBubbleSentProps = {
   threadId?: string;
   /** Drops Reply while keeping reactions and message actions. */
   compactToolbar?: boolean;
+  /** Meeting this message invites to, joined from the bubble. */
+  meetingInvite?: ChatMeetingInvite;
   showTimestamp: boolean;
 };
 
@@ -218,7 +226,13 @@ export const ChatBubble = (props: ChatBubbleProps) => {
             </span>
           ) : (
             <>
-              {props.content}
+              <MessageText content={props.content} />
+              {props.meetingInvite && (
+                <MeetingInviteButton
+                  accountId={props.chatRef.accountId}
+                  invite={props.meetingInvite}
+                />
+              )}
               {props.isEdited && (
                 <span className="hub__chat-bubble__edited">{t("edited")}</span>
               )}
@@ -257,6 +271,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
       {showHeader && (
         <div className="hub__chat-bubble__header">
           <span className="hub__chat-bubble__author">{author.name}</span>
+          <UserRoleBadge userId={author.id} />
           <span className="hub__chat-bubble__header-dot" aria-hidden="true">
             •
           </span>
@@ -267,9 +282,14 @@ export const ChatBubble = (props: ChatBubbleProps) => {
       )}
       <div className="hub__chat-bubble__row">
         {showAvatar ? (
-          <Avatar label={author.name} color={author.color} decorative size="sm">
-            {author.initials}
-          </Avatar>
+          <UserAvatar
+            userId={author.id}
+            label={author.name}
+            color={author.color}
+            initials={author.initials}
+            decorative
+            size="sm"
+          />
         ) : (
           <span
             className="hub__chat-bubble__avatar-spacer"
@@ -287,7 +307,13 @@ export const ChatBubble = (props: ChatBubbleProps) => {
             </span>
           ) : (
             <>
-              {content}
+              <MessageText content={content} />
+              {props.meetingInvite && (
+                <MeetingInviteButton
+                  accountId={props.chatRef.accountId}
+                  invite={props.meetingInvite}
+                />
+              )}
               {props.isEdited && (
                 <span className="hub__chat-bubble__edited">{t("edited")}</span>
               )}

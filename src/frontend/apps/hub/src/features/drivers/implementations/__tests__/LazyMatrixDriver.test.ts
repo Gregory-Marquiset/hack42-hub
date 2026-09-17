@@ -12,6 +12,12 @@ const setNotificationRuleEnabledMock = vi.hoisted(() => vi.fn());
 const setNotificationRuleActionsMock = vi.hoisted(() => vi.fn());
 const isChatMutedMock = vi.hoisted(() => vi.fn());
 const setChatMutedMock = vi.hoisted(() => vi.fn());
+const addChatMeetingDocumentMock = vi.hoisted(() => vi.fn());
+const setChatMeetingBoardMock = vi.hoisted(() => vi.fn());
+const getOpenIdTokenMock = vi.hoisted(() => vi.fn());
+const getChatFilesMock = vi.hoisted(() => vi.fn());
+const uploadChatFileMock = vi.hoisted(() => vi.fn());
+const downloadChatFileMock = vi.hoisted(() => vi.fn());
 
 // The real driver pulls in matrix-js-sdk: only the meeting calls matter here.
 vi.mock("../MatrixDriver", () => ({
@@ -34,6 +40,12 @@ vi.mock("../MatrixDriver", () => ({
     setNotificationRuleActions = setNotificationRuleActionsMock;
     isChatMuted = isChatMutedMock;
     setChatMuted = setChatMutedMock;
+    addChatMeetingDocument = addChatMeetingDocumentMock;
+    setChatMeetingBoard = setChatMeetingBoardMock;
+    getOpenIdToken = getOpenIdTokenMock;
+    getChatFiles = getChatFilesMock;
+    uploadChatFile = uploadChatFileMock;
+    downloadChatFile = downloadChatFileMock;
   },
 }));
 
@@ -67,6 +79,8 @@ describe("LazyMatrixDriver meetings", () => {
     await driver.endChatMeeting(ROOM_ID, meeting.id);
     await driver.extendChatMeeting(ROOM_ID, meeting.id, 15);
     await driver.renameChatMeeting(ROOM_ID, meeting.id, "Point hebdo");
+    const transcript = { id: "doc", title: "Doc", url: "https://x/doc" };
+    await driver.addChatMeetingDocument(ROOM_ID, meeting.id, transcript);
 
     expect(startChatMeetingMock).toHaveBeenCalledWith(
       ROOM_ID,
@@ -76,11 +90,62 @@ describe("LazyMatrixDriver meetings", () => {
     expect(getChatMeetingsMock).toHaveBeenCalledWith(ROOM_ID);
     expect(endChatMeetingMock).toHaveBeenCalledWith(ROOM_ID, meeting.id);
     expect(extendChatMeetingMock).toHaveBeenCalledWith(ROOM_ID, meeting.id, 15);
+    expect(addChatMeetingDocumentMock).toHaveBeenCalledWith(
+      ROOM_ID,
+      meeting.id,
+      transcript,
+    );
     expect(renameChatMeetingMock).toHaveBeenCalledWith(
       ROOM_ID,
       meeting.id,
       "Point hebdo",
     );
+  });
+
+  it("forwards opening the whiteboard", async () => {
+    await new LazyMatrixDriver("matrix").setChatMeetingBoard(
+      ROOM_ID,
+      "abc-defg-hij",
+      true,
+    );
+
+    expect(setChatMeetingBoardMock).toHaveBeenCalledWith(
+      ROOM_ID,
+      "abc-defg-hij",
+      true,
+    );
+  });
+
+  it("forwards the OpenID token request", async () => {
+    getOpenIdTokenMock.mockResolvedValue("openid-token");
+
+    await expect(new LazyMatrixDriver("matrix").getOpenIdToken()).resolves.toBe(
+      "openid-token",
+    );
+  });
+});
+
+describe("LazyMatrixDriver documents", () => {
+  it("advertises document support before the SDK loads", () => {
+    expect(new LazyMatrixDriver("matrix").supportsChatFiles).toBe(true);
+  });
+
+  it("forwards document calls to the real Matrix driver", async () => {
+    const shared = { id: "$file", name: "cr.pdf" };
+    const file = new File(["x"], "cr.pdf");
+    const blob = new Blob(["x"]);
+    getChatFilesMock.mockResolvedValue([shared]);
+    uploadChatFileMock.mockResolvedValue(shared);
+    downloadChatFileMock.mockResolvedValue(blob);
+    const driver = new LazyMatrixDriver("matrix");
+
+    await expect(driver.getChatFiles(ROOM_ID)).resolves.toEqual([shared]);
+    await expect(driver.uploadChatFile(ROOM_ID, file)).resolves.toBe(shared);
+    await expect(driver.downloadChatFile(ROOM_ID, "$file")).resolves.toBe(blob);
+
+    expect(getChatFilesMock).toHaveBeenCalledWith(ROOM_ID);
+    expect(uploadChatFileMock).toHaveBeenCalledWith(ROOM_ID, file);
+    expect(downloadChatFileMock).toHaveBeenCalledWith(ROOM_ID, "$file");
   });
 });
 

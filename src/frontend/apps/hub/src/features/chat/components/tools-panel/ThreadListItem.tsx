@@ -5,10 +5,11 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { ChatThread } from "@/features/drivers/types";
-import { Avatar } from "@/features/ui/components/avatar/Avatar";
+import { UserRoleBadge } from "@/features/roles/RoleBadge";
 
 import { formatChatTime } from "../../formatTimestamp";
 import { isOptimisticThreadId } from "../../hooks/chatCompositionCache";
+import { UserAvatar } from "../UserAvatar";
 
 type ThreadListItemProps = {
   thread: ChatThread;
@@ -43,19 +44,20 @@ export const ThreadListItem = ({ thread, onOpen }: ThreadListItemProps) => {
         aria-busy={isPending || undefined}
       >
         <span className="hub__chat-thread-item__indicator" aria-hidden="true" />
-        <Avatar
+        <UserAvatar
+          userId={thread.author.id}
           label={thread.author.name}
           color={thread.author.color}
+          initials={thread.author.initials}
           decorative
           size="sm"
-        >
-          {thread.author.initials}
-        </Avatar>
+        />
         <span className="hub__chat-thread-item__body">
           <span className="hub__chat-thread-item__head">
             <span className="hub__chat-thread-item__author">
               {thread.author.name}
             </span>
+            <UserRoleBadge userId={thread.author.id} />
             <span className="hub__chat-thread-item__time">
               {formatChatTime(thread.lastReplyAt)}
             </span>

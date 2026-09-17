@@ -74,11 +74,16 @@ def help_message() -> str:
         "",
         "Sans commande, je réponds sur un ton normal.",
         "",
-        "Ce que je lis : les messages récents du salon et, quand vous me "
-        "pinguez dans un fil, ce fil en entier. Uniquement ce que vous-même "
-        "avez le droit de lire — si vous avez rejoint le salon après une "
-        "conversation, elle ne m'est pas accessible non plus pour vous "
-        "répondre. Je n'ouvre pas les fichiers joints.",
+        "Où je travaille : dans chaque salon de groupe non chiffré — on m'y "
+        "invite à la création, ou dès que quelqu'un m'y mentionne — et en "
+        "conversation directe avec moi. Jamais dans un salon chiffré — je ne "
+        "peux pas y lire les messages — ni dans une conversation privée entre "
+        "deux personnes.",
+        "",
+        "Ce que je lis : les messages du salon postérieurs à mon arrivée et, "
+        "quand vous me pinguez dans un fil, ce fil. Jamais ce qui a été dit "
+        "avant qu'on m'invite, et jamais ce que vous-même n'avez pas le droit "
+        "de lire. Je n'ouvre pas les fichiers joints.",
     ]
     return "\n".join(lines)
 
@@ -105,6 +110,16 @@ class _Seen:
             while len(self._ids) > self._capacity:
                 self._ids.popitem(last=False)
             return True
+
+    def forget(self, event_id: str) -> None:
+        """Take the id back, so a ping lost to a passing failure can be retried.
+
+        Marking an event handled is a promise that it was answered. When the
+        homeserver is the one that failed - a timeout, a 5xx, a rate limit -
+        that promise is false, and keeping it would silence the ping for good.
+        """
+        with self._lock:
+            self._ids.pop(event_id, None)
 
 
 SEEN = _Seen()
@@ -228,17 +243,31 @@ def visible_to(events: list[dict], horizon: int | None) -> list[dict]:
 
 
 def history_horizon(room_id: str, asker: str) -> int | None:
-    """The oldest timestamp `asker` may read in this room, or None for all of it.
+    """The oldest timestamp Ariane may use to answer `asker` in this room.
 
-    Under `invited` the server would let them read from their invitation, while
-    this uses the timestamp of their current membership event. That is stricter
-    than the specification when someone was invited long before joining, and
-    stricter is the correct direction to be wrong in.
+    Two limits, and the later one wins.
+
+    The asker's own: she must never read back history the homeserver withheld
+    from them. Under `invited` the server would allow reading from their
+    invitation, while this uses their current membership event - stricter than
+    the specification, which is the correct direction to be wrong in.
+
+    Her own: an invitation is not retroactive. A room with
+    `history_visibility: shared` would hand her everything said before she
+    arrived, and summarising that back would turn "we invited the assistant"
+    into "the assistant read the archive".
     """
+    mine = matrix.joined_at(room_id)
+    if mine is None:
+        return None
+
     visibility = matrix.history_visibility(room_id)
-    if visibility in OPEN_HISTORY:
-        return 0
-    return matrix.membership_since(room_id, asker)
+    theirs = (
+        0 if visibility in OPEN_HISTORY else matrix.membership_since(room_id, asker)
+    )
+    if theirs is None:
+        return None
+    return max(mine, theirs)
 
 
 def thread_root_of(event: dict) -> str | None:
@@ -281,6 +310,21 @@ def _dedupe(events: list[dict]) -> list[dict]:
     return unique
 
 
+def _thread_root(room_id: str, root_id: str) -> list[dict]:
+    """The thread's opening message, or nothing when it cannot be read.
+
+    Now that a mention is how she enters a room, being pinged in a thread whose
+    root predates her join is ordinary. A room that hides its history from
+    newcomers answers that fetch with M_FORBIDDEN or M_NOT_FOUND, and losing the
+    root is no reason to lose the answer: the replies are context enough.
+    """
+    try:
+        return [matrix.get_event(room_id, root_id)]
+    except matrix.MatrixError as exc:
+        logger.info("thread root %s unreadable in %s: %s", root_id, room_id, exc)
+        return []
+
+
 def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str | None]:
     """Everything Ariane should have read before answering, and where to answer.
 
@@ -307,10 +351,7 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
         # A thread inherits the room's rule: its root can predate the asker's
         # arrival just as easily as any other message.
         thread = visible_to(
-            [
-                matrix.get_event(room_id, root_id),
-                *matrix.thread_replies(room_id, root_id),
-            ],
+            [*_thread_root(room_id, root_id), *matrix.thread_replies(room_id, root_id)],
             horizon,
         )
         # The room tail already holds the root and may hold thread replies.
@@ -323,6 +364,58 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
 
     # No thread: answer in the room, where the question was asked.
     return _as_messages(_dedupe(room_history), skip_event_id=event_id), None
+
+
+def is_invitation_for_me(event: dict) -> bool:
+    """Is this the membership event that invites Ariane into a room?"""
+    return (
+        event.get("type") == "m.room.member"
+        and event.get("state_key") == settings.MATRIX_BOT_USER_ID
+        and (event.get("content") or {}).get("membership") == "invite"
+    )
+
+
+def accept_invitation(room_id: str) -> None:
+    """Join a room Ariane was just invited to.
+
+    Her horizon starts at her join, so joining late would silently discard the
+    messages in between. An encrypted room is joined too: she will not read it,
+    but the member list should show she is there and say so rather than leave
+    a pending invitation nobody understands.
+    """
+    try:
+        if matrix.ensure_in_room(room_id):
+            logger.info("Ariane accepted an invitation to %s", room_id)
+    except matrix.MatrixError as exc:
+        logger.warning("could not accept the invitation to %s: %s", room_id, exc)
+
+
+def access_refusal(room_id: str) -> str | None:
+    """Why Ariane cannot answer in this room, if she cannot.
+
+    Encryption is checked before joining, not after: entering a room only to
+    announce that nothing can be read there is a wasted membership, and the
+    answer is known in advance. That one she can say, because she is able to
+    join and then speak.
+
+    Not being invited is different, and there is no message for it: she cannot
+    post in a room she is not in, so any refusal would fail to send. Silence is
+    the only possible outcome, and the composer is where this is prevented - it
+    only ever suggests people who are in the room.
+    """
+    if matrix.is_encrypted(room_id):
+        return ENCRYPTED_MESSAGE
+    if not matrix.ensure_in_room(room_id):
+        logger.info(
+            "Ariane was addressed in %s without being invited; staying out", room_id
+        )
+        return SILENT
+    return None
+
+
+# Distinguishes "refuse with this message" from "say nothing at all". Returning
+# an empty string would be indistinguishable from no refusal.
+SILENT = "\0"
 
 
 def canned_reply(command: str | None, unknown: bool) -> str | None:
@@ -354,19 +447,17 @@ def handle_message(room_id: str, event: dict) -> None:
 
     logger.info("Ariane pinged in %s by %s", room_id, sender)
 
-    # Encryption is checked before entering, not after. Forcing a robot into a
-    # private encrypted room through the admin door, only to announce that it
-    # cannot read anything, spends the most intrusive privilege we have for a
-    # result known in advance.
     try:
-        if matrix.is_encrypted(room_id):
-            matrix.send_message(
-                room_id, ENCRYPTED_MESSAGE, thread_root=aside_root(event), aside=True
-            )
+        refusal = access_refusal(room_id)
+        if refusal is not None:
+            if refusal is not SILENT:
+                matrix.send_message(
+                    room_id, refusal, thread_root=aside_root(event), aside=True
+                )
             return
-        matrix.ensure_in_room(room_id)
     except matrix.MatrixError as exc:
         logger.warning("could not enter %s: %s", room_id, exc)
+        SEEN.forget(event["event_id"])
         return
 
     command, unknown = parse_command(body)

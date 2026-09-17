@@ -14,7 +14,7 @@ from django.test import override_settings
 
 import pytest
 
-from bots import handlers
+from bots import handlers, matrix
 
 pytestmark = pytest.mark.django_db
 
@@ -75,3 +75,98 @@ def test_thread_root_older_than_the_asker_is_cut_too():
     root = message("$root", 500, "racine anterieure a l'arrivee")
     reply = message("$reply", 4_000, "reponse posterieure")
     assert handlers.visible_to([root, reply], 2_000) == [reply]
+
+
+def test_horizon_is_the_later_of_the_two_memberships(monkeypatch):
+    """Ariane's own arrival caps the context, even in an open-history room.
+
+    An invitation is not retroactive. A `shared` room would hand her everything
+    said before she joined, and summarising that back turns "we invited the
+    assistant" into "the assistant read the archive".
+    """
+    monkeypatch.setattr(matrix, "history_visibility", lambda _room: "shared")
+    monkeypatch.setattr(matrix, "joined_at", lambda _room: 5_000)
+
+    assert handlers.history_horizon("!r:localhost", "@asker:localhost") == 5_000
+
+
+def test_horizon_takes_the_asker_when_they_arrived_last(monkeypatch):
+    """The stricter of the two limits always wins."""
+    monkeypatch.setattr(matrix, "history_visibility", lambda _room: "joined")
+    monkeypatch.setattr(matrix, "joined_at", lambda _room: 1_000)
+    monkeypatch.setattr(matrix, "membership_since", lambda _room, _user: 9_000)
+
+    assert handlers.history_horizon("!r:localhost", "@asker:localhost") == 9_000
+
+
+def test_no_horizon_when_ariane_is_not_a_member(monkeypatch):
+    """Unknown membership drops everything rather than allowing everything."""
+    monkeypatch.setattr(matrix, "joined_at", lambda _room: None)
+
+    assert handlers.history_horizon("!r:localhost", "@asker:localhost") is None
+
+
+def threaded(event_id: str, timestamp: int, root_id: str) -> dict:
+    """A message posted inside a thread."""
+    event = message(event_id, timestamp)
+    event["content"]["m.relates_to"] = {"rel_type": "m.thread", "event_id": root_id}
+    return event
+
+
+def test_an_unreadable_thread_root_costs_the_root_not_the_answer(monkeypatch):
+    """Being pinged in a thread older than her arrival must still get an answer.
+
+    A mention is how she enters a room, so a thread that opened before she was
+    invited is the ordinary case. A room that hides its history from newcomers
+    refuses the root fetch, and that must degrade to "no root" rather than
+    abort the reply.
+    """
+    root_id = "$root"
+    reply = threaded("$reply", 3_000, root_id)
+    ping = threaded("$ping", 4_000, root_id)
+
+    def refuse(_room_id: str, _event_id: str) -> dict:
+        raise matrix.MatrixError("M_FORBIDDEN")
+
+    monkeypatch.setattr(matrix, "get_event", refuse)
+    monkeypatch.setattr(matrix, "recent_messages", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(matrix, "thread_replies", lambda *_args: [reply])
+    monkeypatch.setattr(handlers, "history_horizon", lambda *_args: 0)
+
+    messages, answer_root = handlers.build_context("!room:localhost", ping)
+
+    assert answer_root == root_id
+    assert [entry["role"] for entry in messages] == ["user"]
+
+
+def test_a_readable_thread_root_is_part_of_the_context(monkeypatch):
+    """The ordinary case still reads the message the thread opened on."""
+    root_id = "$root"
+    root = message(root_id, 2_000, "la question de depart")
+    ping = threaded("$ping", 4_000, root_id)
+
+    monkeypatch.setattr(matrix, "get_event", lambda *_args: root)
+    monkeypatch.setattr(matrix, "recent_messages", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(matrix, "thread_replies", lambda *_args: [])
+    monkeypatch.setattr(handlers, "history_horizon", lambda *_args: 0)
+
+    messages, _ = handlers.build_context("!room:localhost", ping)
+
+    assert "la question de depart" in messages[0]["content"]
+
+
+def test_a_forgotten_event_can_be_handled_again():
+    """A ping lost to a passing failure must not be silenced for good.
+
+    `SEEN` promises "this event was answered". When the homeserver is the one
+    that failed, the promise is false and the id has to be given back.
+    """
+    seen = handlers.SEEN
+
+    assert seen.add_if_new("$transient") is True
+    assert seen.add_if_new("$transient") is False
+
+    seen.forget("$transient")
+
+    assert seen.add_if_new("$transient") is True
+    seen.forget("$transient")

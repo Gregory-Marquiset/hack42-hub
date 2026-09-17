@@ -1,4 +1,6 @@
 import { ArrowDown } from "@gouvfr-lasuite/ui-components/icons";
+import clsx from "clsx";
+import { useRouter } from "next/router";
 import {
   memo,
   useCallback,
@@ -17,6 +19,7 @@ import type {
   ChatRef,
 } from "@/features/drivers/types";
 
+import { chatHref, readSpaceId } from "../chatRefs";
 import { isSameChatDay } from "../formatTimestamp";
 import { useChatMessages } from "../hooks/useChatMessages";
 import { useMainTimelineUnread } from "../hooks/useMainTimelineUnread";
@@ -41,6 +44,9 @@ const VISIBILITY_SETTLE_MS = 150;
 const READ_DWELL_MS = 250;
 // A message qualifies as visible only when 60% of its rendered height is shown.
 const MESSAGE_VISIBILITY_RATIO = 0.6;
+// How long a jumped-to message stays flashed (kept in sync with the CSS
+// animation duration in ChatVirtualList.scss).
+const MESSAGE_HIGHLIGHT_MS = 2800;
 
 type SkeletonState = "visible" | "leaving" | "hidden";
 type UnreadViewportState = "unknown" | "all-visible" | "needs-navigation";
@@ -56,6 +62,7 @@ export const ChatVirtualList = ({
   onUnreadBannerChange,
 }: ChatVirtualListProps) => {
   const { t } = useTranslation();
+  const router = useRouter();
   const {
     messages,
     authorsById,
@@ -104,12 +111,16 @@ export const ChatVirtualList = ({
   const visibilityRafRef = useRef<number | null>(null);
   const visibilityTimerRef = useRef<number | null>(null);
   const readDwellTimerRef = useRef<number | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
   const [unreadViewportState, setUnreadViewportState] =
     useState<UnreadViewportState>("unknown");
   const [unreadSeparator, setUnreadSeparator] =
     useState<UnreadSeparatorState | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [highlightedEventId, setHighlightedEventId] = useState<string | null>(
+    null,
+  );
   const unreadSeparatorEventId =
     unreadSeparator?.chatKey === chatKey ? unreadSeparator.eventId : null;
 
@@ -122,6 +133,26 @@ export const ChatVirtualList = ({
       readDwellTimerRef.current = null;
     }
   }, []);
+
+  const highlightMessage = useCallback((eventId: string) => {
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    setHighlightedEventId(eventId);
+    highlightTimerRef.current = window.setTimeout(() => {
+      highlightTimerRef.current = null;
+      setHighlightedEventId(null);
+    }, MESSAGE_HIGHLIGHT_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const releaseHiddenSeparatorOutsideViewport = useCallback(() => {
     const scroller = scrollerRef.current;
@@ -377,7 +408,15 @@ export const ChatVirtualList = ({
         pendingScrollRaf.current = null;
       }
     };
-  }, [chatRef]);
+    // `chatRef` itself is a fresh object every render (built by `readChatRef`
+    // on the URL query), so depending on it directly reran this effect — and
+    // ran its cleanup, canceling any in-flight `pendingScrollRaf` — on every
+    // unrelated re-render of the parent chain, not just on an actual chat
+    // switch (the body's own accountId/chatId guard came too late to help,
+    // since the cleanup of the *previous* run had already fired by then).
+    // That canceled `scrollToEvent`'s pending frames from underneath the
+    // jump-to-message flow essentially at random. Primitives only.
+  }, [chatRef.accountId, chatRef.chatId]);
 
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({
@@ -401,30 +440,48 @@ export const ChatVirtualList = ({
     scrollToBottom();
   }, [returnToLive, scrollToBottom]);
 
-  const scrollToEvent = useCallback((eventId: string) => {
-    if (pendingScrollRaf.current !== null) {
-      cancelAnimationFrame(pendingScrollRaf.current);
-    }
-    pendingScrollRaf.current = requestAnimationFrame(() => {
+  const scrollToEvent = useCallback(
+    // `onSettled` fires once the imperative scroll has actually been issued
+    // (or once we gave up because the row isn't there yet). Callers that
+    // react to it by changing `chatRef` identity (e.g. clearing a URL param)
+    // must wait for this instead of running right after calling
+    // `scrollToEvent`: the "scroll to bottom on chat switch" effect below
+    // cancels any pending `pendingScrollRaf` whenever `chatRef` changes,
+    // which would otherwise cancel *this* scroll before its two rAFs even
+    // get to fire — the exact case hit right after `openAround` loads a room
+    // that wasn't in memory yet, immediately followed by our own URL cleanup.
+    (eventId: string, onSettled?: (found: boolean) => void) => {
+      if (pendingScrollRaf.current !== null) {
+        cancelAnimationFrame(pendingScrollRaf.current);
+      }
       pendingScrollRaf.current = requestAnimationFrame(() => {
-        pendingScrollRaf.current = null;
-        const arrayIndex = messagesRef.current.findIndex(
-          (message) => message.id === eventId,
-        );
-        if (arrayIndex < 0) {
-          return;
-        }
-        virtuosoRef.current?.scrollToIndex({
-          // Virtuoso's imperative index is relative to `data` even when
-          // `itemContent` receives the offset virtual index. Matrix identity
-          // is resolved first; the array position is only the final UI hop.
-          index: arrayIndex,
-          align: "center",
-          behavior: "auto",
+        pendingScrollRaf.current = requestAnimationFrame(() => {
+          pendingScrollRaf.current = null;
+          const arrayIndex = messagesRef.current.findIndex(
+            (message) => message.id === eventId,
+          );
+          if (arrayIndex < 0) {
+            onSettled?.(false);
+            return;
+          }
+          virtuosoRef.current?.scrollToIndex({
+            // Virtuoso's imperative index is relative to `data` even when
+            // `itemContent` receives the offset virtual index. Matrix identity
+            // is resolved first; the array position is only the final UI hop.
+            index: arrayIndex,
+            align: "center",
+            // Smooth here (unlike `scrollToBottom`'s snap): the target is
+            // usually already in the loaded window, so an animated glide
+            // shows *where* it is relative to the current view instead of
+            // teleporting.
+            behavior: "smooth",
+          });
+          onSettled?.(true);
         });
       });
-    });
-  }, []);
+    },
+    [],
+  );
 
   const handleNavigateToUnread = useCallback(async () => {
     const eventId = unread.firstUnreadId;
@@ -449,6 +506,67 @@ export const ChatVirtualList = ({
   const navigateToUnread = useCallback(() => {
     void handleNavigateToUnread();
   }, [handleNavigateToUnread]);
+
+  // Jump straight to a message referenced from search (`?event=` on the
+  // `/chat` URL, carried by `ChatRef.eventId`), then flash it and clear the
+  // URL so revisiting this chat later doesn't re-trigger the jump. Reading
+  // the primitive `eventId` (not `chatRef` itself, a fresh object every
+  // render) as a dep means this only fires when it actually changes — so it
+  // won't cancel an in-flight `openAround` on an unrelated re-render, and it
+  // fires again on a later jump to the very same message (URL cleared in
+  // between makes that a real value change: string -> undefined -> string).
+  // Waiting out `isInitialLoading` matters when the jump also switches chats:
+  // otherwise this races the chat's own default fetch for its live end (and
+  // Virtuoso isn't even mounted yet to scroll). The effect just reruns once
+  // loading settles, since that's a dep too.
+  const targetEventId = chatRef.eventId;
+  useEffect(() => {
+    if (!targetEventId || isInitialLoading) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      if (
+        !messagesRef.current.some((message) => message.id === targetEventId)
+      ) {
+        await openAround(targetEventId);
+      }
+      if (cancelled) {
+        return;
+      }
+      scrollToEvent(targetEventId, (found) => {
+        if (cancelled) {
+          return;
+        }
+        if (found) {
+          highlightMessage(targetEventId);
+        }
+        // Only clear the URL once the scroll was actually issued: changing
+        // `chatRef` identity any earlier would cancel it first (see
+        // `scrollToEvent`'s comment).
+        void router.replace(
+          chatHref(
+            { accountId: chatRef.accountId, chatId: chatRef.chatId },
+            readSpaceId(router.query),
+          ),
+          undefined,
+          { shallow: true },
+        );
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    chatRef.accountId,
+    chatRef.chatId,
+    highlightMessage,
+    isInitialLoading,
+    openAround,
+    router,
+    scrollToEvent,
+    targetEventId,
+  ]);
 
   // `unknown` deliberately renders nothing: waiting for Virtuoso to settle
   // avoids flashing a shortcut before proving whether every unread is visible.
@@ -621,6 +739,7 @@ export const ChatVirtualList = ({
                 isUnreadSeparatorVisible={
                   hasSeparator && unreadSeparator?.isVisible === true
                 }
+                isHighlighted={message.id === highlightedEventId}
               />
             );
           }}
@@ -659,6 +778,7 @@ type RowProps = {
   authorsById: Map<string, ChatMessageAuthor>;
   hasUnreadSeparator: boolean;
   isUnreadSeparatorVisible: boolean;
+  isHighlighted: boolean;
 };
 
 const Row = memo(function Row({
@@ -669,6 +789,7 @@ const Row = memo(function Row({
   authorsById,
   hasUnreadSeparator,
   isUnreadSeparatorVisible,
+  isHighlighted,
 }: RowProps) {
   const isSent = message.authorId === "me";
   const isFirstOfGroup =
@@ -686,6 +807,7 @@ const Row = memo(function Row({
         messageId={message.id}
         hasUnreadSeparator={hasUnreadSeparator}
         isUnreadSeparatorVisible={isUnreadSeparatorVisible}
+        isHighlighted={isHighlighted}
       >
         <ChatBubble
           variant="sent"
@@ -699,6 +821,7 @@ const Row = memo(function Row({
           canEdit={message.canEdit}
           canDelete={message.canDelete}
           thread={message.thread}
+          meetingInvite={message.meetingInvite}
           showTimestamp={isLastOfGroup}
         />
       </RowShell>
@@ -714,6 +837,7 @@ const Row = memo(function Row({
       messageId={message.id}
       hasUnreadSeparator={hasUnreadSeparator}
       isUnreadSeparatorVisible={isUnreadSeparatorVisible}
+      isHighlighted={isHighlighted}
     >
       <ChatBubble
         variant="received"
@@ -728,6 +852,7 @@ const Row = memo(function Row({
         canEdit={message.canEdit}
         canDelete={message.canDelete}
         thread={message.thread}
+        meetingInvite={message.meetingInvite}
         showHeader={isFirstOfGroup}
         showAvatar={isLastOfGroup}
       />
@@ -740,13 +865,20 @@ const RowShell = ({
   messageId,
   hasUnreadSeparator,
   isUnreadSeparatorVisible,
+  isHighlighted,
 }: {
   children: React.ReactNode;
   messageId: string;
   hasUnreadSeparator: boolean;
   isUnreadSeparatorVisible: boolean;
+  isHighlighted: boolean;
 }) => (
-  <div className="hub__chat-conversation__row" data-chat-message-id={messageId}>
+  <div
+    className={clsx("hub__chat-conversation__row", {
+      "hub__chat-conversation__row--highlighted": isHighlighted,
+    })}
+    data-chat-message-id={messageId}
+  >
     <div className="hub__chat-conversation__row-inner">
       {hasUnreadSeparator && (
         <UnreadSeparator visible={isUnreadSeparatorVisible} />

@@ -21,10 +21,14 @@ export type MeetingStateEventContent = {
   organizerId?: string;
   title?: string;
   plannedDurationMinutes?: number;
-  /** Epoch milliseconds, set when the organizer closes the meeting. */
+  /** Epoch milliseconds, set when the meeting is closed. */
   endedAt?: number;
+  /** "auto" when the server closed it; the organizer otherwise. */
+  endedBy?: "organizer" | "auto";
   documents?: unknown;
   summary?: unknown;
+  /** Whether the whiteboard is open, for every participant at once. */
+  boardOpen?: boolean;
 };
 
 // Registers the custom state event so `sendStateEvent` accepts it.
@@ -78,7 +82,7 @@ export const chatMeetingFromStateEvent = (
   ) {
     return null;
   }
-  const { title, plannedDurationMinutes, endedAt } = content;
+  const { title, plannedDurationMinutes, endedAt, endedBy } = content;
   return {
     id: stateKey,
     url,
@@ -91,10 +95,14 @@ export const chatMeetingFromStateEvent = (
       ? { plannedDurationMinutes }
       : {}),
     ...(typeof endedAt === "number"
-      ? { endedAt: new Date(endedAt).toISOString() }
+      ? {
+          endedAt: new Date(endedAt).toISOString(),
+          endedBy: endedBy === "auto" ? "auto" : "organizer",
+        }
       : {}),
     documents: toDocuments(content.documents),
     summary: toDocument(content.summary),
+    isBoardOpen: content.boardOpen === true,
   };
 };
 

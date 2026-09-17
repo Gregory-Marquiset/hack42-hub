@@ -19,11 +19,22 @@ export const chatKeys = {
   spacesOf: (accountId: AccountId) => ["spaces", accountId] as const,
   noChat: () => ["chat", "none"] as const,
 
-  /** Existing conversation resolved from a participant set (New Chat search). */
+  /**
+   * Existing conversation resolved from a participant set (New Chat search).
+   * Keyed by the encryption asked for: a clear room and an encrypted one with
+   * the same people are different conversations.
+   */
   chatForUsers: (
     accountId: AccountId | null,
     participantIds: readonly string[],
-  ) => ["chat-for-users", accountId ?? "none", participantIds] as const,
+    encrypted?: boolean,
+  ) =>
+    [
+      "chat-for-users",
+      accountId ?? "none",
+      participantIds,
+      encrypted ?? "any",
+    ] as const,
   /** Prefix matching every participant-set resolution of an account (for bulk
    * invalidation when the account's room list changes). */
   chatForUsersOf: (accountId: AccountId | null) =>
@@ -51,8 +62,20 @@ export const chatKeys = {
    * invalidate all of them at once from the account-wide
    * `notification-rules:changed` event, which carries no `chatId`. */
   chatMutedOf: (accountId: AccountId) => ["chat-muted", accountId] as const,
-  connection: (accountId: AccountId, userId: string | null) =>
-    ["chat-connection", accountId, userId] as const,
+  files: (ref: ChatRef) => ["chat-files", ref.accountId, ref.chatId] as const,
+  meetingDocuments: (ref: ChatRef, meetingId: string) =>
+    ["chat-meeting-documents", ref.accountId, ref.chatId, meetingId] as const,
+  connection: (
+    accountId: AccountId,
+    userId: string | null,
+    driverFingerprint?: string,
+  ) => ["chat-connection", accountId, userId, driverFingerprint] as const,
+  userPresences: (accountId: AccountId) =>
+    ["chat-user-presence", accountId] as const,
+  userPresence: (accountId: AccountId, userId: string) =>
+    [...chatKeys.userPresences(accountId), userId] as const,
+  selfPresencePreference: (accountId: AccountId) =>
+    ["chat-self-presence-preference", accountId] as const,
   /** A `ChatVisual` image's driver-specific `url` resolved to a fetchable src. */
   avatarSrc: (accountId: AccountId, url: string) =>
     ["avatar-src", accountId, url] as const,

@@ -1,14 +1,12 @@
-"""The two ways Ariane touches Matrix, and why there are two.
+"""How Ariane touches Matrix.
 
-`AS_TOKEN` lets her act as any account in the Application Service namespace,
-through `?user_id=`. It cannot get her into a room nobody invited her to: the
-client API answers `M_FORBIDDEN` there, by design.
+One token: the Application Service token. It lets her act as any account in her
+namespace through `?user_id=`, and that is all the authority she has. It cannot
+get her into a room nobody invited her to - the client API answers
+`M_FORBIDDEN` there, by design, and that refusal is now the feature rather than
+an obstacle to route around.
 
-`ADMIN_TOKEN` is the door. `POST /_synapse/admin/v1/join/{room}` forces a local
-account into a room with no invitation. It is the price of being everywhere, and
-it is why the settings page has to say out loud what Ariane can read.
-
-Never hand either token to the frontend.
+Never hand the token to the frontend.
 """
 
 from __future__ import annotations
@@ -47,26 +45,27 @@ class MatrixError(Exception):
         self.errcode = errcode
 
 
-def _call(  # noqa: PLR0913
+def _as(
     method: str,
     path: str,
-    token: str,
     *,
-    as_user: str | None = None,
     json: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """One entry point, so masquerading is applied in exactly one place."""
+    """Call the Matrix client-server API as Ariane.
+
+    One entry point, so the masquerading is applied in exactly one place and
+    there is a single spot to audit who this service can act as.
+    """
     query = dict(params or {})
-    if as_user:
-        query["user_id"] = as_user
+    query["user_id"] = settings.MATRIX_BOT_USER_ID
 
     url = f"{settings.MATRIX_HOMESERVER_URL.rstrip('/'):s}{path:s}"
     try:
         response = requests.request(
             method,
             url,
-            headers={"Authorization": f"Bearer {token:s}"},
+            headers={"Authorization": f"Bearer {settings.MATRIX_AS_TOKEN:s}"},
             json=json,
             params=query,
             timeout=settings.MATRIX_REQUEST_TIMEOUT,
@@ -88,16 +87,6 @@ def _call(  # noqa: PLR0913
     return payload
 
 
-def _as(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
-    return _call(
-        method,
-        path,
-        settings.MATRIX_AS_TOKEN,
-        as_user=settings.MATRIX_BOT_USER_ID,
-        **kwargs,
-    )
-
-
 def is_member(room_id: str) -> bool:
     """Is Ariane already in this room?"""
     try:
@@ -107,30 +96,40 @@ def is_member(room_id: str) -> bool:
     return room_id in joined.get("joined_rooms", [])
 
 
-def ensure_in_room(room_id: str) -> None:
-    """Get Ariane into the room, inviting herself if that is what it takes.
+def ensure_in_room(room_id: str) -> bool:
+    """Accept an invitation to this room, and say whether Ariane is now in it.
 
-    Tries the ordinary join first: it works for public rooms and costs nothing.
-    Only a private room needs the admin token, and that call is the intrusive
-    one - so it stays the fallback, never the default.
+    She is never let in by force. The previous version fell back to the Synapse
+    admin API when the ordinary join was refused, which meant one member could
+    put an assistant into a room without asking anyone - including the people
+    already talking in it. An invitation is the whole consent mechanism Matrix
+    offers, and using it is the difference between a colleague and a wiretap.
+
+    Returns False when she has not been invited. The caller answers that in the
+    room, so a ping never produces silence.
     """
     if is_member(room_id):
-        return
+        return True
 
     try:
         _as("POST", f"{CLIENT_API:s}/join/{quote(room_id, safe=''):s}", json={})
-        return
+        return True
     except MatrixError as exc:
         if exc.errcode != "M_FORBIDDEN":
             raise
-        logger.info("Ariane not invited to %s, using the admin door", room_id)
+        logger.info("Ariane is not invited to %s", room_id)
+        return False
 
-    _call(
-        "POST",
-        f"/_synapse/admin/v1/join/{quote(room_id, safe=''):s}",
-        settings.MATRIX_ADMIN_TOKEN,
-        json={"user_id": settings.MATRIX_BOT_USER_ID},
-    )
+
+def joined_at(room_id: str) -> int | None:
+    """When Ariane's own membership of this room began, in milliseconds.
+
+    Her horizon, and it is hers alone. A room with `history_visibility: shared`
+    would happily hand her everything said before she arrived; reading it back
+    would make an invitation retroactive, which is not what inviting someone
+    into a conversation means.
+    """
+    return membership_since(room_id, settings.MATRIX_BOT_USER_ID)
 
 
 def history_visibility(room_id: str) -> str:
@@ -270,10 +269,19 @@ ASIDE_KEY = "fr.hack42.bot.aside"
 
 
 def send_message(
-    room_id: str, body: str, *, thread_root: str | None = None, aside: bool = False
+    room_id: str,
+    body: str,
+    *,
+    thread_root: str | None = None,
+    aside: bool = False,
+    extra: dict[str, Any] | None = None,
 ) -> str:
-    """Post as Ariane, in a thread when there is one."""
-    content: dict[str, Any] = {"msgtype": "m.text", "body": body}
+    """Post as Ariane, in a thread when there is one.
+
+    `extra` adds fields to the message content: the Hub reads them to offer
+    more than text, such as the button that joins a meeting.
+    """
+    content: dict[str, Any] = {"msgtype": "m.text", "body": body, **(extra or {})}
     if aside:
         content[ASIDE_KEY] = True
     if thread_root:
@@ -292,3 +300,128 @@ def send_message(
         json=content,
     )
     return sent["event_id"]
+
+
+# --- Hub meetings -----------------------------------------------------------
+# The meeting of a conversation is room state. Ariane writes it when the
+# server closes a meeting on its own; the archive asks the homeserver who is
+# in the room and who is asking.
+
+
+def can_write_rooms() -> bool:
+    """Whether Ariane has what she needs to write in a room she was invited to."""
+    return bool(settings.MATRIX_AS_TOKEN and settings.MATRIX_BOT_USER_ID)
+
+
+def _admin(method: str, path: str) -> dict[str, Any]:
+    """Call the Synapse admin API. Read-only by convention - see `joined_members`."""
+    try:
+        response = requests.request(
+            method,
+            f"{settings.MATRIX_HOMESERVER_URL:s}{path:s}",
+            headers={"Authorization": f"Bearer {settings.MATRIX_ADMIN_TOKEN:s}"},
+            timeout=settings.MATRIX_REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise MatrixError(f"{method:s} {path:s} failed: {exc!s}") from exc
+    if response.status_code >= 400:
+        raise MatrixError(f"{method:s} {path:s} -> {response.status_code:d}")
+    return response.json() or {}
+
+
+def _state_path(room_id: str, event_type: str, state_key: str) -> str:
+    return (
+        f"{CLIENT_API:s}/rooms/{quote(room_id, safe=''):s}"
+        f"/state/{quote(event_type, safe=''):s}/{quote(state_key, safe=''):s}"
+    )
+
+
+def get_room_state(room_id: str, event_type: str, state_key: str) -> dict[str, Any]:
+    """One state event's content, read as Ariane (she must be in the room)."""
+    return _as("GET", _state_path(room_id, event_type, state_key))
+
+
+def set_room_state(
+    room_id: str, event_type: str, state_key: str, content: dict[str, Any]
+) -> None:
+    """Write one state event as Ariane (she must be in the room)."""
+    _as("PUT", _state_path(room_id, event_type, state_key), json=content)
+
+
+def joined_members(room_id: str) -> set[str]:
+    """Who is in a room now, so the backend can answer "may this person read it".
+
+    This is the one call that does not go through `_as`, and the only remaining
+    use of the Synapse admin token: it answers for rooms Ariane was never
+    invited to, which is the point - the question is about the person asking,
+    not about her. It reads; it never joins anything.
+    """
+    members = _admin(
+        "GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe=''):s}/members"
+    )
+    return set(members.get("members", []))
+
+
+def openid_user_id(openid_token: str) -> str | None:
+    """
+    The Matrix account behind an OpenID token its client requested, or `None`.
+
+    This is how a browser proves which Matrix user it is without handing over
+    its access token: the homeserver vouches for the short-lived OpenID token.
+    """
+    try:
+        response = requests.get(
+            f"{settings.MATRIX_HOMESERVER_URL.rstrip('/'):s}"
+            "/_matrix/federation/v1/openid/userinfo",
+            params={"access_token": openid_token},
+            timeout=settings.MATRIX_REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise MatrixError(f"OpenID userinfo failed: {exc!s}") from exc
+    if response.status_code in (401, 403, 404):
+        return None
+    if response.status_code >= 400:
+        raise MatrixError(
+            f"OpenID userinfo returned {response.status_code:d}",
+            status_code=response.status_code,
+        )
+    try:
+        user_id = response.json().get("sub")
+    except ValueError:
+        return None
+    return user_id if isinstance(user_id, str) and user_id else None
+
+
+def create_direct_room(user_id: str) -> str:
+    """A new private conversation between Ariane and one account."""
+    created = _as(
+        "POST",
+        f"{CLIENT_API:s}/createRoom",
+        json={
+            "is_direct": True,
+            "preset": "trusted_private_chat",
+            "invite": [user_id],
+        },
+    )
+    return created["room_id"]
+
+
+def membership(room_id: str, user_id: str) -> str | None:
+    """Someone's membership in a room Ariane is in, or `None` if unknown."""
+    try:
+        state = _as(
+            "GET",
+            _state_path(room_id, "m.room.member", user_id),
+        )
+    except MatrixError as exc:
+        if exc.errcode in ("M_NOT_FOUND", "M_FORBIDDEN"):
+            return None
+        raise
+    return state.get("membership")
+
+
+def room_name(room_id: str) -> str | None:
+    """A room's name, through the admin API: Ariane need not be there."""
+    details = _admin("GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe=''):s}")
+    name = details.get("name")
+    return name if isinstance(name, str) and name.strip() else None

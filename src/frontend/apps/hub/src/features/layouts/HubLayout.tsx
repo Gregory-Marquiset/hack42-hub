@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useRequireAuth } from "@/features/auth/hooks/useRequireAuth";
 import { useChatEvents } from "@/features/chat/hooks/useChatEvents";
 import { useChatPresenceActivity } from "@/features/chat/hooks/useChatPresenceActivity";
+import { useActiveMeeting } from "@/features/chat/meetings/ActiveMeeting";
 import { useChatNotifications } from "@/features/chat/notifications/useChatNotifications";
 import { ConversationSearchModal } from "@/features/chat/search/ConversationSearchModal";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
@@ -53,8 +54,12 @@ export const HubLayout = ({ children, requireAuth = true }: HubLayoutProps) => {
   // reflects activity in any conversation (not just the open one) into the
   // React Query cache. No-op for drivers without real-time support.
   useChatEvents();
-  useChatPresenceActivity();
-  useChatNotifications(user?.id);
+  // Being in a call speaks for itself: it holds availability at busy and
+  // withholds notification sounds for as long as it lasts, without touching
+  // the state the person chose. Leaving needs nothing undone.
+  const isInCall = useActiveMeeting().url !== null;
+  useChatPresenceActivity(isInCall);
+  useChatNotifications(user?.id, isInCall);
 
   if (requireAuth && !user) {
     return null;

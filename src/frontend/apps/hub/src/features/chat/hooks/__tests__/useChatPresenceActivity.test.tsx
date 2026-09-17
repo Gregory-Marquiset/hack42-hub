@@ -133,6 +133,33 @@ describe("useChatPresenceActivity", () => {
     expect(driver.setUserPresence.mock.calls).toEqual([["unavailable"]]);
   });
 
+  it("holds availability at busy for as long as a call lasts", () => {
+    // Nothing is stored, so leaving needs nothing undone - and a browser
+    // closed mid-call cannot strand anyone as busy.
+    const driver = makeDriver();
+    entries = [{ accountId: "account-a", driver }];
+    seed("account-a", "online");
+
+    const view = renderHook(
+      ({ inCall }: { inCall: boolean }) => useChatPresenceActivity(inCall),
+      { wrapper: wrapper(queryClient), initialProps: { inCall: true } },
+    );
+
+    expect(driver.setUserPresence.mock.calls).toEqual([["unavailable"]]);
+    // Typing in the Hub during a call does not mean you are free.
+    act(() => vi.advanceTimersByTime(CHAT_PRESENCE_IDLE_MS));
+    fireEvent.pointerDown(document);
+    fireEvent.keyDown(document);
+    expect(driver.setUserPresence.mock.calls).toEqual([["unavailable"]]);
+
+    // Leaving restores the chosen state, which was never touched.
+    view.rerender({ inCall: false });
+    expect(driver.setUserPresence.mock.calls).toEqual([
+      ["unavailable"],
+      ["online"],
+    ]);
+  });
+
   it("isolates automatic and offline modes between accounts", () => {
     const automatic = makeDriver();
     const offline = makeDriver();

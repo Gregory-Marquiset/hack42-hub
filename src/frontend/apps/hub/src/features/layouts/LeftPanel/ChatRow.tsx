@@ -92,7 +92,18 @@ export const ChatRow = ({
               unread.unread && "hub__left-panel__chat__name--strong",
             )}
           >
-            {chat.name}
+            {/* Only the text truncates. The padlock is its sibling, so a
+                long name shortens instead of eating the one mark that says
+                this conversation is encrypted. */}
+            <span className="hub__left-panel__chat__name__text">
+              {chat.name}
+              {showAccountLabel && accountLabel && (
+                <span className="hub__left-panel__chat__account">
+                  {" "}
+                  · {accountLabel}
+                </span>
+              )}
+            </span>
             {chat.encrypted && (
               // Two conversations with the same person, one clear and one
               // encrypted, are otherwise indistinguishable in this list. The
@@ -101,12 +112,6 @@ export const ChatRow = ({
                 className="hub__left-panel__chat__encrypted"
                 aria-hidden="true"
               />
-            )}
-            {showAccountLabel && accountLabel && (
-              <span className="hub__left-panel__chat__account">
-                {" "}
-                · {accountLabel}
-              </span>
             )}
           </span>
           {timestamp && (

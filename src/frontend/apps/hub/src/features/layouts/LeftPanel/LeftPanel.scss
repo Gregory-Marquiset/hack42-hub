@@ -640,6 +640,10 @@
     }
   }
 
+  // A grid item's `min-width` defaults to auto, which floors it at its
+  // min-content width - and a flex column of nowrap rows has the widest row's
+  // full text as its min-content. The list was 400px wide inside a 299px
+  // cell, so every row hung 84px past the panel and was cut off by it.
   &__list {
     list-style: none;
     margin: 0;
@@ -647,6 +651,7 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
+    min-width: 0;
   }
 
   &__chat {
@@ -720,18 +725,31 @@
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+      min-width: 0;
     }
 
+    // Same rule again, one level down: with `min-width: auto` the name could
+    // not shrink below its whole string, so it pushed the timestamp out of
+    // the row rather than ellipsising. The padlock is a sibling of the
+    // truncating text, not inside it, or a long name would eat the lock and
+    // an encrypted room would look like any other.
     &__name {
+      display: flex;
+      align-items: center;
+      min-width: 0;
       font-size: 14px;
       font-weight: 500;
       line-height: 18px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
 
       &--strong {
         font-weight: 700;
+      }
+
+      &__text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     }
 
@@ -880,9 +898,9 @@
 }
 
 .hub__left-panel__chat__encrypted {
+  flex: 0 0 auto;
   width: 14px;
   height: 14px;
   margin-left: 4px;
-  vertical-align: -2px;
   color: var(--c--contextuals--content--semantic--neutral--secondary, #626a80);
 }

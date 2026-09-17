@@ -52,6 +52,54 @@ describe("useChatDocuments", () => {
     );
   });
 
+  it("loads and caches documents independently when switching rooms", async () => {
+    const otherRef: ChatRef = { accountId: "account-a", chatId: "chat-2" };
+    const roomDocuments: Record<string, ChatDocument[]> = {
+      "chat-1": [
+        {
+          address: "https://example.test/room-a",
+          title: "Room A",
+          addedBy: "@a:test",
+        },
+      ],
+      "chat-2": [
+        {
+          address: "https://example.test/room-b",
+          title: "Room B",
+          addedBy: "@b:test",
+        },
+      ],
+    };
+    getChatDocuments.mockImplementation(async (chatId) =>
+      Promise.resolve(roomDocuments[chatId] ?? []),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ChatRef }) => useChatDocuments(ref, true),
+      {
+        initialProps: { ref: REF },
+        wrapper: wrapper(queryClient),
+      },
+    );
+
+    await waitFor(() =>
+      expect(result.current.documents).toEqual(roomDocuments["chat-1"]),
+    );
+    rerender({ ref: otherRef });
+    await waitFor(() =>
+      expect(result.current.documents).toEqual(roomDocuments["chat-2"]),
+    );
+
+    expect(getChatDocuments).toHaveBeenNthCalledWith(1, "chat-1");
+    expect(getChatDocuments).toHaveBeenNthCalledWith(2, "chat-2");
+    expect(queryClient.getQueryData(chatKeys.documents(REF))).toEqual(
+      roomDocuments["chat-1"],
+    );
+    expect(queryClient.getQueryData(chatKeys.documents(otherRef))).toEqual(
+      roomDocuments["chat-2"],
+    );
+  });
+
   it("does not fetch while the panel is closed", () => {
     renderHook(() => useChatDocuments(REF, false), {
       wrapper: wrapper(queryClient),

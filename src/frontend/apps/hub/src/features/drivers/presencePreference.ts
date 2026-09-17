@@ -10,9 +10,8 @@ export const readChatSelfPresencePreference = (
   accountId: AccountId,
 ): ChatSelfPresencePreference => {
   if (typeof localStorage === "undefined") return "online";
-  return localStorage.getItem(storageKey(accountId)) === "offline"
-    ? "offline"
-    : "online";
+  const stored = localStorage.getItem(storageKey(accountId));
+  return stored === "offline" || stored === "busy" ? stored : "online";
 };
 
 export const writeChatSelfPresencePreference = (

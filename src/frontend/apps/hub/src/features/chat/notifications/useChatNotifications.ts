@@ -26,15 +26,20 @@ const preview = (content: string): string => {
 };
 
 /** Play incoming activity; show a browser notification only without focus. */
-export const useChatNotifications = (userId?: string): void => {
+export const useChatNotifications = (
+  userId?: string,
+  isInCall = false,
+): void => {
   const entries = useDriverEntries();
   const hasAccounts = entries.length > 0;
   const router = useRouter();
   const { t } = useTranslation();
-  const latest = useRef({ router, t });
+  // Read through a ref so the subscription is not rebuilt each time one of
+  // these changes - the sound decision is made when an event arrives.
+  const latest = useRef({ router, t, isInCall });
   useEffect(() => {
-    latest.current = { router, t };
-  }, [router, t]);
+    latest.current = { router, t, isInCall };
+  }, [router, t, isInCall]);
 
   const session = useRef<NotificationSession | null>(null);
   // Per-account set of muted room ids, refreshed from `getNotificationRules`
@@ -111,7 +116,17 @@ export const useChatNotifications = (userId?: string): void => {
         // Capture focus before a permission prompt can change it.
         const focused =
           document.visibilityState === "visible" && document.hasFocus();
-        current.sound.play();
+        // Two reasons to stay quiet: busy was chosen, or a call is running -
+        // a sound over a conversation is the one place it helps least. Both
+        // read from the chosen state rather than the effective one: going
+        // idle for five minutes publishes `unavailable` too, and that is not
+        // a request for quiet. The banner still appears either way.
+        if (
+          !latest.current.isInCall &&
+          driver.getSelfPresencePreference() !== "busy"
+        ) {
+          current.sound.play();
+        }
         try {
           if (
             !focused &&

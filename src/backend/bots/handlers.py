@@ -60,6 +60,10 @@ def help_message() -> str:
     lines = [
         f"Je réponds uniquement quand on écrit @{name:s} dans un message.",
         "",
+        "Je réponds toujours dans un fil, accroché à votre message : la "
+        "conversation du salon n'est pas repoussée par mes réponses, et vous "
+        "retrouvez la mienne sous la question que vous avez posée.",
+        "",
         "Une commande change ma façon de répondre, pas ce qui me déclenche. "
         f"Elle se place après la mention : « @{name:s} /juriste ma question ».",
         "",
@@ -273,11 +277,8 @@ def history_horizon(room_id: str, asker: str) -> int | None:
 def thread_root_of(event: dict) -> str | None:
     """The thread this message belongs to, or None when it is in the room.
 
-    Ariane answers where she was asked. Opening a thread on a room message hides
-    the answer behind a "1 reply" link nobody clicks, which reads exactly like a
-    bot that did not respond - and the Hub renders no reply relation either
-    (`MatrixDriver.ts` knows only threads), so a plain message is the only thing
-    actually visible.
+    Used for reading, not for answering: it decides whether the thread's own
+    messages join the context. Where the answer goes is `aside_root`.
     """
     relation = (event.get("content") or {}).get("m.relates_to") or {}
     if relation.get("rel_type") != "m.thread":
@@ -286,13 +287,17 @@ def thread_root_of(event: dict) -> str | None:
 
 
 def aside_root(event: dict) -> str:
-    """Where a reply that concerns only the asker goes: always a thread.
+    """Where Ariane replies: the thread hanging off the message that asked.
 
-    Help, an unknown command, an engine failure - none of it is addressed to
-    the room, and none of it should push a real conversation up the screen. So
-    these open a thread on the message that asked, even when the question came
-    from the main timeline. The asker sees the "1 reply" marker on their own
-    message; nobody else has to read it.
+    Everything she says goes there - answers, help, refusals, failures. A
+    question put to her is between her and the person asking; letting it run
+    down the main timeline pushes the room's own conversation off the screen,
+    and a room where several people ask her things becomes unreadable. The
+    asker gets the reply marker on their own message, and anyone curious can
+    open it.
+
+    When the question already came from a thread, that thread is the answer's
+    home too - she never opens a second one.
     """
     return thread_root_of(event) or event["event_id"]
 
@@ -461,10 +466,8 @@ def handle_message(room_id: str, event: dict) -> None:
         return
 
     command, unknown = parse_command(body)
-    # Two destinations, on purpose. A real answer goes where the question was
-    # asked, so it is seen. Everything else - help, refusals, failures - goes
-    # into a thread, where it stays between Ariane and the person who asked.
-    answer_root = thread_root_of(event)
+    # One destination, always: the thread hanging off the message that asked.
+    answer_root = aside_root(event)
 
     try:
         canned = canned_reply(command, unknown)

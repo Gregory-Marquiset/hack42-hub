@@ -93,6 +93,12 @@ export type LocalSpace = {
   name: string;
   visual: ChatVisual;
   memberCount?: number;
+  /**
+   * Conversations this espace groups. Carried here so the switcher can total
+   * what is unread inside one without a query per espace; ids of rooms the
+   * person has not joined are harmless, they simply count as read.
+   */
+  chatIds: string[];
 };
 
 export type Space = LocalSpace & {
@@ -361,7 +367,17 @@ export type ChatUser = ChatMessageAuthor & {
 export type ChatUserPresenceState = "online" | "unavailable" | "offline";
 
 /** User choice for this client; `online` enables automatic idle handling. */
-export type ChatSelfPresencePreference = "online" | "offline";
+/**
+ * What the person chose for themselves, which is not the same alphabet as
+ * `ChatUserPresenceState`.
+ *
+ * Matrix has three presence values and the idle timer already spends
+ * `unavailable` on "away for five minutes". "Busy" therefore cannot be that
+ * value: it is a deliberate choice, it mutes notification sounds, and going
+ * to lunch must not do the same. It is stored locally and published to Matrix
+ * as `unavailable`, the closest thing the protocol has to "not available".
+ */
+export type ChatSelfPresencePreference = "online" | "busy" | "offline";
 
 /** Current transport-level presence for one chat user. */
 export type ChatUserPresence = {
@@ -467,6 +483,13 @@ export type ChatMessage = {
   reactions: ChatReaction[];
   /** Matrix redaction rendered as a stable tombstone rather than a removed row. */
   isDeleted?: boolean;
+  /**
+   * The message is encrypted and this device holds no key for it - it predates
+   * the session and there is no key backup. Rendered as its own short
+   * tombstone: the SDK puts its whole English diagnostic in the body, which is
+   * neither readable nor translatable.
+   */
+  isUndecryptable?: boolean;
   /** Whether the visible body comes from an `m.replace` relation. */
   isEdited?: boolean;
   /** Server-derived permissions for the connected user. */

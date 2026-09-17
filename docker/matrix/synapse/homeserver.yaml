@@ -42,6 +42,30 @@ rc_message:
   per_second: 1000
   burst_count: 10000
 
+# Inviting and joining are rate-limited per user by default - `rc_invites`
+# allows 0.003 per second after a burst of five, which is one invitation every
+# five minutes. That is right for a public server and useless here: seeding a
+# realistic set of rooms, or running `make check-bot`, spends dozens of
+# invitations in a row.
+rc_invites:
+  per_room:
+    per_second: 1000
+    burst_count: 10000
+  per_user:
+    per_second: 1000
+    burst_count: 10000
+  per_issuer:
+    per_second: 1000
+    burst_count: 10000
+
+rc_joins:
+  local:
+    per_second: 1000
+    burst_count: 10000
+  remote:
+    per_second: 1000
+    burst_count: 10000
+
 # Obviously-fake dev-only secrets; fine here because this stack never ships.
 registration_shared_secret: "ThisIsARegistrationSharedSecretForDev"
 macaroon_secret_key: "ThisIsAMacaroonSecretKeyForDevOnly"

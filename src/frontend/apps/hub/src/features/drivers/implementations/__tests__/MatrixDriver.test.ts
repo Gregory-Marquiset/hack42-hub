@@ -10,7 +10,11 @@ import {
 } from "matrix-js-sdk/lib/matrix";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { timelineEventToChatEvent } from "../matrixEventMapping";
+import {
+  lastMainTimelinePreview,
+  matrixEventToChatMessage,
+  timelineEventToChatEvent,
+} from "../matrixEventMapping";
 import { LazyMatrixDriver } from "../LazyMatrixDriver";
 import { MatrixDriver } from "../MatrixDriver";
 import { readChatSelfPresencePreference } from "../../presencePreference";
@@ -51,6 +55,8 @@ const makeReactionEvent = (
   ({
     getType: () => "m.reaction",
     isRedacted: () => false,
+    // Read for every message: an undecryptable one gets its own tombstone.
+    isDecryptionFailure: () => false,
     getId: () => reaction.id ?? `$reaction-${reaction.sender}`,
     getSender: () => reaction.sender,
     getRelation: () => ({
@@ -73,10 +79,13 @@ const makeMessageEvent = (opts: {
   status?: string | null;
   transactionId?: string;
   txnId?: string;
+  undecryptable?: boolean;
 }): MatrixEvent =>
   ({
     getType: () => opts.type ?? "m.room.message",
     isRedacted: () => false,
+    // Read for every message: an undecryptable one gets its own tombstone.
+    isDecryptionFailure: () => opts.undecryptable ?? false,
     getId: () => opts.id ?? "$ev:localhost",
     getSender: () => opts.sender,
     getTs: () => 1_700_000_000_000,
@@ -179,6 +188,105 @@ beforeEach(() => {
   startClientMock.mockResolvedValue(undefined);
 });
 
+describe("an undecryptable message", () => {
+  it("is flagged and stripped of the SDK's diagnostic", () => {
+    // The SDK puts its whole English explanation in the body. It is neither
+    // readable nor translatable, so the UI must never receive it.
+    const event = makeMessageEvent({
+      sender: OTHER_ID,
+      body: "** Unable to decrypt: DecryptionError: no key backup **",
+      undecryptable: true,
+    });
+
+    const message = matrixEventToChatMessage(event, makeRoom(), SELF_ID);
+
+    expect(message.isUndecryptable).toBe(true);
+    expect(message.content).toBe("");
+  });
+
+  it("is skipped by the conversation list preview, like a deleted one", () => {
+    // The newest event is the unreadable one; the row falls back to the last
+    // message it can actually show rather than printing the diagnostic.
+    const events = [
+      makeMessageEvent({ sender: OTHER_ID, body: "lisible", id: "$a" }),
+      makeMessageEvent({
+        sender: OTHER_ID,
+        body: "** Unable to decrypt **",
+        id: "$b",
+        undecryptable: true,
+      }),
+    ];
+    const room = {
+      getLiveTimeline: () => ({ getEvents: () => events }),
+      getMember: (id: string) => ({ name: id }),
+    } as unknown as Room;
+
+    expect(lastMainTimelinePreview(room, SELF_ID)?.text).toBe("lisible");
+  });
+});
+
+describe("MatrixDriver.resolveAvatarUrl", () => {
+  const clientFor = (thumbnail: number, download: number) => {
+    const mxcUrlToHttp = vi.fn((_mxc: string, width?: number) =>
+      width ? "https://hs/thumbnail" : "https://hs/download",
+    );
+    // Typed rather than taking an unused `init` parameter: the assertions
+    // below read the headers off the recorded call.
+    const fetchMock = vi.fn<
+      (
+        url: string,
+        init?: { headers?: Record<string, string> },
+      ) => Promise<{ ok: boolean; blob: () => Promise<Blob> }>
+    >(async (url) => ({
+      ok: (url === "https://hs/thumbnail" ? thumbnail : download) < 400,
+      blob: async () => new Blob(["x"]),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:avatar"),
+    });
+    const mx = {
+      mxcUrlToHttp,
+      getAccessToken: () => "token",
+    } as unknown as MatrixClient;
+    return { mx, fetchMock, mxcUrlToHttp };
+  };
+
+  it("asks for a thumbnail first, authenticated", async () => {
+    const { mx, fetchMock } = clientFor(200, 200);
+
+    await expect(
+      driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
+    ).resolves.toBe("blob:avatar");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://hs/thumbnail");
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      headers: { Authorization: "Bearer token" },
+    });
+  });
+
+  it("falls back to the file when the homeserver cannot thumbnail it", async () => {
+    // Synapse answers 400 "Cannot find any thumbnails for the requested
+    // media" for an SVG, which used to leave the avatar permanently blank.
+    const { mx, fetchMock } = clientFor(400, 200);
+
+    await expect(
+      driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
+    ).resolves.toBe("blob:avatar");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://hs/download");
+  });
+
+  it("hands back the mxc url when neither answers, so the row falls back", async () => {
+    const { mx } = clientFor(400, 404);
+
+    await expect(
+      driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
+    ).resolves.toBe("mxc://hs/a");
+  });
+});
+
 describe("MatrixDriver.getUserPresence", () => {
   it("reads the current presence from the Matrix client store", () => {
     const getUser = vi.fn((userId: string) =>
@@ -207,6 +315,39 @@ describe("MatrixDriver.getUserPresence", () => {
         getUser: () => null,
       } as unknown as MatrixClient).getUserPresence(OTHER_ID),
     ).toBeNull();
+  });
+});
+
+describe("MatrixDriver.fetchUserPresence", () => {
+  it("maps the homeserver's own answer when the store is empty", async () => {
+    const getPresence = vi.fn(async () => ({ presence: "offline" }));
+    const mx = { getPresence } as unknown as MatrixClient;
+
+    await expect(
+      driverWithClient(mx).fetchUserPresence(OTHER_ID),
+    ).resolves.toEqual({ userId: OTHER_ID, state: "offline" });
+    expect(getPresence).toHaveBeenCalledWith(OTHER_ID);
+  });
+
+  it("stays quiet when the server refuses or answers nonsense", async () => {
+    const refusing = {
+      getPresence: async () => {
+        throw new Error("M_FORBIDDEN");
+      },
+    } as unknown as MatrixClient;
+    const nonsense = {
+      getPresence: async () => ({ presence: "dancing" }),
+    } as unknown as MatrixClient;
+
+    await expect(
+      driverWithClient(refusing).fetchUserPresence(OTHER_ID),
+    ).resolves.toBeNull();
+    await expect(
+      driverWithClient(nonsense).fetchUserPresence(OTHER_ID),
+    ).resolves.toBeNull();
+    await expect(
+      driverWithClient(null).fetchUserPresence(OTHER_ID),
+    ).resolves.toBeNull();
   });
 });
 
@@ -265,6 +406,27 @@ describe("MatrixDriver.setUserPresence", () => {
     await expect(driver.setUserPresence("online")).rejects.toThrowError(
       "client is not connected",
     );
+  });
+});
+
+describe("MatrixDriver busy preference", () => {
+  it("publishes the closest standard value and keeps busy locally", async () => {
+    // Matrix has no "busy". It is the local preference that silences
+    // notification sounds, so it must survive as itself - while what the
+    // homeserver hears is a value it understands.
+    const setSyncPresence = vi.fn().mockResolvedValue(undefined);
+    const setPresence = vi.fn().mockResolvedValue(undefined);
+    const driver = driverWithClient({
+      setSyncPresence,
+      setPresence,
+    } as unknown as MatrixClient);
+
+    await driver.setSelfPresencePreference("busy");
+
+    expect(setSyncPresence).toHaveBeenCalledWith("unavailable");
+    expect(setPresence).toHaveBeenCalledWith({ presence: "unavailable" });
+    expect(readChatSelfPresencePreference("matrix-local")).toBe("busy");
+    expect(driver.getSelfPresencePreference()).toBe("busy");
   });
 });
 

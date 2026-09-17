@@ -274,6 +274,16 @@
 // `@` mention suggestions. Sits directly above the composer rather than in a
 // portal: the composer already owns its stacking context, and a portal would
 // have to track the textarea's position on every resize.
+.hub__chat-composer__mention-notice {
+  margin: 0 0 4px;
+  padding: 6px 10px;
+  border-radius: var(--c--globals--spacings--xxxs, 4px);
+  background: var(--c--contextuals--background--surface--secondary, #f4f5f8);
+  color: var(--c--contextuals--content--semantic--neutral--secondary, #555e74);
+  font-size: 13px;
+  line-height: 18px;
+}
+
 .hub__chat-composer__mentions {
   list-style: none;
   margin: 0 0 4px;

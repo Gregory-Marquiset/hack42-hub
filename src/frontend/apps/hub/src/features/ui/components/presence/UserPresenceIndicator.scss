@@ -4,22 +4,33 @@
   width: 12px;
   height: 12px;
   margin-inline-start: var(--c--globals--spacings--2xs);
-  border: 2px solid var(--c--contextuals--background--surface--primary);
+  // The ring only has to separate the dot from what is behind it; at 2px it
+  // read as a white disc with a coloured centre rather than as a dot.
+  border: 1px solid var(--c--contextuals--background--surface--primary);
   border-radius: 50%;
   vertical-align: middle;
 
+  // Green invites, red holds you off, grey says nobody is there. Never colour
+  // alone: each dot carries its own accessible name and title.
   &--online {
     background: var(--c--contextuals--background--semantic--success--primary);
   }
 
-  &--offline {
+  &--busy {
     background: var(--c--contextuals--background--semantic--error--primary);
+  }
+
+  &--offline {
+    background: var(
+      --c--contextuals--content--semantic--neutral--tertiary,
+      #8b93a7
+    );
   }
 
   &--avatar {
     position: absolute;
-    right: -2px;
-    bottom: -2px;
+    right: -1px;
+    bottom: -1px;
     z-index: 1;
     margin: 0;
   }

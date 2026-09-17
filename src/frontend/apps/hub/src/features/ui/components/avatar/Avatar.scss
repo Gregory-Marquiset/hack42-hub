@@ -17,22 +17,39 @@ $avatar-colors:
   text-align: center;
   color: var(--c--contextuals--content--semantic--overlay--primary);
 
+  // A material-icons glyph inherits the global 24px unless told otherwise,
+  // which is wider than the content box of the size everything defaults to:
+  // 24px minus two 1.5px borders leaves 21px, so `overflow: hidden` shaved
+  // 3px off every room glyph in the conversation list. Each size now carries
+  // the glyph size that fits inside it.
   &--sm {
     width: 24px;
     height: 24px;
     font-size: 10px;
+
+    .material-icons {
+      font-size: 16px;
+    }
   }
 
   &--md {
     width: 32px;
     height: 32px;
     font-size: 13px;
+
+    .material-icons {
+      font-size: 20px;
+    }
   }
 
   &--lg {
     width: 40px;
     height: 40px;
     font-size: 17px;
+
+    .material-icons {
+      font-size: 26px;
+    }
   }
 
   @each $color in $avatar-colors {

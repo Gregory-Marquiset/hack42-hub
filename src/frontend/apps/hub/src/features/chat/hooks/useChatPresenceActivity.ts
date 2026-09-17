@@ -24,8 +24,13 @@ type ActivitySession = {
 /**
  * One app-wide activity controller. It owns one timer per connected account,
  * never per observed user, and publishes only effective state transitions.
+ *
+ * `isInCall` is passed in rather than read from the meeting context, so this
+ * stays a plain hook: being in a call holds the state without touching the
+ * stored preference, which means leaving the call needs nothing undone and a
+ * browser closed mid-call cannot strand anyone.
  */
-export const useChatPresenceActivity = (): void => {
+export const useChatPresenceActivity = (isInCall = false): void => {
   const queryClient = useQueryClient();
   const driverEntries = useDriverEntries();
   const connectionSignature = driverEntries
@@ -96,7 +101,11 @@ export const useChatPresenceActivity = (): void => {
       session.idleTimer = null;
     };
     const activate = (session: ActivitySession) => {
-      if (session.preference === "offline") return;
+      // Neither "offline" nor "busy" is something activity should undo: both
+      // were chosen, and typing a message is not a request to become
+      // available again. A call is the same: typing in the Hub during one
+      // does not mean you are free.
+      if (session.preference !== "online" || isInCall) return;
       publish(session, "online");
       clearIdleTimer(session);
       session.idleTimer = setTimeout(() => {
@@ -111,6 +120,11 @@ export const useChatPresenceActivity = (): void => {
 
     sessions.forEach((session) => {
       if (session.preference === "offline") publish(session, "offline");
+      // Busy is published as the closest standard value; the idle timer stays
+      // out of it, so it does not decay into anything else. Being in a call
+      // looks the same from outside, without being a choice.
+      else if (session.preference === "busy" || isInCall)
+        publish(session, "unavailable");
       else activate(session);
     });
     document.addEventListener("pointerdown", onActivity);
@@ -125,5 +139,5 @@ export const useChatPresenceActivity = (): void => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       sessions.forEach(clearIdleTimer);
     };
-  }, [entries, preferences, queryClient]);
+  }, [entries, isInCall, preferences, queryClient]);
 };

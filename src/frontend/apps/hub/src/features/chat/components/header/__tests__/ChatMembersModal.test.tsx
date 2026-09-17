@@ -26,13 +26,14 @@ const members: ChatMember[] = [
   },
 ];
 const getUserPresence = vi.fn(() => null);
+const fetchUserPresence = vi.fn(async () => null);
 const subscribeToEvents = vi.fn();
 
 vi.mock("@/features/drivers/DriverRegistry", () => ({
   useDriverEntries: () => [
     {
       accountId: "account-a",
-      driver: { getUserPresence, subscribeToEvents },
+      driver: { getUserPresence, fetchUserPresence, subscribeToEvents },
     },
   ],
 }));
@@ -145,7 +146,7 @@ describe("ChatMembersModal presence", () => {
     const unknown = screen.getByTestId("member-@unknown:localhost");
     expect(
       within(alice)
-        .getByRole("img", { name: "Online" })
+        .getByRole("img", { name: "Available" })
         .getAttribute("data-presence"),
     ).toBe("online");
     expect(
@@ -168,7 +169,9 @@ describe("ChatMembersModal presence", () => {
       wrapper: wrapper(queryClient),
     });
     const alice = await screen.findByTestId("member-@alice:localhost");
-    expect(within(alice).queryByRole("img", { name: "Online" })).not.toBeNull();
+    expect(
+      within(alice).queryByRole("img", { name: "Available" }),
+    ).not.toBeNull();
 
     act(() => {
       queryClient.setQueryData(aliceKey, {
@@ -180,7 +183,7 @@ describe("ChatMembersModal presence", () => {
     await waitFor(() => {
       expect(
         within(alice)
-          .getByRole("img", { name: "Offline" })
+          .getByRole("img", { name: "Busy" })
           .getAttribute("data-presence"),
       ).toBe("unavailable");
     });

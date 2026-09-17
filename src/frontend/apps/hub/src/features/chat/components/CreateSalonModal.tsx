@@ -11,7 +11,9 @@ import { useTranslation } from "react-i18next";
 
 import { chatHref } from "@/features/chat/chatRefs";
 import { SelectedUserChip } from "@/features/chat/components/SelectedUserChip";
+import { useAssistant } from "@/features/chat/hooks/useAssistant";
 import { useComposerAccountId } from "@/features/chat/hooks/useChatAccounts";
+import { useChatEncryptionSupport } from "@/features/chat/hooks/useChatEncryptionSupport";
 import { useChatUserSearch } from "@/features/chat/hooks/useChatUserSearch";
 import { useCreateChatForUsers } from "@/features/chat/hooks/useCreateChatForUsers";
 import type { ChatUser, Space } from "@/features/drivers/types";
@@ -29,6 +31,8 @@ type CreateSalonModalProps = {
 };
 
 const MIN_MEMBERS = 2;
+/** Stands for "no espace" in the picker, which cannot carry a null value. */
+const NO_SPACE = "";
 
 /** Name-and-pick-members dialog for the New menu's "Salon" choice. */
 export const CreateSalonModal = ({
@@ -41,7 +45,10 @@ export const CreateSalonModal = ({
   const router = useRouter();
   const accountId = useComposerAccountId();
   const { createChatForUsers, isCreating } = useCreateChatForUsers(accountId);
+  const canEncrypt = useChatEncryptionSupport(accountId);
+  const assistant = useAssistant();
   const [spaceId, setSpaceId] = useState<string | null>(defaultSpaceId);
+  const [encrypted, setEncrypted] = useState(false);
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<ChatUser[]>([]);
@@ -51,9 +58,9 @@ export const CreateSalonModal = ({
   );
   const { users, isInitialLoading } = useChatUserSearch(query, excludedUserIds);
   const trimmedName = name.trim();
-  const requiresSpace = spaces.length > 0;
+  // An espace is a grouping, not a container: a salon may have none, and
+  // requiring one would strand people who have not organised anything yet.
   const canCreate =
-    (!requiresSpace || spaceId !== null) &&
     trimmedName.length > 0 &&
     selectedUsers.length >= MIN_MEMBERS &&
     !isCreating;
@@ -70,6 +77,7 @@ export const CreateSalonModal = ({
     setName("");
     setQuery("");
     setSelectedUsers([]);
+    setEncrypted(false);
   };
 
   const close = () => {
@@ -101,6 +109,11 @@ export const CreateSalonModal = ({
         // A named salon is always a genuinely new room, even if the same
         // people already share an unrelated chat elsewhere.
         forceNew: true,
+        encrypted,
+        // The driver invites her into a clear room and leaves an encrypted one
+        // alone: she could not read it, and a member she cannot follow would
+        // only be a lie in the list.
+        assistantUserId: assistant.userId || undefined,
       },
     )
       .then((ref) => {
@@ -115,10 +128,10 @@ export const CreateSalonModal = ({
       });
   };
 
-  const spaceOptions = spaces.map((space) => ({
-    value: space.id,
-    label: space.name,
-  }));
+  const spaceOptions = [
+    { value: NO_SPACE, label: t("No space") },
+    ...spaces.map((space) => ({ value: space.id, label: space.name })),
+  ];
 
   return (
     <Modal
@@ -154,14 +167,15 @@ export const CreateSalonModal = ({
       }
     >
       <div className="hub__create-salon">
-        {requiresSpace && (
+        {spaces.length > 0 && (
           <Select
             label={t("Space")}
             options={spaceOptions}
-            value={spaceId ?? undefined}
+            value={spaceId ?? NO_SPACE}
             onChange={(event) =>
               setSpaceId(
-                typeof event.target.value === "string"
+                typeof event.target.value === "string" &&
+                  event.target.value !== NO_SPACE
                   ? event.target.value
                   : null,
               )
@@ -175,6 +189,26 @@ export const CreateSalonModal = ({
           onChange={(event) => setName(event.target.value)}
           autoFocus
         />
+
+        {canEncrypt && (
+          // Decided here or never: Matrix has no way back, so the choice is
+          // offered while the room is still being described. Its consequences
+          // stay one hover away rather than crowding the dialog.
+          <label
+            className="hub__create-salon__encryption"
+            title={t(
+              "Messages will be readable only by the participants, and Ariane will not be able to answer here. This cannot be undone later.",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={encrypted}
+              disabled={isCreating}
+              onChange={(event) => setEncrypted(event.target.checked)}
+            />
+            <span>{t("Encrypt this conversation")}</span>
+          </label>
+        )}
 
         <div className="hub__create-salon__members">
           <span className="hub__create-salon__members-label">

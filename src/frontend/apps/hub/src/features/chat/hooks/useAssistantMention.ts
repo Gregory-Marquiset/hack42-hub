@@ -26,6 +26,12 @@ export type AssistantMention = {
    * before sending, so her invitation precedes the message that mentions her.
    */
   ensureInvited: (content: string) => Promise<void>;
+  /**
+   * Why she cannot be here, ready to show, or `null` when the question does
+   * not arise. An empty suggestion list cannot tell a rule from a bug: someone
+   * typing her name in an encrypted room deserves the reason.
+   */
+  unavailableReason: string | null;
 };
 
 /**
@@ -120,5 +126,12 @@ export const useAssistantMention = (
     ],
   );
 
-  return { candidate, ensureInvited };
+  // Only where her absence is surprising: a group room she would otherwise be
+  // in. A conversation between two people is not a room she was ever offered.
+  const unavailableReason =
+    chat?.kind === "group" && chat.encrypted
+      ? t("Ariane cannot read an encrypted room")
+      : null;
+
+  return { candidate, ensureInvited, unavailableReason };
 };

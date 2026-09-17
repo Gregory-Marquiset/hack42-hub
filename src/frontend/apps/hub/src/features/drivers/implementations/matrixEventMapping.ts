@@ -335,7 +335,9 @@ export const lastMainTimelinePreview = (
     .filter(isMainTimelineMessage);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event.isRedacted()) {
+    // A redacted event has nothing to show, and an undecryptable one carries
+    // only the SDK's diagnostic - neither belongs in a one-line preview.
+    if (event.isRedacted() || event.isDecryptionFailure()) {
       continue;
     }
     const content = event.getContent<{ body?: string }>();
@@ -652,6 +654,7 @@ export const matrixEventToChatMessage = (
   selfUserId: string | undefined,
 ): ChatMessage => {
   const isDeleted = event.isRedacted();
+  const isUndecryptable = event.isDecryptionFailure();
   const content = event.getContent<{ body?: string; msgtype?: string }>();
   const body = content.body;
   const eventId = event.getId() ?? "";
@@ -672,12 +675,16 @@ export const matrixEventToChatMessage = (
   const message: ChatMessage = {
     id: eventId,
     authorId: toAuthorId(event.getSender(), selfUserId),
-    content: !isDeleted && typeof body === "string" ? body : "",
+    // An undecryptable event carries the SDK's English diagnostic as its body.
+    // The UI says it in one short line instead, so nothing of it leaks out.
+    content:
+      !isDeleted && !isUndecryptable && typeof body === "string" ? body : "",
     timestamp: new Date(event.getTs()).toISOString(),
     reactions: isDeleted
       ? []
       : aggregateReactions(room, eventId, selfUserId, event.threadRootId),
     isDeleted,
+    isUndecryptable,
     isEdited: !isDeleted && Boolean(event.replacingEventId()),
     canEdit,
     canDelete,

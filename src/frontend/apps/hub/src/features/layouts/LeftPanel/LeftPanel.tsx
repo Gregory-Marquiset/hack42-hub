@@ -1,41 +1,51 @@
 import { Button } from "@gouvfr-lasuite/ui-components";
 import {
-  ArrowDropDown,
-  Lock,
+  ChevronLeft,
+  ChevronRight,
   Plus,
   QuestionMark,
 } from "@gouvfr-lasuite/ui-components/icons";
 import clsx from "clsx";
-import type { TFunction } from "i18next";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { ReactNode, useId, useMemo, useState } from "react";
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  chatHref,
-  readChatRef,
-  readSpaceId,
-  sameChatRef,
-  spaceHref,
-} from "@/features/chat/chatRefs";
-import { compareChats } from "@/features/chat/chatSorting";
+import { readChatRef, readSpaceId, spaceHref } from "@/features/chat/chatRefs";
 import { CreateSalonModal } from "@/features/chat/components/CreateSalonModal";
 import { CreateSpaceModal } from "@/features/chat/components/CreateSpaceModal";
-import { formatChatListTimestamp } from "@/features/chat/formatTimestamp";
+import { countUnread, formatUnreadBadge } from "@/features/chat/unreadBadge";
+import { useAvatarSrc } from "@/features/chat/hooks/useAvatarSrc";
 import { useChatUnread } from "@/features/chat/hooks/useChatUnread";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useSpaces } from "@/features/chat/hooks/useSpaces";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
-import type { Chat, ChatUnread, Space } from "@/features/drivers/types";
+import type { AccountId, ChatVisual, Space } from "@/features/drivers/types";
 import { AccountSelector } from "@/features/layouts/components/AccountSelector/AccountSelector";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
-import { ChatPresenceAvatar } from "@/features/ui/components/presence/ChatPresenceAvatar";
 import { LanguagePickerUserMenu } from "@/features/ui/components/user-profile/LanguagePickerUserMenu";
 
+import { LeftPanelSection } from "./LeftPanelSection";
 import { TchapLogo } from "./TchapLogo";
-
-const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+import {
+  filterChatsBySpace,
+  partitionChats,
+  ChatSectionId,
+} from "./chatSections";
+import { SpaceTooltip } from "./SpaceTooltip";
+import {
+  RAIL_TOOLTIP_DELAY_MS,
+  type RailTooltipAnchor,
+  anchorFromRect,
+} from "./railTooltip";
+import { assignSpaceIcons } from "./spaceIcons";
 
 type ActionItem =
   | { id: string; href: string; icon: ReactNode; label: string }
@@ -48,96 +58,105 @@ type ActionItem =
       onClick: () => void;
     };
 
-type Tab = "all" | "unread" | "recent";
-
 /** The row/menu-item second line: "You : ...", "{name} : ..." or the raw text. */
-const formatPreview = (t: TFunction, chat: Chat): string | undefined => {
-  if (!chat.preview) return undefined;
-  if (chat.preview.isOwnMessage) return `${t("You")} : ${chat.preview.text}`;
-  if (chat.preview.senderName)
-    return `${chat.preview.senderName} : ${chat.preview.text}`;
-  return chat.preview.text;
-};
+/** Where the panel remembers whether it was pushed aside. */
+const COLLAPSED_KEY = "hub.left-panel.collapsed";
 
-const filterChatsByTab = (
-  chats: Chat[],
-  tab: Tab,
-  unreadLookup: (ref: Chat["ref"]) => ChatUnread,
-): Chat[] => {
-  switch (tab) {
-    case "unread":
-      return chats.filter((chat) => unreadLookup(chat.ref).unread);
-    case "recent":
-      return chats.filter(
-        (chat) =>
-          chat.lastActivityAt &&
-          Date.now() - Date.parse(chat.lastActivityAt) <= RECENT_WINDOW_MS,
-      );
-    default:
-      return chats;
-  }
-};
-
-const buildTabs = (
-  t: TFunction,
-  unreadCount: number,
-): { id: Tab; label: string }[] => [
-  { id: "all", label: t("All") },
-  {
-    id: "unread",
-    label: unreadCount > 0 ? `${t("Unread")} · ${unreadCount}` : t("Unread"),
-  },
-  { id: "recent", label: t("Recent") },
+/** The three lists, in the order the panel shows them. */
+const SECTIONS: ReadonlyArray<{
+  id: ChatSectionId;
+  title: string;
+  add?: string;
+}> = [
+  { id: "favourites", title: "Favourites" },
+  { id: "rooms", title: "Rooms", add: "New room" },
+  { id: "directs", title: "Direct messages" },
 ];
 
 export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
   const { t } = useTranslation();
   const router = useRouter();
   const { spaces } = useSpaces();
-  const selectedSpaceId = readSpaceId(router.query);
-  // Default to the first joined espace when none is selected in the URL, so
-  // the switcher always has an active bubble once the account has any.
-  const activeSpaceId = selectedSpaceId ?? spaces[0]?.id ?? null;
+  // No espace until one is picked. Falling back to the first one meant that
+  // creating an espace silently narrowed the panel to its children, and every
+  // room the person already had vanished with no way back - a space is a
+  // grouping, not a container rooms have to belong to.
+  const activeSpaceId = readSpaceId(router.query);
 
-  // Direct messages are never space-scoped, so they need their own,
-  // unfiltered query; rooms are scoped to whichever espace is active.
+  // One unfiltered query for the whole panel: the sections show every espace
+  // by default, and each narrows itself in memory from the espace's own child
+  // ids rather than asking for a filtered list of its own.
   const unscopedChats = useChats();
-  const scopedChats = useChats(activeSpaceId ?? undefined);
   const unreadLookup = useChatUnread();
+  // Totals from what the panel already holds: the espace carries its child
+  // ids and the lookup is in memory, so no espace costs a request. A child
+  // the person never joined simply counts as read.
+  const unreadOfSpace = useCallback(
+    (space: Space) =>
+      space.chatIds.reduce(
+        (total, chatId) =>
+          total +
+          countUnread(unreadLookup({ accountId: space.accountId, chatId })),
+        0,
+      ),
+    [unreadLookup],
+  );
   const entries = useDriverEntries();
   const accountLabels = new Map(
     entries.map((entry) => [entry.accountId, entry.label]),
   );
   const showAccountLabels = entries.length > 1;
-  const [tab, setTab] = useState<Tab>("all");
-  const [isRoomsOpen, setIsRoomsOpen] = useState(true);
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
   const [isSalonModalOpen, setIsSalonModalOpen] = useState(false);
-  const roomsReactId = useId();
-  const roomsTitleId = `${roomsReactId}-title`;
-  const roomsPanelId = `${roomsReactId}-panel`;
+  // Pushed aside, the panel keeps the espaces and hands the conversation the
+  // rest of the window. Read after mount rather than during render: the
+  // server has no `window`, and a hydration mismatch is worse than one frame
+  // of an open panel.
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setIsCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === "true");
+    } catch {
+      // A browser refusing storage is not a reason to render nothing.
+    }
+  }, []);
+  const toggleCollapsed = useCallback(
+    () =>
+      setIsCollapsed((current) => {
+        const next = !current;
+        try {
+          window.localStorage.setItem(COLLAPSED_KEY, String(next));
+        } catch {
+          // Then it simply reopens next time.
+        }
+        return next;
+      }),
+    [],
+  );
+  // One section at a time may take the whole panel.
+  const [expanded, setExpanded] = useState<ChatSectionId | null>(null);
+  // The rail is the only espace chooser: one place decides where the panel's
+  // conversations come from, and every list follows it.
+  const activeChatIds = useMemo(() => {
+    if (!activeSpaceId) return null;
+    const space = spaces.find((candidate) => candidate.id === activeSpaceId);
+    return new Set(space?.chatIds ?? []);
+  }, [activeSpaceId, spaces]);
 
-  const directChats = useMemo(
+  // What "everything" is worth: the espace bubbles only cover their own
+  // children, and a direct message belongs to no espace at all.
+  const unreadTotal = useMemo(
     () =>
-      [...unscopedChats.favourites, ...unscopedChats.all]
-        .filter((chat) => chat.kind === "direct")
-        .sort(compareChats),
+      [...unscopedChats.favourites, ...unscopedChats.all].reduce(
+        (total, chat) => total + countUnread(unreadLookup(chat.ref)),
+        0,
+      ),
+    [unscopedChats.favourites, unscopedChats.all, unreadLookup],
+  );
+
+  const sections = useMemo(
+    () => partitionChats([...unscopedChats.favourites, ...unscopedChats.all]),
     [unscopedChats.favourites, unscopedChats.all],
-  );
-  const groupChats = useMemo(
-    () =>
-      [...scopedChats.favourites, ...scopedChats.all]
-        .filter((chat) => chat.kind === "group")
-        .sort(compareChats),
-    [scopedChats.favourites, scopedChats.all],
-  );
-  const unreadCount = useMemo(
-    () => groupChats.filter((chat) => unreadLookup(chat.ref).unread).length,
-    [groupChats, unreadLookup],
-  );
-  const visibleChats = useMemo(
-    () => filterChatsByTab(groupChats, tab, unreadLookup),
-    [tab, groupChats, unreadLookup],
   );
 
   const canCreateSalon = entries.some(
@@ -162,93 +181,118 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
     });
   }
 
-  const tabs = useMemo(() => buildTabs(t, unreadCount), [t, unreadCount]);
-
   return (
-    <aside className="hub__left-panel" aria-label={t("Side panel")}>
-      <div className="hub__left-panel__top">
-        <div className="hub__left-panel__logo">
-          <TchapLogo />
-        </div>
-
-        <nav
-          className="hub__left-panel__actions"
-          aria-label={t("Quick actions")}
-        >
-          {actions.map((action) => (
-            <ActionRow key={action.id} action={action} />
-          ))}
-        </nav>
-
-        <EspacesRow
+    <aside
+      className="hub__left-panel"
+      data-collapsed={isCollapsed || undefined}
+      aria-label={t("Side panel")}
+    >
+      {/* The brand sits in the corner and everything else hangs below it,
+          rail included: it names the product once, and belongs to no list.
+          The arrow beside it pushes the whole list of conversations away and
+          leaves the espaces, so the conversation gets the window. */}
+      <div className="hub__left-panel__brand">
+        {isCollapsed ? (
+          // Closed, the corner is 53px wide and the mark is what fits. The
+          // whole thing is the way back, so the arrow is a small badge on it
+          // rather than a second control taking the space the logo needs.
+          <button
+            type="button"
+            className="hub__left-panel__brand-toggle"
+            aria-label={t("Show the conversations")}
+            title={t("Show the conversations")}
+            aria-expanded={false}
+            onClick={toggleCollapsed}
+          >
+            <TchapLogo variant="mark" decorative />
+            <span
+              className="hub__left-panel__brand-toggle__chevron"
+              aria-hidden="true"
+            >
+              <ChevronRight />
+            </span>
+          </button>
+        ) : (
+          <>
+            <TchapLogo />
+            <button
+              type="button"
+              className="hub__left-panel__collapse"
+              aria-label={t("Hide the conversations")}
+              title={t("Hide the conversations")}
+              aria-expanded
+              onClick={toggleCollapsed}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </button>
+          </>
+        )}
+      </div>
+      <div className="hub__left-panel__main">
+        <SpacesRail
           spaces={spaces}
           activeSpaceId={activeSpaceId}
           canCreateSpace={canCreateSpace}
           onCreateSpace={() => setIsSpaceModalOpen(true)}
+          unreadOfSpace={unreadOfSpace}
+          unreadTotal={unreadTotal}
         />
-      </div>
-
-      {/* Direct messages and Rooms used to each scroll internally (a small
-          capped list, and a flex-grow list); they now share one scrollbar
-          for the whole panel body, so long lists in either section scroll
-          the same way instead of fighting each other for space. */}
-      <div className="hub__left-panel__body">
-        <DirectMessagesSection
-          chats={directChats}
-          unreadLookup={unreadLookup}
-          accountLabels={accountLabels}
-          showAccountLabels={showAccountLabels}
-          spaceId={activeSpaceId}
-        />
-
-        <div className="hub__left-panel__section" data-open={isRoomsOpen}>
-          <SectionHeader
-            titleId={roomsTitleId}
-            panelId={roomsPanelId}
-            title={t("Rooms")}
-            isOpen={isRoomsOpen}
-            onToggle={() => setIsRoomsOpen((open) => !open)}
-            addLabel={canCreateSalon ? t("New room") : undefined}
-            onAdd={canCreateSalon ? () => setIsSalonModalOpen(true) : undefined}
-          />
-
-          {isRoomsOpen && <TabsRow tab={tab} tabs={tabs} onChange={setTab} />}
-
-          {isRoomsOpen && (
-            <div
-              id={roomsPanelId}
-              role="region"
-              aria-labelledby={roomsTitleId}
-              className="hub__left-panel__section__panel__inner"
+        <div className="hub__left-panel__column">
+          <div className="hub__left-panel__top">
+            <nav
+              className="hub__left-panel__actions"
+              aria-label={t("Quick actions")}
             >
-              <ul className="hub__left-panel__list">
-                {visibleChats.map((chat) => (
-                  <li key={`${chat.accountId}:${chat.id}`}>
-                    <ChatRow
-                      chat={chat}
-                      accountLabel={accountLabels.get(chat.accountId)}
-                      showAccountLabel={showAccountLabels}
-                      unread={unreadLookup(chat.ref)}
-                      spaceId={activeSpaceId}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
+              {actions.map((action) => (
+                <ActionRow key={action.id} action={action} />
+              ))}
+            </nav>
+          </div>
 
-      <div className="hub__left-panel__footer">
-        <AccountSelector />
-        <div className="hub__left-panel__footer__end">
-          <Button
-            variant="tertiary"
-            color="neutral"
-            icon={<QuestionMark size={24} />}
-            aria-label={t("Help")}
-          />
-          <LanguagePickerUserMenu />
+          {/* Three fixed lists, each showing its five most recent. "See all"
+          gives one of them the whole panel and its own scrollbar: three lists
+          sharing one is what made the old panel hard to read. */}
+          <div
+            className="hub__left-panel__body"
+            data-expanded={expanded ?? undefined}
+          >
+            {SECTIONS.filter(
+              ({ id }) => expanded === null || expanded === id,
+            ).map(({ id, title, add }) => (
+              <LeftPanelSection
+                key={id}
+                title={t(title)}
+                chats={filterChatsBySpace(sections[id], activeChatIds)}
+                isExpanded={expanded === id}
+                onToggleExpanded={() =>
+                  setExpanded((current) => (current === id ? null : id))
+                }
+                spaceId={activeSpaceId}
+                unreadLookup={unreadLookup}
+                accountLabels={accountLabels}
+                showAccountLabels={showAccountLabels}
+                addLabel={add && canCreateSalon ? t(add) : undefined}
+                onAdd={
+                  add && canCreateSalon
+                    ? () => setIsSalonModalOpen(true)
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+
+          <div className="hub__left-panel__footer">
+            <AccountSelector />
+            <div className="hub__left-panel__footer__end">
+              <Button
+                variant="tertiary"
+                color="neutral"
+                icon={<QuestionMark size={24} />}
+                aria-label={t("Help")}
+              />
+              <LanguagePickerUserMenu />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -302,336 +346,244 @@ const ActionRow = ({ action }: { action: ActionItem }) => {
  * toggle button (not a full-width row) so a separate "+" button can sit on
  * the same line, flush to the right, to add straight into this section.
  */
-const SectionHeader = ({
-  titleId,
-  panelId,
-  title,
-  count,
-  isOpen,
-  onToggle,
-  addLabel,
-  onAdd,
+/**
+ * The espaces, stacked on the panel's left edge.
+ *
+ * It is the only place that decides where the panel's conversations come
+ * from: one chooser, and every list follows it. "Everything" sits on top
+ * because a conversation needs no espace, and the "+" at the bottom so the
+ * list of espaces can grow downwards without the button moving.
+ */
+/**
+ * An espace's face on the rail: its own picture when it has one, otherwise the
+ * icon the rail gave it, on a colour derived from its name. Never initials -
+ * a column of single letters is the one thing that reads as nothing.
+ *
+ * The icon is also what an unreachable picture falls back to, so a dead avatar
+ * url leaves the rail intact. `useAvatarSrc` turns the `mxc://` into something
+ * the browser can load.
+ */
+const SpaceAvatar = ({
+  accountId,
+  label,
+  icon,
+  visual,
 }: {
-  titleId: string;
-  panelId: string;
-  title: string;
-  count?: number;
-  isOpen: boolean;
-  onToggle: () => void;
-  addLabel?: string;
-  onAdd?: () => void;
-}) => (
-  <div className="hub__left-panel__section__header-row">
-    <button
-      type="button"
-      id={titleId}
-      className="hub__left-panel__section__header"
-      aria-expanded={isOpen}
-      aria-controls={panelId}
-      onClick={onToggle}
-    >
-      <span className="hub__left-panel__section__title">
-        {title}
-        {!!count && count > 0 && (
-          <span className="hub__left-panel__section__count">{count}</span>
-        )}
-      </span>
-      <ArrowDropDown
-        aria-hidden="true"
-        className="hub__left-panel__section__chevron"
-      />
-    </button>
-    {onAdd && (
-      <button
-        type="button"
-        className="hub__left-panel__section__add"
-        aria-label={addLabel}
-        title={addLabel}
-        onClick={onAdd}
-      >
-        <Plus size={16} aria-hidden="true" />
-      </button>
-    )}
-  </div>
-);
-
-const TabsRow = ({
-  tab,
-  tabs,
-  onChange,
-}: {
-  tab: Tab;
-  tabs: { id: Tab; label: string }[];
-  onChange: (tab: Tab) => void;
-}) => (
-  <div className="hub__left-panel__tabs" role="tablist">
-    {tabs.map((candidate) => (
-      <button
-        key={candidate.id}
-        type="button"
-        role="tab"
-        aria-selected={tab === candidate.id}
-        className={clsx(
-          "hub__left-panel__tab",
-          tab === candidate.id && "hub__left-panel__tab--active",
-        )}
-        onClick={() => onChange(candidate.id)}
-      >
-        {candidate.label}
-      </button>
-    ))}
-  </div>
-);
-
-const ChatRow = ({
-  chat,
-  accountLabel,
-  showAccountLabel,
-  unread,
-  spaceId,
-}: {
-  chat: Chat;
-  accountLabel?: string;
-  showAccountLabel: boolean;
-  unread: ChatUnread;
-  spaceId: string | null;
+  accountId: AccountId;
+  label: string;
+  icon: string;
+  visual?: ChatVisual;
 }) => {
-  const { t, i18n } = useTranslation();
-  const router = useRouter();
-  const isActive = sameChatRef(readChatRef(router.query), chat.ref);
-  const locale = i18n.resolvedLanguage ?? i18n.language;
-  const timestamp = chat.lastActivityAt
-    ? formatChatListTimestamp(chat.lastActivityAt, locale)
-    : null;
-  const previewText = formatPreview(t, chat);
-  // An explicit label replaces the link's content for assistive technology,
-  // so the lock is spoken here or not at all.
-  const linkLabel = [
-    showAccountLabel && accountLabel
-      ? `${chat.name} ${accountLabel}`
-      : chat.name,
-    ...(chat.encrypted ? [t("End-to-end encrypted")] : []),
-  ].join(", ");
-
+  const src = useAvatarSrc(accountId, visual ?? { kind: "initials" });
   return (
-    <Link
-      href={chatHref(chat.ref, spaceId)}
-      shallow
-      aria-label={linkLabel}
-      aria-current={isActive ? "page" : undefined}
-      className={clsx(
-        "hub__left-panel__chat",
-        isActive && "hub__left-panel__chat--active",
-      )}
+    <Avatar
+      label={label}
+      src={visual?.kind === "image" ? src : undefined}
+      decorative
     >
-      <ChatPresenceAvatar chat={chat} />
-      <span className="hub__left-panel__chat__body">
-        <span className="hub__left-panel__chat__row">
-          <span
-            className={clsx(
-              "hub__left-panel__chat__name",
-              unread.unread && "hub__left-panel__chat__name--strong",
-            )}
-          >
-            {chat.name}
-            {chat.encrypted && (
-              // Two conversations with the same person, one clear and one
-              // encrypted, are otherwise indistinguishable in this list. The
-              // link's label already says it; the icon is for the eye.
-              <Lock
-                className="hub__left-panel__chat__encrypted"
-                aria-hidden="true"
-              />
-            )}
-            {showAccountLabel && accountLabel && (
-              <span className="hub__left-panel__chat__account">
-                {" "}
-                · {accountLabel}
-              </span>
-            )}
-          </span>
-          {timestamp && (
-            <span className="hub__left-panel__chat__time">{timestamp}</span>
-          )}
-        </span>
-        <span className="hub__left-panel__chat__row">
-          <span className="hub__left-panel__chat__preview">{previewText}</span>
-          {unread.unread && unread.count > 0 && (
-            <span className="hub__left-panel__chat__badge">{unread.count}</span>
-          )}
-        </span>
+      <span className="material-icons" aria-hidden="true">
+        {visual?.kind === "icon" ? visual.icon : icon}
       </span>
-      {unread.unread && (
-        <span className="hub__visually-hidden">{t("Unread message")}</span>
-      )}
-    </Link>
+    </Avatar>
   );
 };
 
 /**
- * Direct (1:1) conversations don't appear in the list below — they live here
- * instead, in their own collapsible section, so the tabs and list only ever
- * deal with groups. The whole header (title, count, chevron) is one plain,
- * borderless button — a hover background is the only affordance.
+ * Shows an espace's name once the pointer has rested on its bubble.
+ *
+ * A quarter of a second, so crossing the rail on the way somewhere else does
+ * not trail a name behind the pointer, and Escape dismisses it - a tooltip
+ * that cannot be dismissed is a tooltip in the way.
  */
-const DirectMessagesSection = ({
-  chats,
-  unreadLookup,
-  accountLabels,
-  showAccountLabels,
-  spaceId,
-}: {
-  chats: Chat[];
-  unreadLookup: (ref: Chat["ref"]) => ChatUnread;
-  accountLabels: Map<string, string>;
-  showAccountLabels: boolean;
-  spaceId: string | null;
-}) => {
-  const { t } = useTranslation();
-  const router = useRouter();
-  const [isOpen, setIsOpen] = useState(true);
-  const [tab, setTab] = useState<Tab>("all");
-  const reactId = useId();
-  const titleId = `${reactId}-title`;
-  const panelId = `${reactId}-panel`;
-  const unreadCount = useMemo(
-    () => chats.filter((chat) => unreadLookup(chat.ref).unread).length,
-    [chats, unreadLookup],
-  );
-  const tabs = useMemo(() => buildTabs(t, unreadCount), [t, unreadCount]);
-  const visibleChats = useMemo(
-    () => filterChatsByTab(chats, tab, unreadLookup),
-    [chats, tab, unreadLookup],
+const useRailTooltip = () => {
+  const [tooltip, setTooltip] = useState<
+    { label: string; anchor: RailTooltipAnchor } | undefined
+  >(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const cancel = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = undefined;
+  }, []);
+
+  const hide = useCallback(() => {
+    cancel();
+    setTooltip(undefined);
+  }, [cancel]);
+
+  const show = useCallback(
+    (target: HTMLElement, label: string) => {
+      cancel();
+      timer.current = setTimeout(() => {
+        setTooltip({
+          label,
+          anchor: anchorFromRect(
+            target.getBoundingClientRect(),
+            window.innerHeight,
+          ),
+        });
+      }, RAIL_TOOLTIP_DELAY_MS);
+    },
+    [cancel],
   );
 
-  return (
-    <div className="hub__left-panel__section" data-open={isOpen}>
-      <SectionHeader
-        titleId={titleId}
-        panelId={panelId}
-        title={t("Direct messages")}
-        count={unreadCount}
-        isOpen={isOpen}
-        onToggle={() => setIsOpen((open) => !open)}
-        addLabel={t("New chat")}
-        onAdd={() => void router.push("/chat/new")}
-      />
-      <div
-        id={panelId}
-        role="region"
-        aria-labelledby={titleId}
-        className="hub__left-panel__section__panel"
-        inert={!isOpen}
-      >
-        <div className="hub__left-panel__section__panel__inner">
-          {chats.length > 0 && (
-            <TabsRow tab={tab} tabs={tabs} onChange={setTab} />
-          )}
-          {visibleChats.length > 0 ? (
-            <ul className="hub__left-panel__list">
-              {visibleChats.map((chat) => (
-                <li key={`${chat.accountId}:${chat.id}`}>
-                  <ChatRow
-                    chat={chat}
-                    accountLabel={accountLabels.get(chat.accountId)}
-                    showAccountLabel={showAccountLabels}
-                    unread={unreadLookup(chat.ref)}
-                    spaceId={spaceId}
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="hub__left-panel__section__empty">
-              {t("No direct messages yet")}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
+  // A pending tooltip outliving the panel would set state on nothing.
+  useEffect(() => cancel, [cancel]);
+
+  useEffect(() => {
+    if (!tooltip) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [tooltip, hide]);
+
+  const handlers = useMemo(
+    () => (label: string) => ({
+      onMouseEnter: (event: { currentTarget: HTMLElement }) =>
+        show(event.currentTarget, label),
+      onMouseLeave: hide,
+      onFocus: (event: { currentTarget: HTMLElement }) =>
+        show(event.currentTarget, label),
+      onBlur: hide,
+      // Following the link leaves the name hanging over the new page.
+      onClick: hide,
+    }),
+    [show, hide],
   );
+
+  return { tooltip, handlers, hide };
 };
 
-/**
- * Horizontal Espaces switcher: every espace shows its name above its bubble;
- * the active one is shown at full strength, the others greyed out and
- * clickable to switch.
- */
-const EspacesRow = ({
+const SpacesRail = ({
   spaces,
   activeSpaceId,
   canCreateSpace,
   onCreateSpace,
+  unreadOfSpace,
+  unreadTotal,
 }: {
   spaces: Space[];
   activeSpaceId: string | null;
   canCreateSpace: boolean;
   onCreateSpace: () => void;
+  unreadOfSpace: (space: Space) => number;
+  unreadTotal: number;
 }) => {
   const { t } = useTranslation();
   const router = useRouter();
   const currentChatRef = readChatRef(router.query);
+  // Every espace wears a different icon, decided once for the whole rail so
+  // no two of them collide.
+  const icons = useMemo(
+    () => assignSpaceIcons(spaces.map((space) => space.id)),
+    [spaces],
+  );
+  const { tooltip, handlers, hide: hideTooltip } = useRailTooltip();
 
   if (spaces.length === 0 && !canCreateSpace) {
     return null;
   }
 
+  // Seven espaces used to be seven identical grey circles: the rail was
+  // unreadable. An icon of its own, on the colour the palette derives from the
+  // name, tells them apart at a glance without having to read anything.
+  const bubble = (
+    key: string,
+    href: ReturnType<typeof spaceHref>,
+    label: string,
+    isActive: boolean,
+    unread: number,
+    icon: string,
+    visual?: ChatVisual,
+    accountId: AccountId = "",
+  ) => (
+    <Link
+      key={key}
+      href={href}
+      shallow
+      aria-current={isActive ? "true" : undefined}
+      aria-label={
+        unread > 0
+          ? `${label}, ${t("{{count}} unread messages", { count: unread })}`
+          : label
+      }
+      {...handlers(label)}
+      className={clsx(
+        "hub__left-panel__rail__item",
+        isActive && "hub__left-panel__rail__item--active",
+      )}
+    >
+      <SpaceAvatar
+        accountId={accountId}
+        label={label}
+        icon={icon}
+        visual={visual}
+      />
+      {unread > 0 && (
+        // The words are in the link's label; this is for the eye.
+        <span className="hub__left-panel__rail__badge" aria-hidden="true">
+          {formatUnreadBadge(unread)}
+        </span>
+      )}
+    </Link>
+  );
+
   return (
-    <div className="hub__left-panel__spaces">
-      <span className="hub__left-panel__spaces__title">{t("Spaces")}</span>
-      {/* The "+" and its separator stay fixed and visible; only the espace
-          bubbles themselves scroll horizontally underneath them. */}
-      <div className="hub__left-panel__spaces__bar">
-        <div className="hub__left-panel__spaces__row">
-          {spaces.map((space) => {
-            const isActive = space.id === activeSpaceId;
-            return (
-              <Link
-                key={space.id}
-                href={spaceHref(space.id, currentChatRef)}
-                shallow
-                aria-current={isActive ? "true" : undefined}
-                aria-label={space.name}
-                title={space.name}
-                className={clsx(
-                  "hub__left-panel__spaces__item",
-                  isActive && "hub__left-panel__spaces__item--active",
-                )}
-              >
-                <span className="hub__left-panel__spaces__name">
-                  {space.name}
-                </span>
-                <Avatar label={space.name} decorative>
-                  <span className="material-icons" aria-hidden="true">
-                    {space.visual.kind === "icon"
-                      ? space.visual.icon
-                      : "workspaces"}
-                  </span>
-                </Avatar>
-              </Link>
-            );
-          })}
-        </div>
-        {canCreateSpace && (
-          <>
-            {spaces.length > 0 && (
-              <span
-                className="hub__left-panel__spaces__separator"
-                aria-hidden="true"
-              />
-            )}
-            <button
-              type="button"
-              className="hub__left-panel__spaces__add"
-              aria-label={t("New space")}
-              title={t("New space")}
-              onClick={onCreateSpace}
-            >
-              <Plus size={16} aria-hidden="true" />
-            </button>
-          </>
+    <nav className="hub__left-panel__rail" aria-label={t("Spaces")}>
+      {/* A tooltip carries the viewport position the bubble had when the
+          pointer stopped on it, so scrolling the rail has to take it away
+          rather than leave it pointing at nothing. */}
+      <div
+        className="hub__left-panel__rail__list"
+        onScroll={hideTooltip}
+        onMouseLeave={hideTooltip}
+      >
+        {bubble(
+          "all",
+          spaceHref(null, currentChatRef),
+          t("All conversations"),
+          activeSpaceId === null,
+          unreadTotal,
+          "forum",
+        )}
+        {spaces.length > 0 && (
+          <span
+            className="hub__left-panel__rail__separator"
+            aria-hidden="true"
+          />
+        )}
+        {spaces.map((space) =>
+          bubble(
+            space.id,
+            spaceHref(space.id, currentChatRef),
+            space.name,
+            space.id === activeSpaceId,
+            unreadOfSpace(space),
+            icons.get(space.id) ?? "groups",
+            space.visual,
+            space.accountId,
+          ),
         )}
       </div>
-    </div>
+      {canCreateSpace && (
+        <button
+          type="button"
+          className="hub__left-panel__rail__add"
+          aria-label={t("New space")}
+          {...handlers(t("New space"))}
+          onClick={() => {
+            hideTooltip();
+            onCreateSpace();
+          }}
+        >
+          <Plus aria-hidden="true" />
+        </button>
+      )}
+      {tooltip && (
+        <SpaceTooltip label={tooltip.label} anchor={tooltip.anchor} />
+      )}
+    </nav>
   );
 };

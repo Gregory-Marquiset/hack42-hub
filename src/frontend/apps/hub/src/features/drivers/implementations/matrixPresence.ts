@@ -22,3 +22,22 @@ export const matrixUserToChatUserPresence = (
     state: state as ChatUserPresenceState,
   };
 };
+
+/**
+ * Maps the homeserver's own answer to `GET /presence/{userId}/status`.
+ *
+ * `/sync` only carries presence that changed since the last token, so someone
+ * who has been offline for a while is simply absent from the local store. The
+ * server still knows, and asking it is the only way to tell "offline" from
+ * "not known".
+ */
+export const matrixPresenceResponseToChatUserPresence = (
+  userId: string,
+  response: { presence?: string } | null,
+): ChatUserPresence | null => {
+  const state = response?.presence;
+  if (!MATRIX_PRESENCE_STATES.has(state as ChatUserPresenceState)) {
+    return null;
+  }
+  return { userId, state: state as ChatUserPresenceState };
+};

@@ -256,12 +256,20 @@ export const matrixRoomToLocalChat = (
     : matrixJoinedRoomToLocalChat(room, currentUserId);
 
 /** Maps a joined `m.space` room to an Espace row. */
-export const matrixRoomToLocalSpace = (room: Room): LocalSpace => ({
-  id: room.roomId,
-  name: explicitRoomName(room) || room.roomId,
-  visual: { kind: "icon", icon: "workspaces" },
-  memberCount: room.getJoinedMemberCount(),
-});
+export const matrixRoomToLocalSpace = (room: Room): LocalSpace => {
+  // An espace with an avatar shows it, exactly as a room does. Without one it
+  // falls back to initials, which the palette then colours from the name -
+  // the old hardcoded icon made every espace the same grey circle, and a rail
+  // of identical holes says nothing.
+  const mxcUrl = room.getMxcAvatarUrl();
+  return {
+    id: room.roomId,
+    name: explicitRoomName(room) || room.roomId,
+    visual: mxcUrl ? { kind: "image", url: mxcUrl } : { kind: "initials" },
+    memberCount: room.getJoinedMemberCount(),
+    chatIds: [...spaceChildRoomIds(room)],
+  };
+};
 
 /**
  * Room ids listed as children of `spaceRoom` via `m.space.child` state

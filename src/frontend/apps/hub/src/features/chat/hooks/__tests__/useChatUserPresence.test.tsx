@@ -10,11 +10,15 @@ import type { ChatUserPresence } from "@/features/drivers/types";
 import { useChatUserPresence } from "../useChatUserPresence";
 
 const getUserPresence = vi.fn<(userId: string) => ChatUserPresence | null>();
+// The hook asks the backend when the store is empty; a driver always has it.
+const fetchUserPresence = vi.fn<
+  (userId: string) => Promise<ChatUserPresence | null>
+>(async () => null);
 const subscribeToEvents = vi.fn();
 const entries = [
   {
     accountId: "account-a",
-    driver: { getUserPresence, subscribeToEvents },
+    driver: { getUserPresence, fetchUserPresence, subscribeToEvents },
   },
 ];
 
@@ -38,6 +42,8 @@ describe("useChatUserPresence", () => {
       defaultOptions: { queries: { retry: false } },
     });
     getUserPresence.mockReset();
+    fetchUserPresence.mockReset();
+    fetchUserPresence.mockResolvedValue(null);
     subscribeToEvents.mockReset();
   });
 
@@ -62,6 +68,25 @@ describe("useChatUserPresence", () => {
         chatKeys.userPresence("account-a", "@alice:localhost"),
       ),
     ).toEqual({ userId: "@alice:localhost", state: "online" });
+  });
+
+  it("asks the backend when the local store has nothing", async () => {
+    // `/sync` does not repeat a presence that has not changed, so someone
+    // offline for a while is simply missing from the store - and "offline"
+    // must not be shown as "unknown".
+    getUserPresence.mockReturnValue(null);
+    fetchUserPresence.mockResolvedValueOnce({
+      userId: "@alice:localhost",
+      state: "offline",
+    });
+
+    const { result } = renderHook(
+      () => useChatUserPresence("account-a", "@alice:localhost"),
+      { wrapper: wrapper(queryClient) },
+    );
+
+    await waitFor(() => expect(result.current?.state).toBe("offline"));
+    expect(fetchUserPresence).toHaveBeenCalledWith("@alice:localhost");
   });
 
   it("returns and caches null when no presence is known", async () => {

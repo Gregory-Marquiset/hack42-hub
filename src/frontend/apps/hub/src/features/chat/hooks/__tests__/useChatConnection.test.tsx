@@ -31,6 +31,7 @@ vi.mock("@/features/drivers/DriverRegistry", () => ({
 const connectedDriver = (state: "online" | "unavailable" | "offline") => ({
   connect: vi.fn().mockResolvedValue({ status: "connected", chatUser: null }),
   getUserPresence: vi.fn((userId: string) => ({ userId, state })),
+  fetchUserPresence: vi.fn(async () => null),
 });
 
 const wrapper = (queryClient: QueryClient) => {

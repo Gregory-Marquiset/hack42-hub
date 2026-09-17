@@ -307,6 +307,38 @@ describe("Profile integration", () => {
     expect(view.container.querySelector("script")).toBeNull();
   });
 
+  it("gives each preset its own hue, and never two the same", () => {
+    const tone = (role: string) => {
+      const view = render(<RoleBadge role={role} />);
+      const found = view.container
+        .querySelector(".hub__role-badge")!
+        .className.match(/hub__role-badge--(\w+)/)![1];
+      cleanup();
+      return found;
+    };
+    const presets = ["PO", "PM", "DEV", "QA", "Ops", "Design"].map(tone);
+
+    expect(presets).toEqual(["po", "pm", "dev", "qa", "ops", "design"]);
+    expect(new Set(presets).size).toBe(presets.length);
+  });
+
+  it("spreads custom labels over the same hues, stably", () => {
+    // They used to share one grey, which made "Assistant IA" and "Support"
+    // indistinguishable. The hue is a pure function of the text, so one person
+    // keeps the same colour on every screen and for every viewer.
+    const tone = (role: string) => {
+      const view = render(<RoleBadge role={role} />);
+      const found = view.container
+        .querySelector(".hub__role-badge")!
+        .className.match(/hub__role-badge--(\w+)/)![1];
+      cleanup();
+      return found;
+    };
+
+    expect(tone("Assistant IA")).toBe(tone("Assistant IA"));
+    expect(tone("Assistant IA")).not.toBe(tone("Juriste"));
+  });
+
   it("resolves the current person's thread author marker to their chat identity", async () => {
     vi.mocked(fetchAPI).mockResolvedValue(
       new Response(JSON.stringify({ "@viewer:localhost": "DEV" })),

@@ -6,7 +6,10 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatEventListener } from "@/features/drivers/Driver";
-import type { NotificationRules } from "@/features/drivers/types";
+import type {
+  ChatSelfPresencePreference,
+  NotificationRules,
+} from "@/features/drivers/types";
 
 import { useChatNotifications } from "../useChatNotifications";
 
@@ -49,6 +52,9 @@ let driverEntries: {
     supportsNotificationRules: boolean;
     subscribeToEvents: typeof subscribeToEvents;
     getNotificationRules: typeof getNotificationRules;
+    // The sound is withheld while the person is busy, so the hook asks every
+    // driver what they chose.
+    getSelfPresencePreference: () => ChatSelfPresencePreference;
   };
 }[] = [];
 
@@ -92,6 +98,7 @@ const setDriver = (supportsNotificationRules: boolean) => {
         supportsNotificationRules,
         subscribeToEvents,
         getNotificationRules,
+        getSelfPresencePreference: () => "online" as ChatSelfPresencePreference,
       },
     },
   ];

@@ -360,6 +360,15 @@ export abstract class Driver {
     void _userId;
     return null;
   }
+  /**
+   * Asks the backend for a presence the local store does not have. Separate
+   * from `getUserPresence` on purpose: that one promises not to touch the
+   * network, and this one is the fallback when it comes back empty.
+   */
+  async fetchUserPresence(_userId: string): Promise<ChatUserPresence | null> {
+    void _userId;
+    return null;
+  }
   /** Whether this backend lets the current user publish presence. */
   readonly supportsPresence: boolean = false;
   /** Current backend user id, when the account has an active connection. */

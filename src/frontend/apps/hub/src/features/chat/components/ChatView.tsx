@@ -108,10 +108,11 @@ export const ChatView = ({
     chatRef ?? { accountId: "", chatId: "" },
     Boolean(chatRef),
   );
-  const { candidate: assistantCandidate, ensureInvited } = useAssistantMention(
-    chatRef,
-    chat,
-  );
+  const {
+    candidate: assistantCandidate,
+    ensureInvited,
+    unavailableReason: assistantUnavailableReason,
+  } = useAssistantMention(chatRef, chat);
   const mentionCandidates = useMemo(
     () => (assistantCandidate ? [...present, assistantCandidate] : present),
     [assistantCandidate, present],
@@ -313,6 +314,7 @@ export const ChatView = ({
                     <ChatComposer
                       conversationId={chatKey ?? undefined}
                       mentionCandidates={mentionCandidates}
+                      assistantUnavailableReason={assistantUnavailableReason}
                       placeholder={
                         chatRef && !isCompositionSupported
                           ? t(

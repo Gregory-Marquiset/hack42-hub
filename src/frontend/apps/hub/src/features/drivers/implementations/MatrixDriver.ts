@@ -144,7 +144,10 @@ import {
   readChatSelfPresencePreference,
   writeChatSelfPresencePreference,
 } from "../presencePreference";
-import { matrixUserToChatUserPresence } from "./matrixPresence";
+import {
+  matrixPresenceResponseToChatUserPresence,
+  matrixUserToChatUserPresence,
+} from "./matrixPresence";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
@@ -899,6 +902,23 @@ export class MatrixDriver extends Driver {
     return matrixUserToChatUserPresence(this.mx?.getUser(userId) ?? null);
   }
 
+  override async fetchUserPresence(
+    userId: string,
+  ): Promise<ChatUserPresence | null> {
+    const mx = this.mx;
+    if (!mx) return null;
+    try {
+      return matrixPresenceResponseToChatUserPresence(
+        userId,
+        await mx.getPresence(userId),
+      );
+    } catch {
+      // A presence nobody is allowed to see, or a server that does not keep
+      // any: the dot stays off rather than the row failing.
+      return null;
+    }
+  }
+
   override readonly supportsPresence = true;
 
   getCurrentUserId(): string | null {
@@ -913,16 +933,20 @@ export class MatrixDriver extends Driver {
     preference: ChatSelfPresencePreference,
   ): Promise<void> {
     const previous = this.getSelfPresencePreference();
-    if (previous === preference && this.syncPresence === preference) return;
+    // Matrix knows nothing of "busy": it is published as the closest standard
+    // value, and kept as itself only in the local preference, which is what
+    // decides whether notification sounds play.
+    const published = preference === "busy" ? "unavailable" : preference;
+    if (previous === preference && this.syncPresence === published) return;
 
-    await this.setUserPresence(preference);
+    await this.setUserPresence(published);
     writeChatSelfPresencePreference(this.accountId, preference);
 
     // The sync presence is authoritative. This best-effort PUT only shortens
     // the visible delay and must never roll back a correct sync intention.
     try {
       await this.requireClient("setSelfPresencePreference").setPresence({
-        presence: preference,
+        presence: published,
       });
     } catch (error) {
       console.info(
@@ -1100,19 +1124,40 @@ export class MatrixDriver extends Driver {
    */
   async resolveAvatarUrl(mxcUrl: string): Promise<string> {
     const mx = this.requireClient("resolveAvatarUrl");
-    const httpUrl = mx.mxcUrlToHttp(mxcUrl, 96, 96, "crop", false, false, true);
-    if (!httpUrl) return mxcUrl;
-    try {
-      const token = mx.getAccessToken();
-      const response = await fetch(httpUrl, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!response.ok) return mxcUrl;
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
-    } catch {
-      return mxcUrl;
-    }
+    const token = mx.getAccessToken();
+    const asBlobUrl = async (httpUrl: string | null) => {
+      if (!httpUrl) return undefined;
+      try {
+        const response = await fetch(httpUrl, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!response.ok) return undefined;
+        return URL.createObjectURL(await response.blob());
+      } catch {
+        return undefined;
+      }
+    };
+    // A thumbnail keeps the transfer small, but the homeserver cannot
+    // thumbnail every format it accepts: an SVG avatar answers 400 "Cannot
+    // find any thumbnails for the requested media", which left the picture
+    // permanently blank. So the file itself is the second try.
+    return (
+      (await asBlobUrl(
+        mx.mxcUrlToHttp(mxcUrl, 96, 96, "crop", false, false, true),
+      )) ??
+      (await asBlobUrl(
+        mx.mxcUrlToHttp(
+          mxcUrl,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          true,
+          true,
+        ),
+      )) ??
+      mxcUrl
+    );
   }
 
   private async resolveOrCreateChatForUsers(

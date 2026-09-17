@@ -21,6 +21,46 @@ and this project adheres to
 - ✨(meetings) Open the whiteboard for every participant at once, and name
   them on it: opening or closing the board is part of the meeting, and each
   cursor carries its owner name instead of a random one.
+- ✨(frontend) Show an espace's own avatar on the rail, falling back to its
+  initials, and move the brand to the panel's corner above the rail.
+- ♻️(frontend) Rebuild the side panel around three fixed lists - Favourites,
+  Rooms, Direct messages - each showing its five most recent, with a "see all"
+  that gives it the whole panel and a scrollbar, and the espaces on a rail
+  down the left edge as the single place that chooses where they come from.
+- ✨(frontend) Count what is unread inside each espace on its bubble, and the
+  total on the "everything" one, capped at `99+`.
+- ✨(frontend) Hold availability at busy and withhold notification sounds while
+  a call is in progress, without writing the state the person chose - so
+  leaving a call needs nothing undone.
+- ✨(frontend) Mark a room whose call is in progress with a camera in the
+  corner of its avatar, so the conversation list says it without being opened.
+- 🌐(frontend) Translate the rest of the interface into French: the composer,
+  message actions, search states and every error message a person is likely to
+  meet. No key falls back to its English source any more.
+- ✨(frontend) Tell the three presence states apart: green for available, red
+  for busy, grey for disconnected. Busy is chosen rather than inferred and
+  withholds the notification sound, which going idle never does.
+- 🐛(frontend) Stop a newly created espace from hiding every room outside it:
+  none is active until one is picked, the switcher carries an "everything"
+  entry, and a salon no longer has to belong to an espace.
+- 💄(profiles) Give every role label its own colour instead of one grey for
+  everything but PO, PM and DEV: six hues sixty degrees apart, with a custom
+  title taking a stable hue from its own text.
+- ✨(bots) Have Ariane answer in a thread hanging off the message that asked,
+  rather than in the room: a room where several people ask her things no longer
+  buries its own conversation under her replies.
+- ✨(frontend) Say why Ariane cannot be mentioned in an encrypted room instead
+  of offering an empty suggestion list, which read as a bug rather than a rule.
+- 🐛(frontend) Show the availability dot for someone who has been offline for
+  a while: `/sync` never repeated their presence, so the row could not tell
+  "offline" from "not known" and showed nothing.
+- 💄(frontend) Replace the SDK's multi-line decryption diagnostic with a short
+  tombstone - a padlock and one line - for a message this device holds no key
+  for, and skip those events in the conversation list preview.
+- ✨(frontend) Offer the encryption choice when a salon is created from the
+  left panel, not only from New Chat - Matrix has no way back, so a choice
+  missing at creation is lost for good. A clear salon created this way also
+  invites Ariane, as one created anywhere else does.
 - ✨(meetings) Show on the meeting icon of a conversation when a meeting
   starts within 15 minutes or is in progress, and let Ariane tell every
   member in a private message when a meeting is scheduled, starts and ends.

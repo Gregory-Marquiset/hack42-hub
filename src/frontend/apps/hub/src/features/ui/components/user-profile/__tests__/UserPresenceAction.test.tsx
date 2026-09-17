@@ -104,8 +104,9 @@ describe("UserPresenceAction", () => {
   });
 
   it.each([
-    ["Online", "online"],
-    ["Offline", "offline"],
+    ["Available", "online"],
+    ["Busy", "busy"],
+    ["Appear offline", "offline"],
   ] as const)("publishes %s as the %s preference", (label, state) => {
     render(
       <UserPresenceAction
@@ -120,7 +121,7 @@ describe("UserPresenceAction", () => {
     expect(setSelfPresencePreference).toHaveBeenCalledWith(state);
   });
 
-  it("offers neither unavailable nor busy and disables while pending", () => {
+  it("offers no state Matrix decides on its own, and disables while pending", () => {
     isPending = true;
     render(
       <UserPresenceAction
@@ -130,13 +131,14 @@ describe("UserPresenceAction", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Busy" })).toBeNull();
+    // "Away" is the idle timer's business, never a choice on this menu.
     expect(screen.queryByRole("button", { name: "Away" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Unavailable" })).toBeNull();
     expect(
-      (screen.getByRole("button", { name: "Online" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "Available" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Online" }));
+    fireEvent.click(screen.getByRole("button", { name: "Available" }));
     expect(setSelfPresencePreference).not.toHaveBeenCalled();
   });
 
@@ -149,7 +151,7 @@ describe("UserPresenceAction", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Offline" }));
+    fireEvent.click(screen.getByRole("button", { name: "Appear offline" }));
     rerender(
       <UserPresenceAction
         accountId="account-a"
@@ -160,7 +162,7 @@ describe("UserPresenceAction", () => {
 
     expect(
       screen
-        .getByRole("button", { name: "Offline" })
+        .getByRole("button", { name: "Appear offline" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
   });
@@ -175,7 +177,7 @@ describe("UserPresenceAction", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Offline" }));
+    fireEvent.click(screen.getByRole("button", { name: "Appear offline" }));
     rerender(
       <UserPresenceAction
         accountId="account-a"
@@ -186,7 +188,7 @@ describe("UserPresenceAction", () => {
 
     expect(
       screen
-        .getByRole("button", { name: "Online" })
+        .getByRole("button", { name: "Available" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
   });
@@ -230,9 +232,14 @@ describe("UserPresenceAction", () => {
     expect(screen.queryByText("Disconnected")).toBeNull();
   });
 
-  it.each(["unavailable", "offline"] as const)(
-    "shows effective %s as offline on the quick profile control",
-    (state) => {
+  // The quick control shows the effective state, so it distinguishes the three
+  // the dot has: away reads as busy, and only a real disconnection is grey.
+  it.each([
+    ["unavailable", "busy"],
+    ["offline", "offline"],
+  ] as const)(
+    "shows effective %s as %s on the quick profile control",
+    (state, tone) => {
       effectivePresence = state;
       render(
         <UserPresenceQuickControl accountId="account-a" userId="@alice:a" />,
@@ -242,7 +249,7 @@ describe("UserPresenceAction", () => {
         name: "Availability",
       });
       expect(
-        quickControl.querySelector(".hub__user-presence--offline"),
+        quickControl.querySelector(`.hub__user-presence--${tone}`),
       ).not.toBeNull();
     },
   );
@@ -252,8 +259,8 @@ describe("UserPresenceAction", () => {
       <UserPresenceQuickControl accountId="account-a" userId="@alice:a" />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Offline" }));
-    fireEvent.click(screen.getByRole("button", { name: "Online" }));
+    fireEvent.click(screen.getByRole("button", { name: "Appear offline" }));
+    fireEvent.click(screen.getByRole("button", { name: "Available" }));
 
     expect(setSelfPresencePreference.mock.calls).toEqual([
       ["offline"],

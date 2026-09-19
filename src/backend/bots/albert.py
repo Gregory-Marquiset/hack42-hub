@@ -28,8 +28,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-MODELS_CACHE_KEY = "bots:albert:models"
+MODELS_CACHE_KEY = "bots:albert:models:types"
 MODELS_CACHE_SECONDS = 600
+# The model types that answer on `chat/completions`.
+CHAT_MODEL_TYPES = {"text-generation", "image-text-to-text"}
 
 DISCLAIMER = (
     "Ariane est un assistant automatique. Cette réponse n'est pas un conseil "
@@ -168,8 +170,11 @@ def _base_url() -> str:
     return settings.ALBERT_BASE_URL.rstrip("/")
 
 
-def available_models() -> list[str]:
-    """Model ids as the API reports them today, cached to avoid a call per ping."""
+def available_models() -> dict[str, str | None]:
+    """
+    Model ids and their types (`text-generation`, `text-embeddings-inference`,
+    ...) as the API reports them today, cached to avoid a call per ping.
+    """
     cached = cache.get(MODELS_CACHE_KEY)
     if cached:
         return cached
@@ -181,7 +186,7 @@ def available_models() -> list[str]:
             timeout=settings.ALBERT_TIMEOUT,
         )
         response.raise_for_status()
-        models = [m["id"] for m in response.json().get("data", [])]
+        models = {m["id"]: m.get("type") for m in response.json().get("data", [])}
     except (requests.RequestException, ValueError, KeyError) as exc:
         raise AlbertError(f"could not list Albert models: {exc!s}") from exc
 
@@ -207,11 +212,14 @@ def pick_model(size: str) -> str:
         if candidate in served:
             return candidate
 
-    if not served:
-        raise AlbertError("Albert returned an empty model catalogue")
+    # The fallback must still be a chat model: the catalogue also serves
+    # embeddings, speech recognition and reranking, which cannot answer.
+    chat = [model for model, kind in served.items() if kind in CHAT_MODEL_TYPES]
+    if not chat:
+        raise AlbertError("Albert serves no chat model")
 
-    logger.warning("none of %s available, falling back to %s", preferred, served[0])
-    return served[0]
+    logger.warning("none of %s available, falling back to %s", preferred, chat[0])
+    return chat[0]
 
 
 # Markdown the model emits anyway, and what it should become in a plain-text

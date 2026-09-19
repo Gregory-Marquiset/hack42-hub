@@ -9,6 +9,7 @@
 import type { MatrixEvent, Room } from "matrix-js-sdk/lib/matrix";
 
 import type { ChatMeeting, ChatMeetingDocument } from "../types";
+import { isWebLink } from "../webLink";
 
 export const MEETING_EVENT_TYPE = "io.lasuite.hub.meeting";
 
@@ -43,10 +44,12 @@ const toDocument = (raw: unknown): ChatMeetingDocument | undefined => {
     return undefined;
   }
   const { id, title, url } = raw as Record<string, unknown>;
+  // A link typed without its scheme would render as a broken relative link.
   if (
     typeof id !== "string" ||
     typeof title !== "string" ||
-    typeof url !== "string"
+    typeof url !== "string" ||
+    !isWebLink(url)
   ) {
     return undefined;
   }

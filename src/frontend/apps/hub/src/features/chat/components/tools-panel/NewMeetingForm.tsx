@@ -7,6 +7,7 @@ import type {
   ChatMeeting,
   StartMeetingOptions,
 } from "@/features/drivers/types";
+import { isWebLink } from "@/features/drivers/webLink";
 import { notify } from "@/features/ui/components/toast";
 
 import { Download } from "./MeetingIcons";
@@ -251,7 +252,7 @@ export const NewMeetingForm = ({
 
   const addDocument = () => {
     const url = draftUrl.trim();
-    if (url === "") {
+    if (!isWebLink(url)) {
       return;
     }
     const document = {
@@ -460,7 +461,7 @@ export const NewMeetingForm = ({
                   type="button"
                   className="hub__chat-meetings__action"
                   data-primary="true"
-                  disabled={draftUrl.trim() === ""}
+                  disabled={!isWebLink(draftUrl)}
                   tabIndex={tabIndex}
                   onClick={addDocument}
                 >

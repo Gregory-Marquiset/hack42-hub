@@ -231,6 +231,9 @@ and this project adheres to
 - 🐛(meetings) Say "This meeting is over" when an old invitation opens a
   closed meeting, instead of joining its call and closing the window at once
   as if its organizer had just closed it.
+- 🐛(meetings) Refuse a meeting link typed without `http(s)://`: it was
+  accepted, then hidden from the details and the archive, or listed in the
+  history as a broken link.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

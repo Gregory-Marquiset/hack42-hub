@@ -286,3 +286,26 @@ describe("NewMeetingForm start and schedule", () => {
     });
   });
 });
+
+describe("NewMeetingForm links", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("refuses a link typed without http(s)://", () => {
+    renderForm();
+    fireEvent.click(screen.getByRole("button", { name: "Add a Docs link" }));
+    const add = screen.getByRole("button", { name: "Add" });
+
+    fireEvent.change(screen.getByLabelText("Link"), {
+      target: { value: "docs.example.org/docs/1/" },
+    });
+    expect(add.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Link"), {
+      target: { value: "https://docs.example.org/docs/1/" },
+    });
+    expect(add.hasAttribute("disabled")).toBe(false);
+  });
+});

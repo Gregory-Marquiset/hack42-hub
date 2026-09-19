@@ -7,11 +7,13 @@ import type { MatrixEvent } from "matrix-js-sdk/lib/models/event";
 import type { Room } from "matrix-js-sdk/lib/models/room";
 
 import { messageBackfills } from "@/features/chat/search/messageBackfillCoordinator";
-import { normalizeSearch } from "@/features/chat/search/model";
 import {
+  buildExcerpt,
+  findMatchRange,
   type MessageSearchDocument,
   type MessageContentKind,
   matchesMessageFilters,
+  normalizeSearch,
 } from "@/features/chat/search/model";
 import { MessageSearchStorage } from "@/features/chat/search/messageStorage";
 import {
@@ -257,61 +259,53 @@ export class MatrixMessageSearch {
 
     const { freeText, filters, limit = 100 } = request;
     const normalizedFreeText = normalizeSearch(freeText);
-    const allResults: Array<{
-      doc: MessageSearchDocument;
-      matchRanges: [number, number][];
-      excerpt: string;
-    }> = [];
+    const allResults: MessageSearchDocument[] = [];
 
     // Search across all messages in all rooms
     for (const roomMessages of this.messages.values()) {
       for (const doc of roomMessages.values()) {
         // Apply filters (AND semantics)
         if (!matchesMessageFilters(doc, filters)) continue;
-
-        // Apply free-text search (OR with any field)
-        let matchRanges: [number, number][] = [];
-        if (normalizedFreeText) {
-          const bodyMatch = doc.normalizedBody.indexOf(normalizedFreeText);
-          if (bodyMatch === -1) continue; // No match
-
-          // Map back to original body offset
-          matchRanges = [[bodyMatch, bodyMatch + normalizedFreeText.length]];
-        }
-
-        // Build excerpt (50 chars before and after match, or from start)
-        const excerpt = this.buildExcerpt(doc.body, matchRanges[0]);
-
-        allResults.push({ doc, matchRanges, excerpt });
+        if (
+          normalizedFreeText &&
+          !doc.normalizedBody.includes(normalizedFreeText)
+        )
+          continue;
+        allResults.push(doc);
       }
     }
 
     // Sort by timestamp descending (newest first)
-    allResults.sort((a, b) => b.doc.timestamp - a.doc.timestamp);
+    allResults.sort((a, b) => b.timestamp - a.timestamp);
 
     const currentUserId = this.mx.getUserId() ?? undefined;
 
     // Slice to limit, dropping any result whose room can no longer be resolved
     // (e.g. a room left between indexing and querying).
-    const results = allResults
-      .slice(0, limit)
-      .flatMap(({ doc, matchRanges, excerpt }) => {
-        const room = this.mx.getRoom(doc.roomId);
-        if (!room) return [];
-        const chat = matrixJoinedRoomToLocalChat(room, currentUserId);
-        return [
-          {
-            chat,
-            eventId: doc.eventId,
-            senderId: doc.senderId,
-            senderName: doc.senderName,
-            excerpt,
-            matchRanges,
-            timestamp: new Date(doc.timestamp).toISOString(),
-            threadRootId: doc.threadRootId,
-          },
-        ];
-      });
+    const results = allResults.slice(0, limit).flatMap((doc) => {
+      const room = this.mx.getRoom(doc.roomId);
+      if (!room) return [];
+      const chat = matrixJoinedRoomToLocalChat(room, currentUserId);
+      // Offsets are taken on the displayed text itself, then rebased onto
+      // the excerpt, so the highlight lands on the matched characters.
+      const text = doc.body.normalize("NFC");
+      const { excerpt, matchRanges } = buildExcerpt(
+        text,
+        findMatchRange(text, normalizedFreeText),
+      );
+      return [
+        {
+          chat,
+          eventId: doc.eventId,
+          senderId: doc.senderId,
+          senderName: doc.senderName,
+          excerpt,
+          matchRanges,
+          timestamp: new Date(doc.timestamp).toISOString(),
+          threadRootId: doc.threadRootId,
+        },
+      ];
+    });
 
     return {
       results,
@@ -458,28 +452,6 @@ export class MatrixMessageSearch {
     return { replyToEventId: inReplyTo.event_id };
     // Note: replyToSenderId will be resolved best-effort on indexing,
     // or lazily when needed for matching
-  }
-
-  private buildExcerpt(body: string, matchRange?: [number, number]): string {
-    const MAX_EXCERPT_LEN = 150;
-    const CONTEXT = 50;
-
-    if (!matchRange) {
-      // No specific match, just first MAX_EXCERPT_LEN chars
-      return body.length > MAX_EXCERPT_LEN
-        ? body.substring(0, MAX_EXCERPT_LEN) + "..."
-        : body;
-    }
-
-    const [start, end] = matchRange;
-    const excerptStart = Math.max(0, start - CONTEXT);
-    const excerptEnd = Math.min(body.length, end + CONTEXT);
-
-    let excerpt = body.substring(excerptStart, excerptEnd);
-    if (excerptStart > 0) excerpt = "..." + excerpt;
-    if (excerptEnd < body.length) excerpt = excerpt + "...";
-
-    return excerpt;
   }
 
   private emit(): void {

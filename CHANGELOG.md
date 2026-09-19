@@ -208,6 +208,12 @@ and this project adheres to
 
 ### Changed
 
+- 🔧(meetings) Throttle meeting renames and extensions on their own
+  `meeting_update` scope, set by API_MEETING_UPDATE_THROTTLE_RATE.
+- 🔧(bots) Read MATRIX_AS_TOKEN, MATRIX_HS_TOKEN, MATRIX_ADMIN_TOKEN and
+  ALBERT_API_KEY as secrets, which also accept a `_FILE` variant.
+- ♻️(meetings) Tidy the meetings and assistant code: refusals raised once,
+  one room-name helper, shared command parsing and test fixtures.
 - ✨(frontend) Expand the message composer up to eight lines
 - ⚡(frontend) Speed up the emoji picker and align reaction artwork
 - 💄(frontend) Improve message dates and bubble readability

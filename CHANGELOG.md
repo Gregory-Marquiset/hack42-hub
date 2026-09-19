@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(bots) Keep Ariane's reading horizon at the join when someone changes
+  their display name or avatar, which used to reset it to that change.
 - 🐛(meetings) Accept an empty `chat_id` when creating a meeting, as when it
   is left out, instead of answering 400.
 - 🐛(meetings) Close a meeting planned without an end once its call is empty

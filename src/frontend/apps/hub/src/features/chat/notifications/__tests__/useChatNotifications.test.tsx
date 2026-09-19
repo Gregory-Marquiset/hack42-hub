@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import "@/i18n/initI18n";
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatEventListener } from "@/features/drivers/Driver";
@@ -115,8 +116,16 @@ class MockNotification {
   close = vi.fn();
 }
 
+let wrapper: ({ children }: { children: ReactNode }) => ReactNode;
+
 describe("useChatNotifications", () => {
   beforeEach(() => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    wrapper = ({ children }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
     soundPlay.mockReset();
     soundDispose.mockReset();
     permissionRequest.mockReset();
@@ -140,7 +149,7 @@ describe("useChatNotifications", () => {
 
   it("plays sound and shows a notification for an unsupported driver (unchanged behavior)", async () => {
     setDriver(false);
-    renderHook(() => useChatNotifications("me"));
+    renderHook(() => useChatNotifications("me"), { wrapper });
     await act(async () => {
       await Promise.resolve();
     });
@@ -160,7 +169,7 @@ describe("useChatNotifications", () => {
   it("still notifies for a driver that supports rules when the room isn't muted", async () => {
     setDriver(true);
     getNotificationRules.mockResolvedValue(emptyRules());
-    renderHook(() => useChatNotifications("me"));
+    renderHook(() => useChatNotifications("me"), { wrapper });
     await act(async () => {
       await Promise.resolve();
     });
@@ -180,11 +189,10 @@ describe("useChatNotifications", () => {
   it("suppresses sound and notification for a muted room", async () => {
     setDriver(true);
     getNotificationRules.mockResolvedValue(mutedRules());
-    renderHook(() => useChatNotifications("me"));
-    // Let the initial `getNotificationRules().then(...)` microtask settle.
+    renderHook(() => useChatNotifications("me"), { wrapper });
+    // Let the initial rules fetch settle.
     await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     act(() => {
@@ -197,5 +205,23 @@ describe("useChatNotifications", () => {
     });
 
     expect(soundPlay).not.toHaveBeenCalled();
+  });
+
+  it("survives rules that cannot be read yet, and fetches them once", async () => {
+    setDriver(true);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    getNotificationRules.mockRejectedValue(new Error("not connected"));
+    try {
+      renderHook(() => useChatNotifications("me"), { wrapper });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(getNotificationRules).toHaveBeenCalledOnce();
   });
 });

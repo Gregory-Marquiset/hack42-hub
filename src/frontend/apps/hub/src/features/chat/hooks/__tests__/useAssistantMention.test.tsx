@@ -15,7 +15,10 @@ vi.mock("@/features/drivers/DriverRegistry", () => ({
   getRegistry: () => ({ get: () => ({ inviteToChat: vi.fn() }) }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, string>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_, name: string) => options?.[name] ?? ""),
+  }),
   initReactI18next: { type: "3rdParty", init: () => undefined },
 }));
 vi.mock("../useAssistant", () => ({

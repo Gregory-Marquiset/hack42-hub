@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react";
+import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ChatRef } from "@/features/drivers/types";
@@ -9,7 +9,6 @@ import type {
 } from "../../ChatPanelContext";
 import { useAssistantMention } from "../../hooks/useAssistantMention";
 import { useChat } from "../../hooks/useChat";
-import { useChatMembers } from "../../hooks/useChatMembers";
 import { useStartChatThread } from "../../hooks/useStartChatThread";
 import { ChatBubble } from "../ChatBubble";
 import { ChatComposer } from "../ChatComposer";
@@ -41,16 +40,11 @@ export const DraftThreadDetail = ({
   // The first reply of a thread is a message like any other: mentioning the
   // assistant here offers her and brings her in, as in the two other composers.
   const { chat } = useChat(chatRef);
-  const { present } = useChatMembers(chatRef, true);
   const {
-    candidate: assistantCandidate,
+    mentionCandidates,
     ensureInvited,
     unavailableReason: assistantUnavailableReason,
   } = useAssistantMention(chatRef, chat);
-  const mentionCandidates = useMemo(
-    () => (assistantCandidate ? [...present, assistantCandidate] : present),
-    [assistantCandidate, present],
-  );
 
   const handleSubmit = async (content: string) => {
     await ensureInvited(content);

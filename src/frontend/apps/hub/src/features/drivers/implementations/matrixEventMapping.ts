@@ -37,7 +37,9 @@ import {
   ChatThreadDetail,
   ChatUnread,
 } from "../types";
+import { isWebLink } from "../webLink";
 import { initialsFor } from "./matrixIdentity";
+import { chatFileFromEvent } from "./matrixRoomFiles";
 
 type ReactionRelations = NonNullable<
   ReturnType<Room["relations"]["getChildEventsForEvent"]>
@@ -636,7 +638,7 @@ const toMeetingInvite = (
     typeof url !== "string" ||
     !chatId ||
     !meetingId ||
-    !/^https?:\/\//i.test(url)
+    !isWebLink(url)
   ) {
     return undefined;
   }
@@ -940,6 +942,7 @@ export const timelineEventToChatEvent = (
       chatId: room.roomId,
       message: matrixEventToChatMessage(event, room, selfUserId),
       authors: buildAuthors(room, [event], selfUserId),
+      ...(chatFileFromEvent(event, room) ? { isFile: true } : {}),
     },
   ];
 };

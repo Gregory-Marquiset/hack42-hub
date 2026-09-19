@@ -136,6 +136,28 @@ describe("useChatEvents", () => {
     expect(data?.pages[0].messages).toHaveLength(1);
   });
 
+  it("refreshes the documents list only for a shared document", () => {
+    mount();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const refreshedFiles = () =>
+      invalidate.mock.calls.filter(
+        ([filters]) =>
+          JSON.stringify(filters?.queryKey) ===
+          JSON.stringify(chatKeys.files(CHAT_REF)),
+      ).length;
+
+    emit({ type: "message:new", chatId: "c1", message: message("m1") });
+    expect(refreshedFiles()).toBe(0);
+
+    emit({
+      type: "message:new",
+      chatId: "c1",
+      message: message("m2"),
+      isFile: true,
+    });
+    expect(refreshedFiles()).toBe(1);
+  });
+
   it("PATCHES reactions on reaction:updated", () => {
     seedMessages(queryClient, CHAT_REF, [message("m1")], [author("a-1")]);
     mount();

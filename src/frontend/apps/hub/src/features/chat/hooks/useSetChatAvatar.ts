@@ -16,10 +16,11 @@ export type UseSetChatAvatarResult = {
 };
 
 /**
- * Uploads and sets a group chat's photo. The driver resolves the new photo
- * to a ready-to-render HTTP URL, so the header and every list row that
- * already has this chat cached are patched immediately — no wait on the
- * next `/sync` to reflect the change.
+ * Uploads and sets a group chat's photo. The driver answers with the new
+ * photo's driver-specific URL (an `mxc://` one for Matrix), the same kind a
+ * chat's `visual` carries and `useAvatarSrc` resolves, so the header and
+ * every list row that already has this chat cached are patched immediately —
+ * no wait on the next `/sync` to reflect the change.
  */
 export const useSetChatAvatar = (ref: ChatRef): UseSetChatAvatarResult => {
   const queryClient = useQueryClient();

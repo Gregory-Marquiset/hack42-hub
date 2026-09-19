@@ -43,7 +43,6 @@ describe("describeNotificationRule", () => {
     );
     expect(description.title).toBe("Pause all notifications");
     expect(description.sentence).toBe("All notifications are paused.");
-    expect(description.isWellKnown).toBe(true);
   });
 
   it("phrases the master rule as notifications-on when disabled", () => {
@@ -63,7 +62,6 @@ describe("describeNotificationRule", () => {
     expect(description.sentence).toBe(
       "Notifies you when someone sends you a direct message.",
     );
-    expect(description.isWellKnown).toBe(true);
   });
 
   it("describes a well-known rule that doesn't notify", () => {
@@ -100,7 +98,6 @@ describe("describeNotificationRule", () => {
       t,
     );
     expect(description.title).toBe("Muted conversation");
-    expect(description.isWellKnown).toBe(false);
   });
 
   it("falls back to a generic description for an unrecognized custom rule", () => {
@@ -116,7 +113,6 @@ describe("describeNotificationRule", () => {
     );
     expect(description.title).toBe("custom.rule.example");
     expect(description.sentence).toBe("Notifies you for this custom rule.");
-    expect(description.isWellKnown).toBe(false);
   });
 });
 

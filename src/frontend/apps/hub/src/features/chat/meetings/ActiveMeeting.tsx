@@ -24,14 +24,14 @@ import { Whiteboard } from "@/features/chat/components/tools-panel/MeetingIcons"
 import { useChatMeetingActions } from "@/features/chat/hooks/useChatMeetingActions";
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import {
-  formatMeetingDuration,
+  formatMeetingProgress,
   getMeetingProgress,
   getMeetingStatus,
 } from "@/features/drivers/meetingTime";
 import type { ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
-import { copyMeetingLink } from "./copyMeetingLink";
+import { InvitationLink } from "./InvitationLink";
 import { useMeetingBoardUrl } from "./meetingBoard";
 import { useNow } from "./useNow";
 
@@ -94,7 +94,10 @@ const MeetingWindow = ({
   const { user, chatUser } = useAuth();
   const now = useNow(15_000);
   const chatRef = target.chatRef ?? null;
-  const { meetings } = useChatMeetings(chatRef, chatRef !== null);
+  const { meetings, isInitialLoading } = useChatMeetings(
+    chatRef,
+    chatRef !== null,
+  );
   const { endMeeting, extendMeeting, renameMeeting, setBoard, isPending } =
     useChatMeetingActions(chatRef);
   const [draftTitle, setDraftTitle] = useState<string | null>(null);
@@ -141,19 +144,35 @@ const MeetingWindow = ({
     }
   };
 
-  // Closed by its organizer (here or on another device), or by the server
-  // once it was over and empty: leave the call.
+  // How the meeting was when this window first found it. Only a closing seen
+  // from here leaves the call; a meeting already over (an old invitation)
+  // says so instead of joining its call.
+  const [firstSeen, setFirstSeen] = useState<"open" | "over" | null>(null);
+  if (firstSeen === null && status) {
+    setFirstSeen(status === "ended" ? "over" : "open");
+  }
+  const isOver =
+    (firstSeen ?? (status === "ended" ? "over" : "open")) === "over";
+  // The call waits to know whether the meeting is over.
+  const isChecking =
+    target.meetingId !== undefined && isInitialLoading && !meeting;
+  const isInCall = !isOver && !isChecking;
+
+  const endedAt = meeting?.endedAt;
+  const endedBy = meeting?.endedBy;
   useEffect(() => {
-    if (!meeting?.endedAt) {
+    if (firstSeen !== "open" || !endedAt) {
       return;
     }
-    if (meeting.endedBy === "auto") {
+    // Closed by its organizer (here or on another device), or by the server
+    // once it was over and empty: leave the call.
+    if (endedBy === "auto") {
       notify.brand(t("The meeting was closed automatically."));
     } else if (!isOrganizer) {
       notify.brand(t("The meeting was closed by its organizer."));
     }
     onLeave();
-  }, [meeting?.endedAt, meeting?.endedBy, isOrganizer, onLeave, t]);
+  }, [firstSeen, endedAt, endedBy, isOrganizer, onLeave, t]);
 
   const title =
     meeting?.title ?? (isMinimized ? t("Meeting in progress") : t("Meeting"));
@@ -244,9 +263,7 @@ const MeetingWindow = ({
                 data-overdue={progress.isOverdue || undefined}
                 data-testid="meeting-progress"
               >
-                {progress.plannedMs === undefined
-                  ? formatMeetingDuration(progress.elapsedMs)
-                  : `${formatMeetingDuration(progress.elapsedMs)} / ${formatMeetingDuration(progress.plannedMs)}`}
+                {formatMeetingProgress(progress, t)}
                 {progress.isOverdue && ` · ${t("Overtime")}`}
               </span>
             )}
@@ -270,7 +287,9 @@ const MeetingWindow = ({
                     });
                   }}
                 >
-                  {`+${MEETING_EXTENSION_MINUTES} min`}
+                  {t("+{{minutes}} min", {
+                    minutes: MEETING_EXTENSION_MINUTES,
+                  })}
                 </button>
                 <button
                   type="button"
@@ -290,7 +309,7 @@ const MeetingWindow = ({
                 </button>
               </>
             )}
-            {boardUrl && !isMinimized && (
+            {isInCall && boardUrl && !isMinimized && (
               <button
                 type="button"
                 className="hub__meeting-window__button"
@@ -310,36 +329,40 @@ const MeetingWindow = ({
                 <Whiteboard />
               </button>
             )}
-            <button
-              type="button"
-              className="hub__meeting-window__button"
-              aria-label={t("Invite people from outside")}
-              title={t("Invite people from outside")}
-              aria-expanded={isSharing}
-              aria-controls={shareId}
-              data-active={isSharing || undefined}
-              onClick={() => {
-                if (isMinimized) {
-                  onRestore();
-                }
-                setIsSharing((current) => !current || isMinimized);
-              }}
-            >
-              <UserAdd />
-            </button>
-            <a
-              className="hub__meeting-window__button"
-              href={target.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={t("Open in a new tab")}
-              title={t("Open in a new tab")}
-              // The call continues in the new tab: leave the embedded one so
-              // the user is not in the call twice.
-              onClick={onLeave}
-            >
-              <ExternalLink />
-            </a>
+            {isInCall && (
+              <>
+                <button
+                  type="button"
+                  className="hub__meeting-window__button"
+                  aria-label={t("Invite people from outside")}
+                  title={t("Invite people from outside")}
+                  aria-expanded={isSharing}
+                  aria-controls={shareId}
+                  data-active={isSharing || undefined}
+                  onClick={() => {
+                    if (isMinimized) {
+                      onRestore();
+                    }
+                    setIsSharing((current) => !current || isMinimized);
+                  }}
+                >
+                  <UserAdd />
+                </button>
+                <a
+                  className="hub__meeting-window__button"
+                  href={target.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={t("Open in a new tab")}
+                  title={t("Open in a new tab")}
+                  // The call continues in the new tab: leave the embedded one
+                  // so the user is not in the call twice.
+                  onClick={onLeave}
+                >
+                  <ExternalLink />
+                </a>
+              </>
+            )}
             <button
               type="button"
               className="hub__meeting-window__button"
@@ -369,50 +392,37 @@ const MeetingWindow = ({
             </button>
           </span>
         </header>
-        {isSharing && !isMinimized && (
+        {isInCall && isSharing && !isMinimized && (
           <div
             id={shareId}
             className="hub__meeting-window__share"
             role="region"
             aria-label={t("Invitation link")}
           >
-            <p className="hub__meeting-window__share-text">
-              {t(
-                "Anyone with this link can join the call, even without an account.",
-              )}
-            </p>
-            <div className="hub__meeting-window__share-row">
-              <input
-                type="text"
-                readOnly
-                className="hub__meeting-window__share-link"
-                value={target.url}
-                aria-label={t("Invitation link")}
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <button
-                type="button"
-                className="hub__meeting-window__text-button"
-                onClick={() => void copyMeetingLink(target.url, t)}
-              >
-                {t("Copy the link")}
-              </button>
-            </div>
+            <InvitationLink url={target.url} variant="window" />
           </div>
         )}
         <div className="hub__meeting-window__body">
-          <iframe
-            className="hub__meeting-window__frame"
-            src={target.url}
-            title={t("Meeting")}
-            allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write"
-            allowFullScreen
-          />
+          {isOver ? (
+            <p className="hub__meeting-window__over" role="status">
+              {t("This meeting is over.")}
+            </p>
+          ) : (
+            !isChecking && (
+              <iframe
+                className="hub__meeting-window__frame"
+                src={target.url}
+                title={t("Meeting")}
+                allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write"
+                allowFullScreen
+              />
+            )
+          )}
           {/* Hidden rather than unmounted once opened: reloading the frame
               would drop the drawer out of the collaboration and lose their
               local scene. The thumbnail has no room for it, so minimizing the
               window hides it too. */}
-          {boardUrl && wasBoardOpened && (
+          {isInCall && boardUrl && wasBoardOpened && (
             <iframe
               className="hub__meeting-window__board"
               data-testid="meeting-board"

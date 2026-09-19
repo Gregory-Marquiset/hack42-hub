@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { updateMeeting } from "@/features/chat/api/meetings";
 import { saveMeetingTranscript } from "@/features/chat/api/meetingTranscripts";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
+import { MeetingEndedError } from "@/features/drivers/meetingErrors";
 import type { ChatMeetingDocument, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
@@ -27,14 +28,17 @@ export type UseChatMeetingActionsResult = {
   extendMeeting: (meetingId: string, minutes: number) => Promise<void>;
   /** Renames the meeting for every member (organizer only). */
   renameMeeting: (meetingId: string, title: string) => Promise<void>;
-  /** Lists a link (a Docs document…) with the meeting (organizer only). */
+  /** Lists a link (a Docs document…) with the meeting (any member). */
   addLink: (meetingId: string, document: ChatMeetingDocument) => Promise<void>;
-  /** Opens or closes the whiteboard for every participant. */
+  /** Opens or closes the whiteboard for every participant (any member). */
   setBoard: (meetingId: string, isOpen: boolean) => Promise<void>;
   isPending: boolean;
 };
 
-/** Organizer actions on a meeting of a conversation. */
+/**
+ * Changes to a meeting of a conversation: those of its organizer (close,
+ * extend, rename) and those open to every member (links, whiteboard).
+ */
 export const useChatMeetingActions = (
   ref: ChatRef | null,
 ): UseChatMeetingActionsResult => {
@@ -66,7 +70,7 @@ export const useChatMeetingActions = (
       await getRegistry()
         .get(chat.accountId)
         .addChatMeetingDocument(chat.chatId, meetingId, document);
-      invalidate();
+      // The mutation's `onSuccess` refreshes the meetings with it.
       notify.brand(t("The transcript was saved in Docs."));
     } catch {
       notify.warning(
@@ -100,6 +104,7 @@ export const useChatMeetingActions = (
       switch (action.kind) {
         case "end":
           await driver.endChatMeeting(ref.chatId, action.meetingId);
+          // Shows the closing now: saving the transcript takes a while.
           invalidate();
           await attachTranscript(ref, action.meetingId, action.title);
           return;
@@ -140,10 +145,14 @@ export const useChatMeetingActions = (
       }
     },
     onSuccess: invalidate,
-    onError: (_error, action) => {
+    onError: (error, action) => {
       // The whiteboard falls back on the local view; no need to alarm.
       if (action.kind !== "board") {
-        notify.error(t("The meeting could not be updated. Please try again."));
+        notify.error(
+          error instanceof MeetingEndedError
+            ? t("The meeting is already closed.")
+            : t("The meeting could not be updated. Please try again."),
+        );
       }
     },
     meta: { noGlobalError: true },

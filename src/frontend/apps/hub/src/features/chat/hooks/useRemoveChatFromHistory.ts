@@ -1,11 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  getRegistry,
-  useDriverEntries,
-} from "@/features/drivers/DriverRegistry";
+import { getRegistry } from "@/features/drivers/DriverRegistry";
+import { useAccountDriver } from "@/features/drivers/useAccountDriver";
 import type { RemoveChatFromHistoryResult } from "@/features/drivers/Driver";
 import type {
   ChatRef,
@@ -38,14 +36,10 @@ export const useRemoveChatFromHistory = (
   ref: ChatRef,
 ): UseRemoveChatFromHistoryResult => {
   const queryClient = useQueryClient();
-  const entries = useDriverEntries();
   const { t } = useTranslation();
-  const isSupported = useMemo(
-    () =>
-      entries.find((entry) => entry.accountId === ref.accountId)?.driver
-        .supportsConversationHistoryRemoval ?? false,
-    [entries, ref.accountId],
-  );
+  const isSupported =
+    useAccountDriver(ref.accountId)?.supportsConversationHistoryRemoval ??
+    false;
 
   const clearConversationCaches = () => {
     queryClient.setQueryData<ChatSections>(

@@ -26,8 +26,11 @@ export const matrixStorageKey = (
   return accountId === "default" ? ownedKey : `${ownedKey}:${accountId}`;
 };
 
-/** Clears a search cache without loading or connecting a Matrix client. */
-export const clearStoredConversationSearch = async (
+/**
+ * Clears the search database without loading or connecting a Matrix client.
+ * The conversation and the message indexes share it, so both go at once.
+ */
+export const clearStoredSearch = async (
   accountId: AccountId,
   owner: string | null,
 ): Promise<void> => {

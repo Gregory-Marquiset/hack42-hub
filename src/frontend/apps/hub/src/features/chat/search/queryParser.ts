@@ -1,4 +1,8 @@
-import { SearchFilters, emptySearchFilters } from "./types";
+import {
+  type SearchFilters,
+  type SearchHasValue,
+  emptySearchFilters,
+} from "./types";
 
 export type ParsedSearchQuery = {
   filters: SearchFilters;
@@ -75,7 +79,7 @@ const processTag = (
 
     case "has":
       if (VALID_HAS_VALUES.has(value.toLowerCase())) {
-        filters.has.push(value.toLowerCase() as "image" | "video" | "link");
+        filters.has.push(value.toLowerCase() as SearchHasValue);
       } else {
         // Invalid has value: fall through to free text
         fallbackFreeText.push(`has:${value}`);

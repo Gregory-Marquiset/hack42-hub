@@ -18,19 +18,16 @@ from rest_framework.status import (
     HTTP_404_NOT_FOUND,
     HTTP_410_GONE,
 )
-from rest_framework.test import APIClient
 
 from bots import matrix
 from core import factories, meeting_closing, models
 
 pytestmark = pytest.mark.django_db
 
-SCRIBE_TOKEN = "scribe-secret"
 MEET_API_URL = "https://meet.test/external-api/v1.0"
 DOCS_BASE_URL = "https://docs.test"
 
 SETTINGS = {
-    "MEETING_SCRIBE_TOKEN": SCRIBE_TOKEN,
     "MEET_API_URL": MEET_API_URL,
     "MEET_APPLICATION_CLIENT_ID": "hub-client-id",
     "MEET_APPLICATION_CLIENT_SECRET": "hub-client-secret",
@@ -40,14 +37,6 @@ SETTINGS = {
     "MATRIX_ADMIN_TOKEN": "admin-token",
     "MATRIX_BOT_USER_ID": "@ariane:localhost",
 }
-
-
-@pytest.fixture(name="inline")
-def fixture_inline(monkeypatch):
-    """Run the background closing steps right away."""
-    monkeypatch.setattr(
-        meeting_closing, "run_in_background", lambda function, *args: function(*args)
-    )
 
 
 @pytest.fixture(name="room_state")
@@ -62,26 +51,18 @@ def fixture_room_state(monkeypatch):
     def set_room_state(room_id, _event_type, state_key, content):
         state["written"].append((room_id, state_key, content))
 
-    monkeypatch.setattr(matrix, "ensure_in_room", state["joined"].append)
+    def ensure_in_room(room_id):
+        state["joined"].append(room_id)
+        return True
+
+    monkeypatch.setattr(matrix, "ensure_in_room", ensure_in_room)
     monkeypatch.setattr(matrix, "get_room_state", get_room_state)
     monkeypatch.setattr(matrix, "set_room_state", set_room_state)
     return state
 
 
-def _scribe_client():
-    client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f"Bearer {SCRIBE_TOKEN}")
-    return client
-
-
-def _logged_in_client(user):
-    client = APIClient()
-    client.force_login(user)
-    return client
-
-
-def _presence(meeting, participants):
-    return _scribe_client().post(
+def _presence(client, meeting, participants):
+    return client.post(
         f"/api/v1.0/scribe/rooms/{meeting.livekit_room}/presence/",
         {"participants": participants},
         format="json",
@@ -93,7 +74,7 @@ def _presence(meeting, participants):
 
 @override_settings(**SETTINGS)
 @responses.activate
-def test_api_meetings_create_with_details():
+def test_api_meetings_create_with_details(logged_in):
     """The Hub keeps what it needs for the closing and the archive."""
     responses.post(f"{MEET_API_URL}/application/token/", json={"access_token": "t"})
     responses.post(
@@ -103,7 +84,7 @@ def test_api_meetings_create_with_details():
     )
     user = factories.UserFactory()
 
-    response = _logged_in_client(user).post(
+    response = logged_in(user).post(
         "/api/v1.0/meetings/",
         {
             "chat_id": "!room:localhost",
@@ -129,9 +110,9 @@ def test_api_meetings_create_with_details():
     )
     assert meeting.planned_end_at.isoformat() == "2026-09-17T10:00:00+00:00"
     assert meeting.agenda == "1. Tour de table\n2. Démo"
-    assert [(a.name, a.content) for a in meeting.attachments.all()] == [
-        ("notes.md", "# Notes\n"),
-        ("vide.txt", ""),
+    assert [(a.name, a.content, a.size) for a in meeting.attachments.all()] == [
+        ("notes.md", "# Notes\n", 8),
+        ("vide.txt", "", 0),
     ]
 
 
@@ -143,11 +124,19 @@ def test_api_meetings_create_with_details():
         {"time_zone": "Mars/Olympus"},
         {"attachments": [{"name": "a.md"}]},
         {"planned_end_at": "demain"},
+        {
+            "starts_at": "2026-09-17T10:00:00Z",
+            "planned_end_at": "2026-09-17T09:00:00Z",
+        },
+        {
+            "starts_at": "2026-09-17T10:00:00Z",
+            "planned_end_at": "2026-09-17T10:00:00Z",
+        },
     ],
 )
-def test_api_meetings_create_invalid_details(body):
+def test_api_meetings_create_invalid_details(body, logged_in):
     """Invalid details are refused before any Meet room is created."""
-    response = _logged_in_client(factories.UserFactory()).post(
+    response = logged_in(factories.UserFactory()).post(
         "/api/v1.0/meetings/", body, format="json"
     )
 
@@ -157,11 +146,11 @@ def test_api_meetings_create_invalid_details(body):
 
 
 @override_settings(**SETTINGS)
-def test_api_meeting_update_title_and_extend():
+def test_api_meeting_update_title_and_extend(logged_in):
     """The organizer's renaming and extension reach the Hub's copy."""
     end = timezone.now() + timedelta(minutes=10)
     meeting = factories.MeetingFactory(planned_end_at=end)
-    client = _logged_in_client(meeting.organizer)
+    client = logged_in(meeting.organizer)
 
     response = client.patch(
         f"/api/v1.0/meetings/{meeting.slug}/",
@@ -176,12 +165,12 @@ def test_api_meeting_update_title_and_extend():
 
 
 @override_settings(**SETTINGS)
-def test_api_meeting_update_without_plan_counts_from_now():
+def test_api_meeting_update_without_plan_counts_from_now(logged_in):
     """An unplanned meeting gets an end, counted from now."""
     meeting = factories.MeetingFactory()
     before = timezone.now()
 
-    _logged_in_client(meeting.organizer).patch(
+    logged_in(meeting.organizer).patch(
         f"/api/v1.0/meetings/{meeting.slug}/", {"extend_minutes": 15}, format="json"
     )
 
@@ -190,11 +179,11 @@ def test_api_meeting_update_without_plan_counts_from_now():
 
 
 @override_settings(**SETTINGS)
-def test_api_meeting_update_not_organizer():
+def test_api_meeting_update_not_organizer(logged_in):
     """Only the organizer may change the meeting."""
     meeting = factories.MeetingFactory(title="Point")
 
-    response = _logged_in_client(factories.UserFactory()).patch(
+    response = logged_in(factories.UserFactory()).patch(
         f"/api/v1.0/meetings/{meeting.slug}/", {"title": "Piraté"}, format="json"
     )
 
@@ -207,7 +196,7 @@ def test_api_meeting_update_not_organizer():
 
 
 @override_settings(**SETTINGS)
-def test_api_scribe_rooms_follow_scheduled_meetings_near_their_start():
+def test_api_scribe_rooms_follow_scheduled_meetings_near_their_start(scribe_client):
     """A meeting scheduled for later is followed only shortly before it starts."""
     soon = factories.MeetingFactory(starts_at=timezone.now() + timedelta(minutes=5))
     factories.MeetingFactory(starts_at=timezone.now() + timedelta(hours=2))
@@ -216,24 +205,28 @@ def test_api_scribe_rooms_follow_scheduled_meetings_near_their_start():
         created_at=timezone.now() - timedelta(days=2)
     )
 
-    response = _scribe_client().get("/api/v1.0/scribe/rooms/")
+    response = scribe_client.get("/api/v1.0/scribe/rooms/")
 
     assert response.json() == {"rooms": [soon.livekit_room]}
 
 
 @override_settings(**SETTINGS)
-def test_api_scribe_presence_records_participants():
+def test_api_scribe_presence_records_participants(scribe_client):
     """Participants are kept once, with their latest name."""
     meeting = factories.MeetingFactory()
 
     assert (
-        _presence(meeting, [{"identity": "a", "name": "Alice"}]).status_code
+        _presence(
+            scribe_client, meeting, [{"identity": "a", "name": "Alice"}]
+        ).status_code
         == HTTP_204_NO_CONTENT
     )
     first_seen = models.MeetingParticipant.objects.get().first_seen_at
     assert (
         _presence(
-            meeting, [{"identity": "a", "name": "Alice M."}, {"identity": "b"}]
+            scribe_client,
+            meeting,
+            [{"identity": "a", "name": "Alice M."}, {"identity": "b"}],
         ).status_code
         == HTTP_204_NO_CONTENT
     )
@@ -252,13 +245,15 @@ def test_api_scribe_presence_records_participants():
 
 @override_settings(**SETTINGS)
 @pytest.mark.usefixtures("inline")
-def test_api_scribe_presence_empty_before_the_end_keeps_it_open(room_state):
+def test_api_scribe_presence_empty_before_the_end_keeps_it_open(
+    room_state, scribe_client
+):
     """An empty call before its planned end stays open."""
     meeting = factories.MeetingFactory(
         planned_end_at=timezone.now() + timedelta(minutes=5)
     )
 
-    assert _presence(meeting, []).status_code == HTTP_204_NO_CONTENT
+    assert _presence(scribe_client, meeting, []).status_code == HTTP_204_NO_CONTENT
 
     meeting.refresh_from_db()
     assert meeting.closed_at is None
@@ -267,13 +262,13 @@ def test_api_scribe_presence_empty_before_the_end_keeps_it_open(room_state):
 
 @override_settings(**SETTINGS)
 @pytest.mark.usefixtures("inline", "room_state")
-def test_api_scribe_presence_occupied_past_the_end_keeps_it_open():
+def test_api_scribe_presence_occupied_past_the_end_keeps_it_open(scribe_client):
     """People still talking past the planned end keep the meeting open."""
     meeting = factories.MeetingFactory(
         planned_end_at=timezone.now() - timedelta(minutes=5)
     )
 
-    response = _presence(meeting, [{"identity": "a", "name": "Alice"}])
+    response = _presence(scribe_client, meeting, [{"identity": "a", "name": "Alice"}])
 
     assert response.status_code == HTTP_204_NO_CONTENT
     meeting.refresh_from_db()
@@ -283,7 +278,9 @@ def test_api_scribe_presence_occupied_past_the_end_keeps_it_open():
 @override_settings(**SETTINGS)
 @responses.activate
 @pytest.mark.usefixtures("inline")
-def test_api_scribe_presence_closes_an_empty_meeting_past_its_end(room_state):
+def test_api_scribe_presence_closes_an_empty_meeting_past_its_end(
+    room_state, scribe_client
+):
     """
     Past its planned end and empty, the meeting closes: the transcript is saved
     and Ariane writes the closing into the meeting state.
@@ -307,7 +304,7 @@ def test_api_scribe_presence_closes_an_empty_meeting_past_its_end(room_state):
         "documents": [agenda],
     }
 
-    response = _presence(meeting, [])
+    response = _presence(scribe_client, meeting, [])
 
     assert response.status_code == HTTP_410_GONE
     meeting.refresh_from_db()
@@ -331,19 +328,42 @@ def test_api_scribe_presence_closes_an_empty_meeting_past_its_end(room_state):
     ]
 
     # The scribe reporting again changes nothing.
-    assert _presence(meeting, []).status_code == HTTP_410_GONE
+    assert _presence(scribe_client, meeting, []).status_code == HTTP_410_GONE
     assert len(room_state["written"]) == 1
 
 
 @override_settings(**SETTINGS)
 @pytest.mark.usefixtures("inline", "room_state")
-def test_api_scribe_presence_without_plan_never_closes():
-    """A meeting without planned end is only closed by its organizer."""
-    meeting = factories.MeetingFactory(planned_end_at=None)
+def test_api_scribe_presence_without_plan_keeps_it_open_for_an_hour(scribe_client):
+    """A meeting without planned end stays open for an hour, even empty."""
+    meeting = factories.MeetingFactory(
+        planned_end_at=None, starts_at=timezone.now() - timedelta(minutes=50)
+    )
 
-    assert _presence(meeting, []).status_code == HTTP_204_NO_CONTENT
+    assert _presence(scribe_client, meeting, []).status_code == HTTP_204_NO_CONTENT
     meeting.refresh_from_db()
     assert meeting.closed_at is None
+
+
+@override_settings(**SETTINGS)
+@pytest.mark.usefixtures("inline", "room_state")
+def test_api_scribe_presence_without_plan_closes_after_an_hour(scribe_client):
+    """
+    Past an hour, a meeting without planned end closes once empty, so that it
+    is not left open after the scribe stops following it.
+    """
+    meeting = factories.MeetingFactory(planned_end_at=None)
+    models.Meeting.objects.filter(pk=meeting.pk).update(
+        created_at=timezone.now() - timedelta(minutes=70)
+    )
+
+    occupied = _presence(scribe_client, meeting, [{"identity": "a", "name": "Alice"}])
+    assert occupied.status_code == HTTP_204_NO_CONTENT
+
+    assert _presence(scribe_client, meeting, []).status_code == HTTP_410_GONE
+    meeting.refresh_from_db()
+    assert meeting.closed_at is not None
+    assert meeting.auto_closed
 
 
 def test_publish_closed_keeps_an_organizer_closing(room_state):
@@ -369,6 +389,18 @@ def test_publish_closed_without_bot_writes_nothing(room_state):
     assert room_state["joined"] == []
 
 
+def test_publish_closed_not_invited_writes_nothing(monkeypatch, room_state):
+    """Ariane not invited into the conversation: nothing to write there."""
+    meeting = factories.MeetingFactory(chat_id="!room:localhost")
+    meeting_closing.close(meeting, auto=True)
+    monkeypatch.setattr(matrix, "ensure_in_room", lambda room_id: False)
+
+    with override_settings(**SETTINGS):
+        meeting_closing.publish_closed(meeting)
+
+    assert room_state["written"] == []
+
+
 def test_publish_closed_matrix_failure_is_only_logged(monkeypatch, room_state):
     """A Matrix failure does not break the closing."""
     meeting = factories.MeetingFactory(chat_id="!room:localhost")
@@ -389,7 +421,7 @@ def test_publish_closed_matrix_failure_is_only_logged(monkeypatch, room_state):
 
 
 @override_settings(**SETTINGS)
-def test_api_scribe_chat_records_messages_once():
+def test_api_scribe_chat_records_messages_once(scribe_client):
     """Chat messages are kept once, in arrival order."""
     meeting = factories.MeetingFactory()
     url = f"/api/v1.0/scribe/rooms/{meeting.livekit_room}/chat/"
@@ -401,7 +433,7 @@ def test_api_scribe_chat_records_messages_once():
     }
 
     for _ in range(2):
-        response = _scribe_client().post(url, {"messages": [message]}, format="json")
+        response = scribe_client.post(url, {"messages": [message]}, format="json")
         assert response.status_code == HTTP_204_NO_CONTENT
 
     assert [
@@ -410,11 +442,11 @@ def test_api_scribe_chat_records_messages_once():
 
 
 @override_settings(**SETTINGS)
-def test_api_scribe_chat_closed_meeting():
+def test_api_scribe_chat_closed_meeting(scribe_client):
     """A closed meeting takes no more messages."""
     meeting = factories.MeetingFactory(closed_at=timezone.now())
 
-    response = _scribe_client().post(
+    response = scribe_client.post(
         f"/api/v1.0/scribe/rooms/{meeting.livekit_room}/chat/",
         {"messages": [{"id": "m1", "sender_identity": "a", "text": "Salut"}]},
         format="json",
@@ -425,19 +457,14 @@ def test_api_scribe_chat_closed_meeting():
 
 
 @override_settings(**SETTINGS)
-def test_api_scribe_presence_wrong_token():
+def test_api_scribe_presence_wrong_token(scribe_client):
     """Presence reports need the scribe token."""
     meeting = factories.MeetingFactory(
         planned_end_at=timezone.now() - timedelta(minutes=1)
     )
-    client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION="Bearer nope")
+    scribe_client.credentials(HTTP_AUTHORIZATION="Bearer nope")
 
-    response = client.post(
-        f"/api/v1.0/scribe/rooms/{meeting.livekit_room}/presence/",
-        {"participants": []},
-        format="json",
-    )
+    response = _presence(scribe_client, meeting, [])
 
     assert response.status_code in (401, 403)
     meeting.refresh_from_db()

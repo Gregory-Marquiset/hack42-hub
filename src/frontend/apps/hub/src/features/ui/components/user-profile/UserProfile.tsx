@@ -20,9 +20,6 @@ import {
 export const UserProfile = () => {
   const { user } = useAuth();
   const [menuVersion, setMenuVersion] = useState(0);
-  // `UserMenu`'s own avatar only ever renders initials — there's no prop to
-  // give it a photo — so the real photo is layered on top as a plain `<img>`
-  // absolutely positioned over its trigger button (see UserProfile.scss).
   const entries = useDriverEntries();
   const avatarAccount = entries.find(
     (entry) => entry.driver.supportsAvatarUpload,
@@ -75,6 +72,10 @@ export const UserProfile = () => {
           </>
         }
       />
+      {/* `UserMenu`'s own avatar only ever renders initials — there's no
+       * prop to give it a photo — so the real photo is layered on top as a
+       * plain `<img>` absolutely positioned over its trigger button (see
+       * UserProfile.scss). */}
       {avatarSrc && (
         <img
           src={avatarSrc}

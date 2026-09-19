@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { copyMeetingLink } from "@/features/chat/meetings/copyMeetingLink";
 import {
-  formatMeetingDuration,
+  formatMeetingProgress,
   getMeetingProgress,
 } from "@/features/drivers/meetingTime";
 import type { ChatMeeting } from "@/features/drivers/types";
@@ -57,11 +57,8 @@ export const MeetingsList = ({
     if (!isOngoing) {
       return `${formatMeetingDay(meeting.startedAt, locale)} ${formatMeetingTime(meeting.startedAt, locale)}`;
     }
-    const progress = getMeetingProgress(meeting, now);
-    const elapsed = formatMeetingDuration(progress.elapsedMs);
-    return progress.plannedMs === undefined
-      ? `${t("Ongoing")} · ${elapsed}`
-      : `${t("Ongoing")} · ${elapsed} / ${formatMeetingDuration(progress.plannedMs)}`;
+    const progress = formatMeetingProgress(getMeetingProgress(meeting, now), t);
+    return `${t("Ongoing")} · ${progress}`;
   };
 
   const rows = [
@@ -109,13 +106,13 @@ export const MeetingsList = ({
               {t("No meeting planned")}
             </p>
           ) : (
-            <ul className="hub__chat-meetings__list">
+            <ul className="hub__tools-list">
               {rows.map(({ meeting, isOngoing }) => {
                 const isOverdue =
                   isOngoing && getMeetingProgress(meeting, now).isOverdue;
                 const label = formatMeetingLabel(meeting, t("Meeting"), locale);
                 return (
-                  <li key={meeting.id} className="hub__chat-meetings__row">
+                  <li key={meeting.id} className="hub__tools-list__row">
                     <button
                       type="button"
                       className="hub__chat-meetings__row-button"
@@ -124,9 +121,7 @@ export const MeetingsList = ({
                       }
                       tabIndex={tabIndex}
                     >
-                      <span className="hub__chat-meetings__row-label">
-                        {label}
-                      </span>
+                      <span className="hub__tools-list__label">{label}</span>
                       <span
                         className="hub__chat-meetings__row-badge"
                         data-ongoing={isOngoing || undefined}
@@ -141,10 +136,10 @@ export const MeetingsList = ({
                         <ChevronRight />
                       </span>
                     </button>
-                    <span className="hub__chat-meetings__row-actions">
+                    <span className="hub__tools-list__actions">
                       <button
                         type="button"
-                        className="hub__chat-meetings__icon-button"
+                        className="hub__tools-list__icon-button"
                         aria-label={t("Copy the invitation link of {{name}}", {
                           name: label,
                         })}

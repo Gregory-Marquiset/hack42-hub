@@ -133,9 +133,8 @@ def test_an_unreadable_thread_root_costs_the_root_not_the_answer(monkeypatch):
     monkeypatch.setattr(matrix, "thread_replies", lambda *_args: [reply])
     monkeypatch.setattr(handlers, "history_horizon", lambda *_args: 0)
 
-    messages, answer_root = handlers.build_context("!room:localhost", ping)
+    messages = handlers.build_context("!room:localhost", ping)
 
-    assert answer_root == root_id
     assert [entry["role"] for entry in messages] == ["user"]
 
 
@@ -150,52 +149,6 @@ def test_a_readable_thread_root_is_part_of_the_context(monkeypatch):
     monkeypatch.setattr(matrix, "thread_replies", lambda *_args: [])
     monkeypatch.setattr(handlers, "history_horizon", lambda *_args: 0)
 
-    messages, _ = handlers.build_context("!room:localhost", ping)
+    messages = handlers.build_context("!room:localhost", ping)
 
     assert "la question de depart" in messages[0]["content"]
-
-
-def test_a_forgotten_event_can_be_handled_again():
-    """A ping lost to a passing failure must not be silenced for good.
-
-    `SEEN` promises "this event was answered". When the homeserver is the one
-    that failed, the promise is false and the id has to be given back.
-    """
-    seen = handlers.SEEN
-
-    assert seen.add_if_new("$transient") is True
-    assert seen.add_if_new("$transient") is False
-
-    seen.forget("$transient")
-
-    assert seen.add_if_new("$transient") is True
-    seen.forget("$transient")
-
-
-def test_she_always_answers_in_a_thread():
-    """A question put to her is between her and the person asking.
-
-    Letting answers run down the main timeline pushes the room's own
-    conversation off the screen, and a room where several people ask her
-    things becomes unreadable.
-    """
-    from_room = {
-        "event_id": "$asked",
-        "content": {"msgtype": "m.text", "body": "@Ariane bonjour"},
-    }
-
-    assert handlers.aside_root(from_room) == "$asked"
-
-
-def test_a_question_from_a_thread_stays_in_that_thread():
-    """She never opens a second thread on top of the one being used."""
-    from_thread = {
-        "event_id": "$asked",
-        "content": {
-            "msgtype": "m.text",
-            "body": "@Ariane et ensuite ?",
-            "m.relates_to": {"rel_type": "m.thread", "event_id": "$root"},
-        },
-    }
-
-    assert handlers.aside_root(from_thread) == "$root"

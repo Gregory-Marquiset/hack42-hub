@@ -384,7 +384,7 @@ class MeetingView(drf.views.APIView):
                 livekit_room=room["id"],
                 organizer=request.user,
                 chat_id=details["chat_id"],
-                space_name=details["space_name"].strip(),
+                space_name=details["space_name"],
                 title=details["title"],
                 starts_at=details.get("starts_at"),
                 planned_end_at=details.get("planned_end_at"),
@@ -392,7 +392,11 @@ class MeetingView(drf.views.APIView):
                 time_zone=details["time_zone"],
             )
             models.MeetingAttachment.objects.bulk_create(
-                models.MeetingAttachment(meeting=meeting, **attachment)
+                models.MeetingAttachment(
+                    meeting=meeting,
+                    size=len(attachment["content"].encode()),
+                    **attachment,
+                )
                 for attachment in details["attachments"]
             )
         # Ariane tells the members: scheduled for later, or starting now.
@@ -403,6 +407,13 @@ class MeetingView(drf.views.APIView):
             {"url": room["url"], "slug": room["slug"]},
             status=drf.status.HTTP_201_CREATED,
         )
+
+
+class DocsNotConfigured(drf.exceptions.APIException):
+    """The Hub has no Docs to save documents in."""
+
+    status_code = drf.status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Docs is not configured."
 
 
 def _organized_meeting(request, slug):
@@ -417,7 +428,7 @@ class MeetingDetailView(drf.views.APIView):
     """API view keeping the Hub's copy of a meeting in step with its state."""
 
     permission_classes = [IsAuthenticated]
-    throttle_scope = "meeting_transcript"
+    throttle_scope = "meeting_update"
 
     def patch(self, request, slug):
         """
@@ -430,7 +441,7 @@ class MeetingDetailView(drf.views.APIView):
         meeting = _organized_meeting(request, slug)
 
         if "title" in serializer.validated_data:
-            meeting.title = serializer.validated_data["title"].strip()
+            meeting.title = serializer.validated_data["title"]
             meeting.save(update_fields=["title", "updated_at"])
         if "extend_minutes" in serializer.validated_data:
             meeting_closing.extend(meeting, serializer.validated_data["extend_minutes"])
@@ -465,8 +476,8 @@ class MeetingTranscriptView(drf.views.APIView):
         document = None
         if not docs.is_docs_configured():
             response = drf.response.Response(
-                {"detail": "Docs is not configured."},
-                status=drf.status.HTTP_503_SERVICE_UNAVAILABLE,
+                {"detail": DocsNotConfigured.default_detail},
+                status=DocsNotConfigured.status_code,
             )
         else:
             try:
@@ -483,10 +494,9 @@ class MeetingTranscriptView(drf.views.APIView):
                 )
 
         # Once, whatever became of the transcript.
-        if meeting.chat_id and meeting_notifications.is_enabled():
-            meeting_closing.run_in_background(
-                meeting_notifications.notify_closed, meeting.pk, document
-            )
+        meeting_closing.run_in_background(
+            meeting_notifications.notify_closed, meeting.pk, document
+        )
         return response
 
 
@@ -494,14 +504,24 @@ def _is_member(request, meeting, openid_token):
     """The organizer, or a member of the meeting's conversation."""
     if meeting.organizer_id == request.user.pk:
         return True
-    if not openid_token or not meeting.chat_id or not matrix.can_write_rooms():
+    if not openid_token or not meeting.chat_id or not matrix.can_read_members():
         return False
     user_id = matrix.openid_user_id(openid_token)
     return bool(user_id) and user_id in matrix.joined_members(meeting.chat_id)
 
 
-class MatrixUnavailable(Exception):
+class MatrixUnavailable(drf.exceptions.APIException):
     """Matrix could not say whether someone is a member."""
+
+    status_code = drf.status.HTTP_502_BAD_GATEWAY
+    default_detail = "Matrix could not confirm the membership."
+
+
+class MeetingClosed(drf.exceptions.APIException):
+    """The meeting is closed: nothing can be added to it any more."""
+
+    status_code = drf.status.HTTP_409_CONFLICT
+    default_detail = "The meeting is closed."
 
 
 def _member_meeting(request, slug, openid_token):
@@ -523,11 +543,14 @@ def _member_meeting(request, slug, openid_token):
     return meeting
 
 
-def _matrix_unavailable():
-    return drf.response.Response(
-        {"detail": "Matrix could not confirm the membership."},
-        status=drf.status.HTTP_502_BAD_GATEWAY,
-    )
+def _ensure_open(meeting):
+    if meeting.closed_at is not None:
+        raise MeetingClosed
+
+
+def _ensure_docs():
+    if not docs.is_docs_configured():
+        raise DocsNotConfigured
 
 
 def _attachment_data(attachment):
@@ -553,12 +576,9 @@ class MeetingDocumentsView(drf.views.APIView):
         """
         serializer = serializers.MeetingMemberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
         return drf.response.Response(
             {
                 "agenda": meeting.agenda,
@@ -586,23 +606,12 @@ class MeetingDocumentCreateView(drf.views.APIView):
         """
         serializer = serializers.MeetingDocumentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
 
-        if meeting.closed_at is not None:
-            return drf.response.Response(
-                {"detail": "The meeting is closed."},
-                status=drf.status.HTTP_409_CONFLICT,
-            )
-        if not docs.is_docs_configured():
-            return drf.response.Response(
-                {"detail": "Docs is not configured."},
-                status=drf.status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+        _ensure_open(meeting)
+        _ensure_docs()
 
         title = serializer.validated_data["title"]
         try:
@@ -637,18 +646,11 @@ class MeetingAttachmentsView(drf.views.APIView):
         """
         serializer = serializers.MeetingAttachmentUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
 
-        if meeting.closed_at is not None:
-            return drf.response.Response(
-                {"detail": "The meeting is closed."},
-                status=drf.status.HTTP_409_CONFLICT,
-            )
+        _ensure_open(meeting)
         upload = serializer.validated_data["file"]
         if upload.size > settings.MEETING_ATTACHMENT_MAX_BYTES:
             return drf.response.Response(
@@ -682,39 +684,23 @@ class MeetingAttachmentView(drf.views.APIView):
         """
         serializer = serializers.MeetingMemberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
         attachment = meeting.attachments.filter(pk=attachment_id).first()
         if attachment is None:
             raise Http404
 
-        if attachment.file:
-            try:
-                content = attachment.file.open("rb")
-            except OSError as error:
-                raise Http404 from error
-        else:
-            content = io.BytesIO(attachment.content.encode())
+        try:
+            content = attachment.open_content()
+        except OSError as error:
+            raise Http404 from error
         return FileResponse(
             content,
             as_attachment=True,
             filename=attachment.name,
             content_type="application/octet-stream",
         )
-
-
-def _room_name(meeting):
-    """The conversation's name as Matrix knows it, when Ariane can ask."""
-    if not meeting.chat_id or not matrix.can_write_rooms():
-        return ""
-    try:
-        return matrix.room_name(meeting.chat_id) or ""
-    except matrix.MatrixError:
-        return ""
 
 
 class MeetingArchiveView(drf.views.APIView):
@@ -732,12 +718,9 @@ class MeetingArchiveView(drf.views.APIView):
         """
         serializer = serializers.MeetingArchiveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
 
         if meeting.closed_at is None:
             return drf.response.Response(
@@ -745,9 +728,9 @@ class MeetingArchiveView(drf.views.APIView):
                 status=drf.status.HTTP_409_CONFLICT,
             )
 
-        chat_name = serializer.validated_data["chat_name"].strip() or _room_name(
-            meeting
-        )
+        chat_name = serializer.validated_data[
+            "chat_name"
+        ] or meeting_notifications.chat_name(meeting)
         with timezone.override(meeting.time_zone):
             content = archives.build_archive(
                 meeting,

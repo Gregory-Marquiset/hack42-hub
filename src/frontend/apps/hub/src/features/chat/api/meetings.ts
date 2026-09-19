@@ -1,5 +1,6 @@
 import { fetchAPI } from "@/features/api/fetchApi";
 import type { ChatMeetingDocument } from "@/features/drivers/types";
+import { isWebLink } from "@/features/drivers/webLink";
 
 const meetingPath = (slug: string) => `meetings/${encodeURIComponent(slug)}/`;
 
@@ -182,7 +183,7 @@ export const fetchMeetingArchive = async (
         openid_token: openIdToken ?? "",
         // Only web links are listed in the archive.
         documents: documents
-          .filter(({ url }) => /^https?:\/\//i.test(url))
+          .filter(({ url }) => isWebLink(url))
           .map(({ title, url }) => ({ title, url })),
         chat_name: chatName ?? "",
       }),

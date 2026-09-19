@@ -34,8 +34,12 @@ SERVICE_PREFIX = "hub-as_"
 
 
 def is_enabled():
-    """Whether Ariane can write to the members."""
-    return settings.MEETING_NOTIFICATIONS_ENABLED and matrix.can_write_rooms()
+    """Whether Ariane can find the members and write to them."""
+    return (
+        settings.MEETING_NOTIFICATIONS_ENABLED
+        and matrix.can_write_rooms()
+        and matrix.can_read_members()
+    )
 
 
 def _claim(meeting, field):
@@ -118,16 +122,21 @@ def _send_to_members(meeting, text, extra=None):
             logger.warning("meeting %s: %s not told: %s", meeting.slug, user_id, error)
 
 
+def chat_name(meeting):
+    """The conversation's name as Matrix knows it, or "" when it cannot be read."""
+    if not meeting.chat_id:
+        return ""
+    try:
+        return matrix.room_name(meeting.chat_id) or ""
+    except matrix.MatrixError:
+        return ""
+
+
 def _names(meeting):
     """The meeting's and the conversation's names, for the messages."""
     title = meeting.title or "sans titre"
-    room = None
-    if meeting.chat_id and matrix.can_write_rooms():
-        try:
-            room = matrix.room_name(meeting.chat_id)
-        except matrix.MatrixError:
-            room = None
-    return title, _room_and_space(meeting, room or "votre conversation")
+    room = chat_name(meeting) or "votre conversation"
+    return title, _room_and_space(meeting, room)
 
 
 def _room_and_space(meeting, room):
@@ -189,24 +198,34 @@ def closed_message(meeting, document=None):
     return "\n".join(lines)
 
 
+def _to_tell(meeting_pk, field):
+    """
+    The meeting, when its members are to be told about it and were not yet;
+    `None` when there is nobody to tell or Ariane cannot write.
+    """
+    if not is_enabled():
+        return None
+    meeting = models.Meeting.objects.get(pk=meeting_pk)
+    if meeting.chat_id and _claim(meeting, field):
+        return meeting
+    return None
+
+
 def notify_scheduled(meeting_pk):
     """Tell the members a meeting was scheduled, once."""
-    meeting = models.Meeting.objects.get(pk=meeting_pk)
-    if _claim(meeting, "scheduled_notified_at"):
+    if meeting := _to_tell(meeting_pk, "scheduled_notified_at"):
         _send_to_members(meeting, scheduled_message(meeting))
 
 
 def notify_started(meeting_pk):
     """Tell the members a meeting starts, once."""
-    meeting = models.Meeting.objects.get(pk=meeting_pk)
-    if _claim(meeting, "started_notified_at"):
+    if meeting := _to_tell(meeting_pk, "started_notified_at"):
         _send_to_members(meeting, started_message(meeting), meeting_invitation(meeting))
 
 
 def notify_closed(meeting_pk, document=None):
     """Tell the members a meeting is over, once, with its transcript."""
-    meeting = models.Meeting.objects.get(pk=meeting_pk)
-    if _claim(meeting, "closed_notified_at"):
+    if meeting := _to_tell(meeting_pk, "closed_notified_at"):
         _send_to_members(meeting, closed_message(meeting, document))
 
 

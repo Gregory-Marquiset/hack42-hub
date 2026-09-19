@@ -96,6 +96,17 @@ describe("model.matchesMessageFilters", () => {
       expect(matchesMessageFilters(doc, filters)).toBe(false);
     });
 
+    it("does not match the sender's name for a mentioned id", () => {
+      // Alice sent a message mentioning Bob: `mentions:alice` must not find it.
+      const doc = createDoc({
+        senderName: "Alice",
+        mentionedUserIds: ["@bob:example.com"],
+      });
+      const filters = emptySearchFilters();
+      filters.mentions.push("alice");
+      expect(matchesMessageFilters(doc, filters)).toBe(false);
+    });
+
     it("matches when any mentions: token matches (OR semantics)", () => {
       const doc = createDoc({ mentionedUserIds: ["@alice:example.com"] });
       const filters = emptySearchFilters();

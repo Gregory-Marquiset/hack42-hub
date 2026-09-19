@@ -26,7 +26,6 @@ import { useChatThreadActions } from "../../hooks/useChatThreadActions";
 import { useEditChatMessage } from "../../hooks/useEditChatMessage";
 import { useSendChatThreadReply } from "../../hooks/useSendChatThreadReply";
 import { ChatBubble } from "../ChatBubble";
-import { useChatMembers } from "../../hooks/useChatMembers";
 import { ChatComposer } from "../ChatComposer";
 
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
@@ -70,16 +69,11 @@ export const ThreadDetail = ({
   // Same candidates as the main composer: a thread is still the same room,
   // and mentioning the assistant here invites her just the same.
   const { chat } = useChat(chatRef);
-  const { present } = useChatMembers(chatRef, true);
   const {
-    candidate: assistantCandidate,
+    mentionCandidates,
     ensureInvited,
     unavailableReason: assistantUnavailableReason,
   } = useAssistantMention(chatRef, chat);
-  const mentionCandidates = useMemo(
-    () => (assistantCandidate ? [...present, assistantCandidate] : present),
-    [assistantCandidate, present],
-  );
   const [editingMessage, setEditingMessage] =
     useState<EditingChatMessage | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);

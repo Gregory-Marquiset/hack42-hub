@@ -42,7 +42,7 @@ vi.mock("@/features/ui/components/toast", () => ({
 }));
 
 const CHAT_REF: ChatRef = { accountId: "matrix", chatId: "!room:localhost" };
-const SUMMARY = { id: "s", title: "Transcription", url: "https://docs/s/" };
+const TRANSCRIPT = { id: "s", title: "Transcription", url: "https://docs/s/" };
 const LINK = { id: "l", title: "Support", url: "https://docs/l/" };
 const MEETING: ChatMeeting = {
   id: "abc-defg-hij",
@@ -50,8 +50,7 @@ const MEETING: ChatMeeting = {
   organizerId: "@orga:localhost",
   startedAt: "2026-09-17T08:00:00.000Z",
   endedAt: "2026-09-17T09:00:00.000Z",
-  documents: [LINK],
-  summary: SUMMARY,
+  documents: [TRANSCRIPT, LINK],
 };
 
 const setup = () => {
@@ -98,7 +97,7 @@ describe("useMeetingArchive", () => {
     expect(mocks.fetchMeetingArchive).toHaveBeenCalledWith("abc-defg-hij", {
       openIdToken: "openid",
       chatName: "Équipe produit",
-      documents: [SUMMARY, LINK],
+      documents: [TRANSCRIPT, LINK],
     });
     expect(click).toHaveBeenCalledOnce();
     expect(mocks.notifyError).not.toHaveBeenCalled();

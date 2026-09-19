@@ -1,11 +1,11 @@
 import { ReactNode } from "react";
 
-export interface HighlightExcerptProps {
+interface HighlightExcerptProps {
   excerpt: string;
   matchRanges: [number, number][];
 }
 
-export const renderHighlightedExcerpt = (
+const renderHighlightedExcerpt = (
   excerpt: string,
   matchRanges: [number, number][],
 ): ReactNode[] => {

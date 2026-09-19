@@ -1,6 +1,4 @@
-import { useMemo } from "react";
-
-import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import { useAccountDriver } from "@/features/drivers/useAccountDriver";
 import type { AccountId } from "@/features/drivers/types";
 
 /**
@@ -14,16 +12,4 @@ import type { AccountId } from "@/features/drivers/types";
  */
 export const useChatEncryptionSupport = (
   accountId: AccountId | null,
-): boolean => {
-  const entries = useDriverEntries();
-
-  return useMemo(() => {
-    if (!accountId) {
-      return false;
-    }
-    return (
-      entries.find((entry) => entry.accountId === accountId)?.driver
-        .supportsEncryption ?? false
-    );
-  }, [entries, accountId]);
-};
+): boolean => useAccountDriver(accountId)?.supportsEncryption ?? false;

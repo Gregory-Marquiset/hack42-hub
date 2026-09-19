@@ -10,8 +10,9 @@ thread authors, in people search, direct-chat headers and the members list.
 It is global, independent of conversation membership and access permissions.
 
 `GET /api/v1.0/profile-role/` reads the signed-in user's role. `PATCH` accepts
-`role` and a transient `matrix_access_token` from the connected driver. Hub
-verifies that token with `/_matrix/client/v3/account/whoami` on its configured
+`role` and a short-lived `openid_token` the connected driver requests from the
+homeserver (the browser never sends its access token). Hub verifies that token
+with `/_matrix/federation/v1/openid/userinfo` on its configured
 `MATRIX_HOMESERVER_URL`, then links the returned id to the current Hub user.
 The URL cannot be supplied by the caller. Tokens are neither persisted nor
 returned. An existing identity link cannot be transferred or replaced through

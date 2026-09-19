@@ -345,13 +345,36 @@ def test_api_scribe_presence_closes_an_empty_meeting_past_its_end(room_state):
 
 @override_settings(**SETTINGS)
 @pytest.mark.usefixtures("inline", "room_state")
-def test_api_scribe_presence_without_plan_never_closes():
-    """A meeting without planned end is only closed by its organizer."""
-    meeting = factories.MeetingFactory(planned_end_at=None)
+def test_api_scribe_presence_without_plan_keeps_it_open_for_an_hour():
+    """A meeting without planned end stays open for an hour, even empty."""
+    meeting = factories.MeetingFactory(
+        planned_end_at=None, starts_at=timezone.now() - timedelta(minutes=50)
+    )
 
     assert _presence(meeting, []).status_code == HTTP_204_NO_CONTENT
     meeting.refresh_from_db()
     assert meeting.closed_at is None
+
+
+@override_settings(**SETTINGS)
+@pytest.mark.usefixtures("inline", "room_state")
+def test_api_scribe_presence_without_plan_closes_after_an_hour():
+    """
+    Past an hour, a meeting without planned end closes once empty, so that it
+    is not left open after the scribe stops following it.
+    """
+    meeting = factories.MeetingFactory(planned_end_at=None)
+    models.Meeting.objects.filter(pk=meeting.pk).update(
+        created_at=timezone.now() - timedelta(minutes=70)
+    )
+
+    occupied = _presence(meeting, [{"identity": "a", "name": "Alice"}])
+    assert occupied.status_code == HTTP_204_NO_CONTENT
+
+    assert _presence(meeting, []).status_code == HTTP_410_GONE
+    meeting.refresh_from_db()
+    assert meeting.closed_at is not None
+    assert meeting.auto_closed
 
 
 def test_publish_closed_keeps_an_organizer_closing(room_state):

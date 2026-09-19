@@ -143,6 +143,14 @@ def test_api_meetings_create_with_details():
         {"time_zone": "Mars/Olympus"},
         {"attachments": [{"name": "a.md"}]},
         {"planned_end_at": "demain"},
+        {
+            "starts_at": "2026-09-17T10:00:00Z",
+            "planned_end_at": "2026-09-17T09:00:00Z",
+        },
+        {
+            "starts_at": "2026-09-17T10:00:00Z",
+            "planned_end_at": "2026-09-17T10:00:00Z",
+        },
     ],
 )
 def test_api_meetings_create_invalid_details(body):

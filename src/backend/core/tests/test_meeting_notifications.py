@@ -394,7 +394,7 @@ def test_organizer_closing_tells_the_members(homeserver):
 @override_settings(**SETTINGS)
 def test_automatic_closing_tells_the_members(homeserver, monkeypatch):
     """The automatic closing is announced as such."""
-    monkeypatch.setattr(matrix, "ensure_in_room", lambda room_id: None)
+    monkeypatch.setattr(matrix, "ensure_in_room", lambda room_id: True)
     monkeypatch.setattr(
         matrix, "get_room_state", lambda *args: {"meetingUrl": "u", "startedAt": 1}
     )

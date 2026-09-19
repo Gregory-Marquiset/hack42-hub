@@ -62,7 +62,11 @@ def fixture_room_state(monkeypatch):
     def set_room_state(room_id, _event_type, state_key, content):
         state["written"].append((room_id, state_key, content))
 
-    monkeypatch.setattr(matrix, "ensure_in_room", state["joined"].append)
+    def ensure_in_room(room_id):
+        state["joined"].append(room_id)
+        return True
+
+    monkeypatch.setattr(matrix, "ensure_in_room", ensure_in_room)
     monkeypatch.setattr(matrix, "get_room_state", get_room_state)
     monkeypatch.setattr(matrix, "set_room_state", set_room_state)
     return state
@@ -398,6 +402,18 @@ def test_publish_closed_without_bot_writes_nothing(room_state):
         meeting_closing.publish_closed(meeting)
 
     assert room_state["joined"] == []
+
+
+def test_publish_closed_not_invited_writes_nothing(monkeypatch, room_state):
+    """Ariane not invited into the conversation: nothing to write there."""
+    meeting = factories.MeetingFactory(chat_id="!room:localhost")
+    meeting_closing.close(meeting, auto=True)
+    monkeypatch.setattr(matrix, "ensure_in_room", lambda room_id: False)
+
+    with override_settings(**SETTINGS):
+        meeting_closing.publish_closed(meeting)
+
+    assert room_state["written"] == []
 
 
 def test_publish_closed_matrix_failure_is_only_logged(monkeypatch, room_state):

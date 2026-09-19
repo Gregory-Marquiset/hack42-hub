@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Reopen the group already shared with the same people from
+  New Chat, instead of creating a new one each time: the assistant, who
+  joins every clear group, made it look like another set of people.
 - 🐛(search) Stop the message search index from growing without end: a
   conversation left is dropped from it, and a conversation keeps its most
   recent 2,000 messages.

@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(notifications) Read the muted conversations through the shared cache
+  of notification rules, without an unhandled error before the chat
+  account is connected, and without an older answer overwriting a newer.
 - 🐛(notifications) Show a notification category as off when its rules are
   set to stay silent (an empty action list since Matrix 1.7), and switch
   it back on for real by restoring the rules' default actions.

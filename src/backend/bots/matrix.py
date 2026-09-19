@@ -1,12 +1,17 @@
 """How Ariane touches Matrix.
 
-One token: the Application Service token. It lets her act as any account in her
-namespace through `?user_id=`, and that is all the authority she has. It cannot
-get her into a room nobody invited her to - the client API answers
-`M_FORBIDDEN` there, by design, and that refusal is now the feature rather than
-an obstacle to route around.
+She acts with one token: the Application Service token. It lets her act as any
+account in her namespace through `?user_id=`, and that is all the authority she
+has. It cannot get her into a room nobody invited her to - the client API
+answers `M_FORBIDDEN` there, by design, and that refusal is the feature rather
+than an obstacle to route around.
 
-Never hand the token to the frontend.
+The backend holds a second one, the Synapse admin token (`MATRIX_ADMIN_TOKEN`),
+used through `_admin` by two read-only calls and nothing else, for the Hub
+meetings: `joined_members` (who may read a meeting, whom to tell about it) and
+`room_name` (how to call the conversation). Neither acts in a room.
+
+Never hand either token to the frontend.
 """
 
 from __future__ import annotations
@@ -21,10 +26,6 @@ from django.conf import settings
 import requests
 
 logger = logging.getLogger(__name__)
-
-# `_call` mirrors an HTTP call: method, path, token and the three optional
-# request parts. Splitting it would only move the arguments elsewhere.
-# pylint: disable=too-many-arguments
 
 CLIENT_API = "/_matrix/client/v3"
 CLIENT_API_V1 = "/_matrix/client/v1"
@@ -99,14 +100,14 @@ def is_member(room_id: str) -> bool:
 def ensure_in_room(room_id: str) -> bool:
     """Accept an invitation to this room, and say whether Ariane is now in it.
 
-    She is never let in by force. The previous version fell back to the Synapse
-    admin API when the ordinary join was refused, which meant one member could
-    put an assistant into a room without asking anyone - including the people
-    already talking in it. An invitation is the whole consent mechanism Matrix
-    offers, and using it is the difference between a colleague and a wiretap.
+    She is never let in by force: no admin API, only an ordinary join, which
+    the homeserver refuses without an invitation. Letting one member put an
+    assistant into a room would skip everyone already talking in it; an
+    invitation is the whole consent mechanism Matrix offers, and using it is
+    the difference between a colleague and a wiretap.
 
-    Returns False when she has not been invited. The caller answers that in the
-    room, so a ping never produces silence.
+    Returns False when she has not been invited: she cannot speak in the room
+    then, and stays silent there.
     """
     if is_member(room_id):
         return True
@@ -402,10 +403,9 @@ def set_room_state(
 def joined_members(room_id: str) -> set[str]:
     """Who is in a room now, so the backend can answer "may this person read it".
 
-    This is the one call that does not go through `_as`, and the only remaining
-    use of the Synapse admin token: it answers for rooms Ariane was never
-    invited to, which is the point - the question is about the person asking,
-    not about her. It reads; it never joins anything.
+    It goes through the Synapse admin API rather than `_as`: it answers for
+    rooms Ariane was never invited to, which is the point - the question is
+    about the person asking, not about her. It reads; it never joins anything.
     """
     members = _admin(
         "GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe=''):s}/members"

@@ -134,9 +134,8 @@ def test_an_unreadable_thread_root_costs_the_root_not_the_answer(monkeypatch):
     monkeypatch.setattr(matrix, "thread_replies", lambda *_args: [reply])
     monkeypatch.setattr(handlers, "history_horizon", lambda *_args: 0)
 
-    messages, answer_root = handlers.build_context("!room:localhost", ping)
+    messages = handlers.build_context("!room:localhost", ping)
 
-    assert answer_root == root_id
     assert [entry["role"] for entry in messages] == ["user"]
 
 
@@ -151,7 +150,7 @@ def test_a_readable_thread_root_is_part_of_the_context(monkeypatch):
     monkeypatch.setattr(matrix, "thread_replies", lambda *_args: [])
     monkeypatch.setattr(handlers, "history_horizon", lambda *_args: 0)
 
-    messages, _ = handlers.build_context("!room:localhost", ping)
+    messages = handlers.build_context("!room:localhost", ping)
 
     assert "la question de depart" in messages[0]["content"]
 

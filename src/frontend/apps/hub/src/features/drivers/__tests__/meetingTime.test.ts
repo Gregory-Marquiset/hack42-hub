@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatMeetingDuration,
+  formatMeetingProgress,
   getMeetingProgress,
   getConversationMeetingState,
   getMeetingStatus,
@@ -98,6 +99,19 @@ describe("formatMeetingDuration", () => {
     [150 * MINUTE, "2 h 30"],
   ])("formats %d ms as %s", (ms, expected) => {
     expect(formatMeetingDuration(ms)).toBe(expected);
+  });
+});
+
+describe("formatMeetingProgress", () => {
+  it("shows the time spent, against the planned duration when there is one", () => {
+    expect(formatMeetingProgress(getMeetingProgress(meeting(), NOW))).toBe(
+      "10 min",
+    );
+    expect(
+      formatMeetingProgress(
+        getMeetingProgress(meeting({ plannedDurationMinutes: 45 }), NOW),
+      ),
+    ).toBe("10 min / 45 min");
   });
 });
 

@@ -302,9 +302,6 @@ export class MatrixMessageSearch {
     messageBackfills.enqueue({
       key: `${this.poolKey}:${roomId}`,
       account: this.poolKey,
-      activity: Date.now(),
-      added: Date.now(),
-      due: 0,
       run: (cancelled) => this.runBackfill(roomId, room, cancelled),
     });
   }

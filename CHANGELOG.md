@@ -208,6 +208,8 @@ and this project adheres to
 
 ### Changed
 
+- ♻️(search) Reduce the message history pool to a first-come queue of two
+  jobs, whose cancel also stops the jobs already running.
 - ✨(frontend) Expand the message composer up to eight lines
 - ⚡(frontend) Speed up the emoji picker and align reaction artwork
 - 💄(frontend) Improve message dates and bubble readability

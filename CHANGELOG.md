@@ -240,6 +240,9 @@ and this project adheres to
 - ⚡(frontend) Refresh the open Documents panel only when a new message
   shares a document, not on every message: each refresh read up to 500
   events of the conversation's history.
+- 🐛(meetings) Keep the new Docs document draft open when the document is
+  created but cannot be listed with the meeting, and retry listing that
+  same document instead of leaving it orphaned in Docs.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

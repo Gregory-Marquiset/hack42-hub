@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Remove the profile photo laid over a library avatar when
+  it changes or its screen closes, instead of leaving the old one behind,
+  and stop re-checking the page on every change of the document.
 - 🐛(search) Cancel the last step of a jump to a message when its
   conversation view closes before it runs.
 - 🐛(frontend) Show your own presence right after choosing busy as others

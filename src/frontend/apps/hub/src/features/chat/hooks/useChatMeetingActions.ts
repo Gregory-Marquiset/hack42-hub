@@ -28,14 +28,17 @@ export type UseChatMeetingActionsResult = {
   extendMeeting: (meetingId: string, minutes: number) => Promise<void>;
   /** Renames the meeting for every member (organizer only). */
   renameMeeting: (meetingId: string, title: string) => Promise<void>;
-  /** Lists a link (a Docs document…) with the meeting (organizer only). */
+  /** Lists a link (a Docs document…) with the meeting (any member). */
   addLink: (meetingId: string, document: ChatMeetingDocument) => Promise<void>;
-  /** Opens or closes the whiteboard for every participant. */
+  /** Opens or closes the whiteboard for every participant (any member). */
   setBoard: (meetingId: string, isOpen: boolean) => Promise<void>;
   isPending: boolean;
 };
 
-/** Organizer actions on a meeting of a conversation. */
+/**
+ * Changes to a meeting of a conversation: those of its organizer (close,
+ * extend, rename) and those open to every member (links, whiteboard).
+ */
 export const useChatMeetingActions = (
   ref: ChatRef | null,
 ): UseChatMeetingActionsResult => {

@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Give Ariane's `/aide` in a call its own text, about what she
+  reads of a call, and stop reading her help and failures back as answers.
 - 🔒️(profiles) Prove the chat account with a short-lived OpenID token when
   saving a role, instead of sending the browser's Matrix access token.
 - 🐛(meetings) Keep Ariane's answer in a call until the scribe reports it

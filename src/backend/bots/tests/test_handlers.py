@@ -4,7 +4,7 @@ from django.core.cache import cache
 
 import pytest
 
-from bots import handlers, matrix
+from bots import commands, handlers, matrix
 
 
 def test_not_invited_stays_silent_without_asking_about_encryption(monkeypatch):
@@ -78,7 +78,7 @@ def test_a_failure_after_a_ping_is_said(monkeypatch, room, failure):
 
     handlers.handle_message("!room:localhost", ping(event_id))
 
-    assert room == [("!room:localhost", handlers.FAILURE_MESSAGE, event_id, True)]
+    assert room == [("!room:localhost", commands.FAILURE_MESSAGE, event_id, True)]
 
 
 def test_a_failure_to_say_the_failure_is_only_logged(monkeypatch, room):

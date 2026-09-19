@@ -27,7 +27,7 @@ from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from bots import handlers
+from bots import commands, handlers
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ def transactions(request, txn_id):
         # Synapse pushes every message on the server: spawning a thread first
         # and checking the ping inside it would start one thread per message
         # typed by anyone, anywhere.
-        if not handlers.is_pinged((event.get("content") or {}).get("body") or ""):
+        if not commands.is_pinged((event.get("content") or {}).get("body") or ""):
             continue
         # A daemon thread: the answer is best-effort, and a pending reply must
         # never hold the process open at shutdown.

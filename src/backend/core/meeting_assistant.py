@@ -16,7 +16,7 @@ import logging
 from django.conf import settings
 from django.utils import timezone
 
-from bots import albert, handlers
+from bots import albert, commands
 from core import models
 
 logger = logging.getLogger(__name__)
@@ -32,12 +32,35 @@ def is_available():
 
 def assistant_name():
     """The name people ping and see in the chat."""
-    return settings.BOTS_PING_NAMES[0].capitalize()
+    return commands.assistant_name()
+
+
+def help_message():
+    """What each command does, and what Ariane reads of a call."""
+    name = assistant_name()
+    return "\n".join(
+        [
+            f"Je réponds quand on écrit @{name:s} dans la discussion de "
+            "l'appel, et ma réponse s'y affiche.",
+            "",
+            "Une commande change ma façon de répondre. Elle se place après la "
+            f"mention : « @{name:s} /juriste ma question ».",
+            "",
+            *commands.command_lines(),
+            "",
+            "Sans commande, je réponds sur un ton normal.",
+            "",
+            "Ce que je lis : ce qui a été dit (les sous-titres de l'appel) et "
+            "écrit dans la discussion depuis votre arrivée dans l'appel, avec "
+            "le titre et l'ordre du jour de la réunion. Jamais ce qui a précédé "
+            "votre arrivée. Je n'ouvre pas les documents de la réunion.",
+        ]
+    )
 
 
 def is_for_assistant(message):
     """Whether a person addressed Ariane in the chat."""
-    return not message.from_assistant and handlers.is_pinged(message.text)
+    return not message.from_assistant and commands.is_pinged(message.text)
 
 
 def _entries(meeting, since, exclude_pk):
@@ -75,7 +98,10 @@ def context(meeting, question):
 
     for _, kind, entry in _entries(meeting, since, question.pk):
         if kind == "wrote" and entry.from_assistant:
-            messages.append({"role": "assistant", "content": entry.text})
+            # Help and failures are no answers: read back, they teach the
+            # model to refuse (see `matrix.ASIDE_KEY`).
+            if not entry.aside:
+                messages.append({"role": "assistant", "content": entry.text})
             continue
         if kind == "said":
             name = entry.speaker_name or entry.speaker_identity
@@ -93,23 +119,25 @@ def answer_in_call(message_pk):
         pk=message_pk
     )
     meeting = question.meeting
-    command, unknown = handlers.parse_command(question.text)
+    command, unknown = commands.parse_command(question.text)
 
-    reply = handlers.canned_reply(command, unknown)
+    reply = commands.canned_reply(command, unknown, help_message)
+    aside = reply is not None
     if reply is None:
         messages = context(meeting, question)
         asker = question.sender_name or question.sender_identity
         messages.append(
             {
                 "role": "user",
-                "content": f"{asker} : {handlers.clean_question(question.text)}",
+                "content": f"{asker} : {commands.clean_question(question.text)}",
             }
         )
         try:
             reply = albert.answer(messages, command)
         except albert.AlbertError as error:
             logger.warning("meeting %s: Albert failed: %s", meeting.slug, error)
-            reply = handlers.FAILURE_MESSAGE
+            reply = commands.FAILURE_MESSAGE
+            aside = True
 
     models.MeetingChatMessage.objects.get_or_create(
         meeting=meeting,
@@ -120,6 +148,7 @@ def answer_in_call(message_pk):
             "text": reply,
             "sent_at": timezone.now(),
             "from_assistant": True,
+            "aside": aside,
             "reply_to": question,
         },
     )

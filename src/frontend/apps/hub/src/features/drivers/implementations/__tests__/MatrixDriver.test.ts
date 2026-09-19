@@ -1109,7 +1109,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       async () => MEET_ROOM,
     );
 
-    const meeting = await driverWithClient(mx).startChatMeeting(
+    const { meeting, isReused } = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
     );
@@ -1127,6 +1127,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       },
       MEET_ROOM.slug,
     );
+    expect(isReused).toBe(false);
     expect(meeting).toMatchObject({
       id: MEET_ROOM.slug,
       url: MEET_ROOM.url,
@@ -1184,7 +1185,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       url: "https://docs.example.com/docs/1/",
     };
 
-    const meeting = await driverWithClient(mx).startChatMeeting(
+    const { meeting, isReused } = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
       {
@@ -1217,6 +1218,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       },
       MEET_ROOM.slug,
     );
+    expect(isReused).toBe(false);
     expect(meeting).toMatchObject({
       title: "Point hebdo",
       startedAt: startsAt.toISOString(),
@@ -1427,13 +1429,14 @@ describe("MatrixDriver.startChatMeeting", () => {
       async () => MEET_ROOM,
     );
 
-    const meeting = await driverWithClient(mx).startChatMeeting(
+    const { meeting, isReused } = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
     );
 
     expect(createRoom).not.toHaveBeenCalled();
     expect(sendStateEvent).not.toHaveBeenCalled();
+    expect(isReused).toBe(true);
     expect(meeting.url).toBe("https://meet.example.com/xyz-abcd-efg");
   });
 

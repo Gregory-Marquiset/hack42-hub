@@ -405,6 +405,13 @@ class MeetingView(drf.views.APIView):
         )
 
 
+class DocsNotConfigured(drf.exceptions.APIException):
+    """The Hub has no Docs to save documents in."""
+
+    status_code = drf.status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Docs is not configured."
+
+
 def _organized_meeting(request, slug):
     """The meeting, if the user organizes it; the same 404 otherwise."""
     meeting = models.Meeting.objects.filter(slug=slug, organizer=request.user).first()
@@ -465,8 +472,8 @@ class MeetingTranscriptView(drf.views.APIView):
         document = None
         if not docs.is_docs_configured():
             response = drf.response.Response(
-                {"detail": "Docs is not configured."},
-                status=drf.status.HTTP_503_SERVICE_UNAVAILABLE,
+                {"detail": DocsNotConfigured.default_detail},
+                status=DocsNotConfigured.status_code,
             )
         else:
             try:
@@ -500,8 +507,18 @@ def _is_member(request, meeting, openid_token):
     return bool(user_id) and user_id in matrix.joined_members(meeting.chat_id)
 
 
-class MatrixUnavailable(Exception):
+class MatrixUnavailable(drf.exceptions.APIException):
     """Matrix could not say whether someone is a member."""
+
+    status_code = drf.status.HTTP_502_BAD_GATEWAY
+    default_detail = "Matrix could not confirm the membership."
+
+
+class MeetingClosed(drf.exceptions.APIException):
+    """The meeting is closed: nothing can be added to it any more."""
+
+    status_code = drf.status.HTTP_409_CONFLICT
+    default_detail = "The meeting is closed."
 
 
 def _member_meeting(request, slug, openid_token):
@@ -523,11 +540,14 @@ def _member_meeting(request, slug, openid_token):
     return meeting
 
 
-def _matrix_unavailable():
-    return drf.response.Response(
-        {"detail": "Matrix could not confirm the membership."},
-        status=drf.status.HTTP_502_BAD_GATEWAY,
-    )
+def _ensure_open(meeting):
+    if meeting.closed_at is not None:
+        raise MeetingClosed
+
+
+def _ensure_docs():
+    if not docs.is_docs_configured():
+        raise DocsNotConfigured
 
 
 def _attachment_data(attachment):
@@ -553,12 +573,9 @@ class MeetingDocumentsView(drf.views.APIView):
         """
         serializer = serializers.MeetingMemberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
         return drf.response.Response(
             {
                 "agenda": meeting.agenda,
@@ -586,23 +603,12 @@ class MeetingDocumentCreateView(drf.views.APIView):
         """
         serializer = serializers.MeetingDocumentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
 
-        if meeting.closed_at is not None:
-            return drf.response.Response(
-                {"detail": "The meeting is closed."},
-                status=drf.status.HTTP_409_CONFLICT,
-            )
-        if not docs.is_docs_configured():
-            return drf.response.Response(
-                {"detail": "Docs is not configured."},
-                status=drf.status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+        _ensure_open(meeting)
+        _ensure_docs()
 
         title = serializer.validated_data["title"]
         try:
@@ -637,18 +643,11 @@ class MeetingAttachmentsView(drf.views.APIView):
         """
         serializer = serializers.MeetingAttachmentUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
 
-        if meeting.closed_at is not None:
-            return drf.response.Response(
-                {"detail": "The meeting is closed."},
-                status=drf.status.HTTP_409_CONFLICT,
-            )
+        _ensure_open(meeting)
         upload = serializer.validated_data["file"]
         if upload.size > settings.MEETING_ATTACHMENT_MAX_BYTES:
             return drf.response.Response(
@@ -682,12 +681,9 @@ class MeetingAttachmentView(drf.views.APIView):
         """
         serializer = serializers.MeetingMemberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
         attachment = meeting.attachments.filter(pk=attachment_id).first()
         if attachment is None:
             raise Http404
@@ -732,12 +728,9 @@ class MeetingArchiveView(drf.views.APIView):
         """
         serializer = serializers.MeetingArchiveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            meeting = _member_meeting(
-                request, slug, serializer.validated_data["openid_token"]
-            )
-        except MatrixUnavailable:
-            return _matrix_unavailable()
+        meeting = _member_meeting(
+            request, slug, serializer.validated_data["openid_token"]
+        )
 
         if meeting.closed_at is None:
             return drf.response.Response(

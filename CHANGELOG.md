@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Stop leaking a copy of an avatar picture in memory each time
+  it is displayed again: one copy per picture, released at logout.
 - 🐛(frontend) Offer the assistant's commands only once she is mentioned
   the way she answers to (`@Ariane`, not a name containing hers), and name
   her as configured in the messages about inviting her.

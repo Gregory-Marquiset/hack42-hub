@@ -378,6 +378,8 @@ export class MatrixDriver extends Driver {
   // Seule la dernière réconciliation peut publier une nouvelle liste de rooms.
   private joinedRoomRevision = 0;
   private joinedRoomRefresh: Promise<Set<string>> | null = null;
+  /** Resolved avatar pictures, by mxc URL (see `resolveAvatarUrl`). */
+  private readonly avatarUrls = new Map<string, Promise<string>>();
   /**
    * Coalesces concurrent creation requests for the same participant set in
    * this driver instance. The Matrix API does not provide an atomic
@@ -1133,9 +1135,38 @@ export class MatrixDriver extends Driver {
    * load directly. Falls back to the raw `mxc://` URL (a guaranteed broken
    * image, same as any other failure) rather than throwing, so a fetch
    * hiccup degrades to initials instead of crashing the row.
+   *
+   * One `blob:` URL per picture for the session: every call for the same
+   * mxc shares it, instead of each refetch leaking a new one, and
+   * {@link revokeAvatarUrls} releases them all.
    */
   async resolveAvatarUrl(mxcUrl: string): Promise<string> {
     const mx = this.requireClient("resolveAvatarUrl");
+    const cached = this.avatarUrls.get(mxcUrl);
+    if (cached) return cached;
+    const resolving = this.fetchAvatarUrl(mx, mxcUrl);
+    this.avatarUrls.set(mxcUrl, resolving);
+    const url = await resolving;
+    // A failure is not kept: the next render may try again.
+    if (url === mxcUrl && this.avatarUrls.get(mxcUrl) === resolving) {
+      this.avatarUrls.delete(mxcUrl);
+    }
+    return url;
+  }
+
+  private revokeAvatarUrls(): void {
+    for (const resolving of this.avatarUrls.values()) {
+      void resolving.then((url) => {
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+      });
+    }
+    this.avatarUrls.clear();
+  }
+
+  private async fetchAvatarUrl(
+    mx: MatrixClient,
+    mxcUrl: string,
+  ): Promise<string> {
     const token = mx.getAccessToken();
     const asBlobUrl = async (httpUrl: string | null) => {
       if (!httpUrl) return undefined;
@@ -3263,6 +3294,7 @@ export class MatrixDriver extends Driver {
 
   destroy(): void {
     this.teardownClient();
+    this.revokeAvatarUrls();
     this.eventListeners.clear();
     this.typingListeners.clear();
   }
@@ -3387,6 +3419,7 @@ export class MatrixDriver extends Driver {
     const conversationSearch = this.conversationSearch;
     const messageSearch = this.messageSearch;
     this.teardownClient();
+    this.revokeAvatarUrls();
 
     localStorage.removeItem(this.key(STORAGE.user));
     localStorage.removeItem(this.key(STORAGE.oidc));

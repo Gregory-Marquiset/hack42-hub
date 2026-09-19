@@ -23,7 +23,7 @@ from rest_framework.status import (
 )
 from rest_framework.test import APIClient
 
-from core import factories, models
+from core import factories, models, transcripts
 
 pytestmark = pytest.mark.django_db
 
@@ -364,3 +364,22 @@ def test_api_meeting_transcript_docs_failure():
     assert response.json() == {"detail": "Docs could not save the transcript."}
     meeting.refresh_from_db()
     assert meeting.transcript_document_id is None
+
+
+@override_settings(**TRANSCRIPT_SETTINGS)
+@responses.activate
+def test_save_transcript_answers_a_document_saved_meanwhile():
+    """
+    The automatic closing and the organizer can both hold the meeting as it was
+    before either saved the transcript: the second answers the first document.
+    """
+    meeting = factories.MeetingFactory()
+    factories.MeetingTranscriptSegmentFactory(meeting=meeting)
+    stale = models.Meeting.objects.get(pk=meeting.pk)
+    models.Meeting.objects.filter(pk=meeting.pk).update(
+        transcript_document_id="doc-first"
+    )
+
+    assert transcripts.save_transcript(stale, "Point") == "doc-first"
+    assert stale.transcript_document_id == "doc-first"
+    assert len(responses.calls) == 0

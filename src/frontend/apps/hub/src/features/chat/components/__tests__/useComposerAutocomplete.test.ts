@@ -45,4 +45,18 @@ describe("useComposerAutocomplete", () => {
       result.current.suggestions[result.current.activeIndex],
     ).toBeDefined();
   });
+
+  it("opens the command list only once the assistant is mentioned", () => {
+    const { result } = render([]);
+
+    act(() => result.current.update("@Ariane /", 9));
+    expect(result.current.suggestions.map(({ id }) => id)).toEqual(["juriste"]);
+
+    // Her name inside another word does not address her.
+    act(() => result.current.update("@Mariane /", 10));
+    expect(result.current.suggestions).toEqual([]);
+
+    act(() => result.current.update("Ariane /", 8));
+    expect(result.current.suggestions).toEqual([]);
+  });
 });

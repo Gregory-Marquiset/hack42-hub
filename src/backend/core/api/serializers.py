@@ -114,7 +114,7 @@ class MeetingUpdateSerializer(serializers.Serializer):  # pylint: disable=abstra
 class MeetingTranscriptSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """The meeting name, as shown in the Hub, to title its transcript."""
 
-    title = serializers.CharField(max_length=200, trim_whitespace=True)
+    title = serializers.CharField(max_length=200)
 
 
 class MeetingDocumentLinkSerializer(serializers.Serializer):  # pylint: disable=abstract-method
@@ -155,7 +155,7 @@ class MeetingMemberSerializer(serializers.Serializer):  # pylint: disable=abstra
 class MeetingDocumentCreateSerializer(MeetingMemberSerializer):  # pylint: disable=abstract-method
     """A new Docs document, created for a meeting by one of its members."""
 
-    title = serializers.CharField(max_length=200, trim_whitespace=True)
+    title = serializers.CharField(max_length=200)
 
 
 class MeetingAttachmentUploadSerializer(MeetingMemberSerializer):  # pylint: disable=abstract-method
@@ -172,7 +172,7 @@ class ScribeSegmentSerializer(serializers.Serializer):  # pylint: disable=abstra
     speaker_name = serializers.CharField(
         max_length=255, allow_blank=True, required=False, default=""
     )
-    text = serializers.CharField(max_length=5000, trim_whitespace=True)
+    text = serializers.CharField(max_length=5000)
 
 
 class ScribeSegmentsSerializer(serializers.Serializer):  # pylint: disable=abstract-method
@@ -189,7 +189,7 @@ class ScribeChatMessageSerializer(serializers.Serializer):  # pylint: disable=ab
     sender_name = serializers.CharField(
         max_length=255, allow_blank=True, required=False, default=""
     )
-    text = serializers.CharField(max_length=10_000, trim_whitespace=True)
+    text = serializers.CharField(max_length=10_000)
 
 
 class ScribeChatMessagesSerializer(serializers.Serializer):  # pylint: disable=abstract-method

@@ -16,7 +16,7 @@ import time
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import close_old_connections, transaction
+from django.db import close_old_connections
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import override
@@ -35,10 +35,9 @@ DEFAULT_DURATION = timedelta(hours=1)
 
 def close(meeting, *, auto=False):
     """Mark the meeting closed; answers whether it was still open."""
-    with transaction.atomic():
-        updated = models.Meeting.objects.filter(
-            pk=meeting.pk, closed_at__isnull=True
-        ).update(closed_at=timezone.now(), auto_closed=auto)
+    updated = models.Meeting.objects.filter(
+        pk=meeting.pk, closed_at__isnull=True
+    ).update(closed_at=timezone.now(), auto_closed=auto)
     meeting.refresh_from_db(fields=["closed_at", "auto_closed"])
     if updated and boards.is_board_configured():
         run_in_background(save_board, meeting.pk)
@@ -159,7 +158,13 @@ def publish_closed(meeting, document=None):
     if not meeting.chat_id or not matrix.can_write_rooms():
         return
     try:
-        matrix.ensure_in_room(meeting.chat_id)
+        if not matrix.ensure_in_room(meeting.chat_id):
+            logger.info(
+                "meeting %s: closing not written, Ariane is not in %s",
+                meeting.slug,
+                meeting.chat_id,
+            )
+            return
         content = matrix.get_room_state(
             meeting.chat_id, MEETING_EVENT_TYPE, meeting.slug
         )

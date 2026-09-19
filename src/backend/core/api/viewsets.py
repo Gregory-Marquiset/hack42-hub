@@ -384,7 +384,7 @@ class MeetingView(drf.views.APIView):
                 livekit_room=room["id"],
                 organizer=request.user,
                 chat_id=details["chat_id"],
-                space_name=details["space_name"].strip(),
+                space_name=details["space_name"],
                 title=details["title"],
                 starts_at=details.get("starts_at"),
                 planned_end_at=details.get("planned_end_at"),
@@ -441,7 +441,7 @@ class MeetingDetailView(drf.views.APIView):
         meeting = _organized_meeting(request, slug)
 
         if "title" in serializer.validated_data:
-            meeting.title = serializer.validated_data["title"].strip()
+            meeting.title = serializer.validated_data["title"]
             meeting.save(update_fields=["title", "updated_at"])
         if "extend_minutes" in serializer.validated_data:
             meeting_closing.extend(meeting, serializer.validated_data["extend_minutes"])
@@ -730,7 +730,7 @@ class MeetingArchiveView(drf.views.APIView):
 
         chat_name = serializer.validated_data[
             "chat_name"
-        ].strip() or meeting_notifications.chat_name(meeting)
+        ] or meeting_notifications.chat_name(meeting)
         with timezone.override(meeting.time_zone):
             content = archives.build_archive(
                 meeting,

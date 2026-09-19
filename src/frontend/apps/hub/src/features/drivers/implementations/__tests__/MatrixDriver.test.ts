@@ -286,6 +286,23 @@ describe("MatrixDriver.resolveAvatarUrl", () => {
       driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
     ).resolves.toBe("mxc://hs/a");
   });
+
+  it("shares one blob per picture, released when the driver ends", async () => {
+    const { mx, fetchMock } = clientFor(200, 200);
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { revokeObjectURL });
+    Object.assign(mx, { stopClient: vi.fn() });
+    const driver = driverWithClient(mx);
+
+    await driver.resolveAvatarUrl("mxc://hs/a");
+    await driver.resolveAvatarUrl("mxc://hs/a");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    driver.destroy();
+    await vi.waitFor(() =>
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:avatar"),
+    );
+  });
 });
 
 describe("MatrixDriver.getUserPresence", () => {

@@ -20,6 +20,7 @@ import { MatrixDriver } from "../MatrixDriver";
 import { readChatSelfPresencePreference } from "../../presencePreference";
 import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
 import { MeetingEndedError, MeetingNotAllowedError } from "../../meetingErrors";
+import { SpaceChildNotAllowedError } from "../../spaceErrors";
 import type { MeetRoom, MeetRoomSchedule } from "../../types";
 import {
   matrixJoinedRoomToLocalChat,
@@ -284,6 +285,23 @@ describe("MatrixDriver.resolveAvatarUrl", () => {
     await expect(
       driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
     ).resolves.toBe("mxc://hs/a");
+  });
+
+  it("shares one blob per picture, released when the driver ends", async () => {
+    const { mx, fetchMock } = clientFor(200, 200);
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { revokeObjectURL });
+    Object.assign(mx, { stopClient: vi.fn() });
+    const driver = driverWithClient(mx);
+
+    await driver.resolveAvatarUrl("mxc://hs/a");
+    await driver.resolveAvatarUrl("mxc://hs/a");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    driver.destroy();
+    await vi.waitFor(() =>
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:avatar"),
+    );
   });
 });
 
@@ -1741,6 +1759,86 @@ describe("createChatForUsers (encryption and the assistant)", () => {
     expect(createRoom).not.toHaveBeenCalled();
   });
 
+  it("reuses a clear group the assistant was invited into", async () => {
+    // Created by the Hub for Bob and Carol: she joined it on her own.
+    const group = makeJoinedRoom(
+      "!group:localhost",
+      [BOB, CAROL, ASSISTANT_ID],
+      false,
+    );
+    const { mx, createRoom } = clientFor([group]);
+
+    const chat = await driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+    });
+
+    expect(chat.id).toBe("!group:localhost");
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  const salonClient = (maySendSpaceChild: boolean) => {
+    const space = {
+      roomId: "!space:localhost",
+      currentState: { maySendStateEvent: () => maySendSpaceChild },
+    } as unknown as Room;
+    const { mx, createRoom } = clientFor([]);
+    const sendStateEvent = vi.fn(async () => {
+      throw new Error("M_FORBIDDEN");
+    });
+    Object.assign(mx, {
+      getRoom: (roomId: string) => (roomId === space.roomId ? space : null),
+      getDomain: () => "localhost",
+      sendStateEvent,
+    });
+    return { mx, createRoom, sendStateEvent };
+  };
+
+  it("creates no room in an espace the user may not add rooms to", async () => {
+    const { mx, createRoom } = salonClient(false);
+
+    await expect(
+      driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+        spaceId: "!space:localhost",
+        forceNew: true,
+      }),
+    ).rejects.toBeInstanceOf(SpaceChildNotAllowedError);
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("returns the room created even when listing it in its espace fails", async () => {
+    const { mx, createRoom, sendStateEvent } = salonClient(true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      const pending = driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+        spaceId: "!space:localhost",
+        forceNew: true,
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect((await pending).id).toBe("!new:localhost");
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+    expect(createRoom).toHaveBeenCalledTimes(1);
+    expect(sendStateEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not take a group with the assistant for a direct message", async () => {
+    const group = makeJoinedRoom(
+      "!group:localhost",
+      [BOB, ASSISTANT_ID],
+      false,
+    );
+    const { mx } = clientFor([group]);
+
+    expect(
+      await driverWithClient(mx).getChatForUsers([BOB], {
+        assistantUserId: ASSISTANT_ID,
+      }),
+    ).toBeNull();
+  });
+
   it("never encrypts a one-to-one with the assistant", async () => {
     const opts = await create([ASSISTANT_ID], {
       assistantUserId: ASSISTANT_ID,
@@ -1807,6 +1905,72 @@ describe("getChatForUsers (encryption-aware lookup)", () => {
         encrypted: true,
       }),
     ).toBeNull();
+  });
+});
+
+describe("LazyMatrixDriver capabilities", () => {
+  it("advertises exactly the capabilities of the real driver", () => {
+    // The UI reads them before the SDK loads: a flag the proxy forgot hides a
+    // feature until then, one it claims wrongly offers a dead control.
+    const capabilities = (driver: object) =>
+      Object.fromEntries(
+        Object.entries(driver).filter(([key]) => key.startsWith("supports")),
+      );
+
+    expect(capabilities(new LazyMatrixDriver("matrix"))).toEqual(
+      capabilities(new MatrixDriver()),
+    );
+  });
+});
+
+describe("joined rooms cache", () => {
+  const joinedRoomIdsOf = (driver: MatrixDriver, mx: MatrixClient) =>
+    (
+      driver as unknown as {
+        getJoinedRoomIds: (mx: MatrixClient) => Promise<Set<string>>;
+      }
+    ).getJoinedRoomIds(mx);
+
+  it("shares the request already in flight", async () => {
+    const getJoinedRooms = vi.fn(async () => ({ joined_rooms: [ROOM_ID] }));
+    const mx = { getJoinedRooms } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    await Promise.all([
+      joinedRoomIdsOf(driver, mx),
+      joinedRoomIdsOf(driver, mx),
+    ]);
+
+    expect(getJoinedRooms).toHaveBeenCalledTimes(1);
+  });
+
+  it("never writes back a list sent before accepting an invitation", async () => {
+    const room = makeJoinedRoom(ROOM_ID, [OTHER_ID], false);
+    let answerStale: (value: { joined_rooms: string[] }) => void = () => {};
+    const getJoinedRooms = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerStale = resolve;
+          }),
+      )
+      .mockResolvedValue({ joined_rooms: [ROOM_ID] });
+    const mx = {
+      getUserId: () => SELF_ID,
+      getJoinedRooms,
+      joinRoom: vi.fn(async () => room),
+      getRoom: () => room,
+    } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    const before = joinedRoomIdsOf(driver, mx);
+    await driver.acceptChatInvitation(ROOM_ID);
+    // The answer to the request sent while the room was still an invitation.
+    answerStale({ joined_rooms: [] });
+
+    expect((await before).has(ROOM_ID)).toBe(true);
+    expect((await joinedRoomIdsOf(driver, mx)).has(ROOM_ID)).toBe(true);
   });
 });
 

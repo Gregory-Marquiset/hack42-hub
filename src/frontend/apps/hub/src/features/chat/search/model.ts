@@ -26,6 +26,67 @@ export const searchMode = (
 export const normalizeSearch = (value: string): string =>
   value.normalize("NFC").trim().toLowerCase();
 
+/**
+ * Where `needle` (already passed through `normalizeSearch`) occurs in `text`,
+ * as offsets into `text` itself. Case is folded one code point at a time so
+ * every offset of the folded copy maps back to its source character: the
+ * whole-string `normalizeSearch` trims and may change the length, so its
+ * offsets do not point into the text shown to the user.
+ */
+export const findMatchRange = (
+  text: string,
+  needle: string,
+): [number, number] | undefined => {
+  if (!needle) return undefined;
+  let folded = "";
+  const sources: number[] = [];
+  let offset = 0;
+  for (const char of text) {
+    const lower = char.toLowerCase();
+    folded += lower;
+    for (let i = 0; i < lower.length; i++) sources.push(offset);
+    offset += char.length;
+  }
+  const start = folded.indexOf(needle);
+  if (start === -1) return undefined;
+  const end = start + needle.length;
+  return [sources[start], end < sources.length ? sources[end] : text.length];
+};
+
+const EXCERPT_MAX_LENGTH = 150;
+const EXCERPT_CONTEXT = 50;
+const ELLIPSIS = "…";
+
+/**
+ * Cuts the part of `text` shown for a search result around `range`, and
+ * returns the range rebased onto that excerpt (shifted by the cut and by the
+ * leading ellipsis), ready to be highlighted as is.
+ */
+export const buildExcerpt = (
+  text: string,
+  range?: [number, number],
+): { excerpt: string; matchRanges: [number, number][] } => {
+  if (!range) {
+    return {
+      excerpt:
+        text.length > EXCERPT_MAX_LENGTH
+          ? text.slice(0, EXCERPT_MAX_LENGTH) + ELLIPSIS
+          : text,
+      matchRanges: [],
+    };
+  }
+  const [start, end] = range;
+  const from = Math.max(0, start - EXCERPT_CONTEXT);
+  const to = Math.min(text.length, end + EXCERPT_CONTEXT);
+  const prefix = from > 0 ? ELLIPSIS : "";
+  const suffix = to < text.length ? ELLIPSIS : "";
+  const shift = prefix.length - from;
+  return {
+    excerpt: prefix + text.slice(from, to) + suffix,
+    matchRanges: [[start + shift, end + shift]],
+  };
+};
+
 export const emptySearchRoom = (id: string): SearchRoom => ({
   id,
   count: null,
@@ -123,9 +184,10 @@ export const matchesMessageFilters = (
   // mentions: filter — match if any mentionedUserIds or replyToSenderId matches
   if (filters.mentions.length > 0) {
     const matchesMentions = filters.mentions.some((token) => {
-      // Check direct mentions
+      // Check direct mentions. Only the mentioned ids are known here: the
+      // sender's name must not stand in for theirs.
       const isMentioned = doc.mentionedUserIds.some((userId) =>
-        userTokenMatches(token, userId, doc.senderName),
+        userTokenMatches(token, userId, ""),
       );
       // Check reply-to (mentions: also matches replies-to-that-user)
       const isReplyTo =

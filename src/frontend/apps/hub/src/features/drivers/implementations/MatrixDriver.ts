@@ -112,6 +112,7 @@ import {
   User,
 } from "../types";
 import { MeetingEndedError, MeetingNotAllowedError } from "../meetingErrors";
+import { SpaceChildNotAllowedError } from "../spaceErrors";
 import { isMeetingOngoing } from "../meetingTime";
 import {
   authorForSender,
@@ -142,12 +143,14 @@ import {
 import { matrixDirectoryUserToChatUser } from "./matrixIdentity";
 import { subscribeToIncomingMatrixEvents } from "./matrixIncomingEvents";
 import {
+  publishedPresence,
   readChatSelfPresencePreference,
   writeChatSelfPresencePreference,
 } from "../presencePreference";
 import {
   matrixPresenceResponseToChatUserPresence,
   matrixUserToChatUserPresence,
+  toSetPresence,
 } from "./matrixPresence";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
@@ -170,8 +173,9 @@ import {
   listRoomFiles,
   uploadRoomFile,
 } from "./matrixRoomFiles";
+import { planRoomCreation } from "./matrixRoomCreation";
 import {
-  clearStoredConversationSearch,
+  clearStoredSearch,
   MATRIX_USER_STORAGE_KEY,
   matrixStorageKey,
   matrixStorageOwner,
@@ -315,7 +319,7 @@ export class MatrixDriver extends Driver {
     this.conversationSearch = null;
     this.conversationSearchDatabase = null;
     if (search) await search.remove();
-    else await clearStoredConversationSearch(this.accountId, this.storageOwner);
+    else await clearStoredSearch(this.accountId, this.storageOwner);
   }
 
   override searchMessages(request: MessageSearchRequest) {
@@ -329,14 +333,17 @@ export class MatrixDriver extends Driver {
   override retryMessageSearch(): void {
     const mx = this.mx;
     if (!mx) return;
-    void this.startMessageSearch(mx);
+    void this.startMessageSearch(mx).then(() => {
+      if (this.mx === mx) this.messageSearch?.retry();
+    });
   }
 
   override async clearMessageSearch(): Promise<void> {
     const search = this.messageSearch;
     this.messageSearch = null;
     this.messageSearchDatabase = null;
-    if (search) await search.remove?.();
+    if (search) await search.remove();
+    else await clearStoredSearch(this.accountId, this.storageOwner);
   }
 
   override backfillMessageSearchRoom(roomId: string): void {
@@ -377,6 +384,8 @@ export class MatrixDriver extends Driver {
   // Seule la dernière réconciliation peut publier une nouvelle liste de rooms.
   private joinedRoomRevision = 0;
   private joinedRoomRefresh: Promise<Set<string>> | null = null;
+  /** Resolved avatar pictures, by mxc URL (see `resolveAvatarUrl`). */
+  private readonly avatarUrls = new Map<string, Promise<string>>();
   /**
    * Coalesces concurrent creation requests for the same participant set in
    * this driver instance. The Matrix API does not provide an atomic
@@ -550,13 +559,7 @@ export class MatrixDriver extends Driver {
   }
 
   async getChatMembers(chatId: string): Promise<ChatMembers> {
-    const { mx, room } = this.requireRoom("getChatMembers", chatId);
-    const joinedRoomIds = await this.getJoinedRoomIds(mx);
-    if (!joinedRoomIds.has(chatId)) {
-      throw new Error(
-        `MatrixDriver.getChatMembers: room "${chatId}" is not joined.`,
-      );
-    }
+    const { mx, room } = await this.requireJoinedRoom("getChatMembers", chatId);
     await room.loadMembersIfNeeded();
     const currentUserId = mx.getUserId() ?? undefined;
     const members = room.getMembers();
@@ -578,13 +581,10 @@ export class MatrixDriver extends Driver {
   }
 
   async setChatFavourite(chatId: string, favourite: boolean): Promise<void> {
-    const { mx, room } = this.requireRoom("setChatFavourite", chatId);
-    const joinedRoomIds = await this.getJoinedRoomIds(mx);
-    if (!joinedRoomIds.has(chatId)) {
-      throw new Error(
-        `MatrixDriver.setChatFavourite: room "${chatId}" is not joined.`,
-      );
-    }
+    const { mx, room } = await this.requireJoinedRoom(
+      "setChatFavourite",
+      chatId,
+    );
     if (isFavouriteRoom(room) === favourite) {
       return;
     }
@@ -965,10 +965,7 @@ export class MatrixDriver extends Driver {
     preference: ChatSelfPresencePreference,
   ): Promise<void> {
     const previous = this.getSelfPresencePreference();
-    // Matrix knows nothing of "busy": it is published as the closest standard
-    // value, and kept as itself only in the local preference, which is what
-    // decides whether notification sounds play.
-    const published = preference === "busy" ? "unavailable" : preference;
+    const published = publishedPresence(preference);
     if (previous === preference && this.syncPresence === published) return;
 
     await this.setUserPresence(published);
@@ -995,7 +992,7 @@ export class MatrixDriver extends Driver {
       );
     }
     const mx = this.requireClient("setUserPresence");
-    const syncPresence = state as SetPresence;
+    const syncPresence = toSetPresence(state);
     if (this.syncPresence === syncPresence) return;
 
     // `disablePresence` wins over setSyncPresence for the lifetime of SyncApi.
@@ -1028,6 +1025,14 @@ export class MatrixDriver extends Driver {
     }
     const selfUserId = mx.getUserId() ?? undefined;
     const wanted = participantSetKey(userIds);
+    // The assistant is invited into every clear group on its creation (see
+    // `resolveOrCreateChatForUsers`): unless she is one of the people asked
+    // for, her presence must not hide the group they already share.
+    const assistant = options?.assistantUserId;
+    const ignored =
+      new Set(userIds).size > 1 && assistant && !userIds.includes(assistant)
+        ? assistant
+        : undefined;
     // Gate on the server-confirmed joined set (like getChats/getChat/
     // getChatMessages), not `getMyMembership()`: a stale room restored from
     // IndexedDB after a homeserver reset can still report membership "join"
@@ -1046,7 +1051,9 @@ export class MatrixDriver extends Driver {
       .filter(
         (room) =>
           participantSetKey(
-            roomOtherMembers(room, selfUserId).map((member) => member.userId),
+            roomOtherMembers(room, selfUserId)
+              .map((member) => member.userId)
+              .filter((userId) => userId !== ignored),
           ) === wanted,
       );
     // The same people can share a clear room and an encrypted one, and the
@@ -1085,11 +1092,12 @@ export class MatrixDriver extends Driver {
     // Everything that makes two concurrent calls ask a different question
     // belongs in the key, or the second caller silently gets the first one's
     // room. `forceNew` (Salon creation) asks for a brand-new room rather than
-    // the existing one; encryption asks for a different room entirely, and a
-    // direct message is always encrypted so its key never varies.
+    // the existing one; encryption asks for a different room entirely, as
+    // decided by the same plan the creation follows.
+    const { wantsEncryption } = planRoomCreation(participantIds, options);
     const creationKey = `${options?.forceNew ? "new:" : ""}${participantSetKey(
       participantIds,
-    )}|${participantIds.length === 1 || options?.encrypted ? "e2ee" : "clear"}`;
+    )}|${wantsEncryption ? "e2ee" : "clear"}`;
     const inFlight = this.chatCreations.get(creationKey);
     if (inFlight) {
       return inFlight;
@@ -1145,9 +1153,38 @@ export class MatrixDriver extends Driver {
    * load directly. Falls back to the raw `mxc://` URL (a guaranteed broken
    * image, same as any other failure) rather than throwing, so a fetch
    * hiccup degrades to initials instead of crashing the row.
+   *
+   * One `blob:` URL per picture for the session: every call for the same
+   * mxc shares it, instead of each refetch leaking a new one, and
+   * {@link revokeAvatarUrls} releases them all.
    */
   async resolveAvatarUrl(mxcUrl: string): Promise<string> {
     const mx = this.requireClient("resolveAvatarUrl");
+    const cached = this.avatarUrls.get(mxcUrl);
+    if (cached) return cached;
+    const resolving = this.fetchAvatarUrl(mx, mxcUrl);
+    this.avatarUrls.set(mxcUrl, resolving);
+    const url = await resolving;
+    // A failure is not kept: the next render may try again.
+    if (url === mxcUrl && this.avatarUrls.get(mxcUrl) === resolving) {
+      this.avatarUrls.delete(mxcUrl);
+    }
+    return url;
+  }
+
+  private revokeAvatarUrls(): void {
+    for (const resolving of this.avatarUrls.values()) {
+      void resolving.then((url) => {
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+      });
+    }
+    this.avatarUrls.clear();
+  }
+
+  private async fetchAvatarUrl(
+    mx: MatrixClient,
+    mxcUrl: string,
+  ): Promise<string> {
     const token = mx.getAccessToken();
     const asBlobUrl = async (httpUrl: string | null) => {
       if (!httpUrl) return undefined;
@@ -1189,32 +1226,11 @@ export class MatrixDriver extends Driver {
     participantIds: string[],
     options?: CreateChatOptions,
   ): Promise<LocalChat> {
-    // Three shapes of room, three rules.
-    //
-    // A one-to-one between humans is always encrypted: there is no choice to
-    // make, and offering one would only produce private conversations that
-    // are not private.
-    //
-    // A one-to-one with the assistant is never encrypted. She cannot read an
-    // encrypted room, and there is no human on the other side whose privacy
-    // the encryption would protect - it would only make her deaf.
-    //
-    // A group follows the toggle, and the assistant is invited into it unless
-    // it is encrypted: she is meant to be in every room she can actually read,
-    // and an invitation into one she cannot would be a lie in the member list.
     const assistant = options?.assistantUserId;
-    const isDirect = participantIds.length === 1;
-    const isAssistantOnly = isDirect && participantIds[0] === assistant;
-    const wantsEncryption = isAssistantOnly
-      ? false
-      : isDirect || Boolean(options?.encrypted);
-    const invite =
-      !isDirect &&
-      assistant &&
-      !wantsEncryption &&
-      !participantIds.includes(assistant)
-        ? [...participantIds, assistant]
-        : participantIds;
+    const { isDirect, wantsEncryption, invite } = planRoomCreation(
+      participantIds,
+      options,
+    );
 
     if (!options?.forceNew) {
       // Creation is rare and duplicate rooms are permanent, so bypass the
@@ -1228,6 +1244,7 @@ export class MatrixDriver extends Driver {
       // each other - and no third room is ever created.
       const existing = await this.getChatForUsers(participantIds, {
         encrypted: wantsEncryption,
+        assistantUserId: assistant,
       });
       if (existing) {
         return existing;
@@ -1278,6 +1295,18 @@ export class MatrixDriver extends Driver {
     }
 
     const selfUserId = mx.getUserId() ?? undefined;
+    // Listing the room in its espace is a state event of the espace, which
+    // its power levels may reserve to moderators. Refuse before creating
+    // anything: a room created first would be left outside its espace, and
+    // every retry would add one more.
+    const space = options?.spaceId ? mx.getRoom(options.spaceId) : null;
+    if (
+      space &&
+      selfUserId &&
+      !space.currentState.maySendStateEvent(EventType.SpaceChild, selfUserId)
+    ) {
+      throw new SpaceChildNotAllowedError(space.roomId);
+    }
     // Encryption is decided here and only here. `m.room.encryption` is a
     // one-way door in Matrix: the state event can be added to an existing room
     // but never removed, so a room created in the clear stays readable and a
@@ -1307,12 +1336,22 @@ export class MatrixDriver extends Driver {
 
     if (options?.spaceId) {
       const domain = mx.getDomain();
-      await mx.sendStateEvent(
-        options.spaceId,
-        EventType.SpaceChild,
-        { via: domain ? [domain] : [] },
-        roomId,
-      );
+      // The room exists from here on: failing the call would hide it from
+      // the caller, who would create another. It stays usable outside the
+      // espace.
+      try {
+        await mx.sendStateEvent(
+          options.spaceId,
+          EventType.SpaceChild,
+          { via: domain ? [domain] : [] },
+          roomId,
+        );
+      } catch (error) {
+        console.warn(
+          "MatrixDriver: the room was created but not added to its espace",
+          error,
+        );
+      }
     }
 
     const room = await this.waitForRoom(mx, roomId);
@@ -1417,7 +1456,7 @@ export class MatrixDriver extends Driver {
     // Drop the cached joined set so the conversation's first `getChatMessages`
     // re-reads `/joined_rooms` and sees the room as joined (it isn't in the
     // stale cache captured while the room was still an invite).
-    this.joinedRoomIds = null;
+    this.invalidateJoinedRooms();
     const room = mx.getRoom(chatId);
     if (!room) {
       throw new Error(
@@ -1432,7 +1471,7 @@ export class MatrixDriver extends Driver {
   async refuseChatInvitation(chatId: string): Promise<void> {
     const mx = this.requireClient("refuseChatInvitation");
     await mx.leave(chatId);
-    this.joinedRoomIds = null;
+    this.invalidateJoinedRooms();
     this.emit({ type: "chats:changed" });
   }
 
@@ -1448,7 +1487,7 @@ export class MatrixDriver extends Driver {
     const joinedRoomIds = await this.getJoinedRoomIds(mx);
     if (joinedRoomIds.has(chatId)) {
       await mx.leave(chatId);
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       this.emit({ type: "chats:changed" });
     }
 
@@ -1511,19 +1550,10 @@ export class MatrixDriver extends Driver {
     direction = "older",
     limit = DEFAULT_CHAT_PAGE_SIZE,
   }: GetChatMessagesParams): Promise<ChatMessagesPage> {
-    const mx = this.requireClient("getChatMessages");
-    const joinedRoomIds = await this.getJoinedRoomIds(mx);
-    if (!joinedRoomIds.has(chatId)) {
-      throw new Error(
-        `MatrixDriver.getChatMessages: room "${chatId}" is not joined.`,
-      );
-    }
-    const room = mx.getRoom(chatId);
-    if (!room) {
-      throw new Error(
-        `MatrixDriver.getChatMessages: room "${chatId}" not found.`,
-      );
-    }
+    const { mx, room } = await this.requireJoinedRoom(
+      "getChatMessages",
+      chatId,
+    );
     const targetId = anchorId ?? cursor ?? undefined;
     const { window, dispose } = scopedTimelineWindow(mx, room);
     try {
@@ -1839,6 +1869,25 @@ export class MatrixDriver extends Driver {
       throw new Error(`MatrixDriver.${method}: room "${chatId}" not found.`);
     }
     return { mx, room };
+  }
+
+  /**
+   * A room the homeserver confirms this account has joined, and the client
+   * knows. Checked against `/joined_rooms`, not the local membership: a room
+   * restored from IndexedDB after a homeserver reset can still claim "join".
+   */
+  private async requireJoinedRoom(
+    method: string,
+    chatId: string,
+  ): Promise<{ mx: MatrixClient; room: Room }> {
+    const mx = this.requireClient(method);
+    const joinedRoomIds = await this.getJoinedRoomIds(mx);
+    if (!joinedRoomIds.has(chatId)) {
+      throw new Error(
+        `MatrixDriver.${method}: room "${chatId}" is not joined.`,
+      );
+    }
+    return this.requireRoom(method, chatId);
   }
 
   /** Resolves an active message on the main timeline or inside one thread. */
@@ -2562,9 +2611,18 @@ export class MatrixDriver extends Driver {
       if (this.mx !== mx || this.messageSearchDatabase !== database) return;
       let search: MatrixMessageSearch | undefined;
       try {
-        search = new MatrixMessageSearch(mx, this.accountId, database, () =>
-          this.emit({ type: "search:changed" }),
+        const created: MatrixMessageSearch = new MatrixMessageSearch(
+          mx,
+          database,
+          () => this.emit({ type: "search:changed" }),
+          () => {
+            // Revoked from another tab: drop it, so a retry starts afresh.
+            if (this.messageSearch !== created) return;
+            this.messageSearch = null;
+            this.emit({ type: "search:changed" });
+          },
         );
+        search = created;
         this.messageSearch = search;
         await search.start();
       } catch {
@@ -2608,7 +2666,7 @@ export class MatrixDriver extends Driver {
     this.mx = mx;
     localStorage.removeItem(this.key("matrixRedactedThreads"));
     const preference = this.getSelfPresencePreference();
-    this.syncPresence = preference as SetPresence;
+    this.syncPresence = toSetPresence(publishedPresence(preference));
     this.presenceSyncDisabled = preference === "offline";
     await this.startClientOrFailOnLogout(mx, this.presenceSyncDisabled);
     if (generation !== this.clientGeneration) return;
@@ -3058,7 +3116,7 @@ export class MatrixDriver extends Driver {
       if (this.typingListeners.has(room.roomId)) {
         this.prepareTypingRoom(room);
       }
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       emitUnread(room);
       emitMainTimelineUnread(room);
       this.emit({ type: "chats:changed" });
@@ -3081,7 +3139,7 @@ export class MatrixDriver extends Driver {
       ) {
         return;
       }
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       if (!this.conversationSearch) this.retryConversationSearch();
       if (!this.messageSearch) this.retryMessageSearch();
       for (const room of mx.getVisibleRooms()) {
@@ -3098,7 +3156,7 @@ export class MatrixDriver extends Driver {
     // (steady-state `Syncing`). Drop the cached joined set and refresh the list
     // here so a left room does not linger. `onRoom` handles brand-new joins.
     const onMyMembership = (room: Room) => {
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       void this.conversationSearch?.reconcile();
       emitUnread(room);
       emitMainTimelineUnread(room);
@@ -3214,8 +3272,7 @@ export class MatrixDriver extends Driver {
    * afterwards, and only {@link destroy} ends the stream for good.
    */
   private teardownClient(): void {
-    this.joinedRoomRevision++;
-    this.joinedRoomRefresh = null;
+    this.invalidateJoinedRooms();
     this.clientGeneration++;
     this.conversationSearch?.close();
     this.conversationSearch = null;
@@ -3236,7 +3293,6 @@ export class MatrixDriver extends Driver {
     this.mx = null;
     this.syncPresence = undefined;
     this.presenceSyncDisabled = false;
-    this.joinedRoomIds = null;
     this.sentThreadReplyEventIds.clear();
     this.confirmedMainReadBoundaries.clear();
     this.exactMainTimelineUnreadRooms.clear();
@@ -3244,6 +3300,7 @@ export class MatrixDriver extends Driver {
 
   destroy(): void {
     this.teardownClient();
+    this.revokeAvatarUrls();
     this.eventListeners.clear();
     this.typingListeners.clear();
   }
@@ -3365,22 +3422,26 @@ export class MatrixDriver extends Driver {
   }
 
   private async clearStoredSession(user?: MatrixUserInterface): Promise<void> {
-    const search = this.conversationSearch;
+    const conversationSearch = this.conversationSearch;
+    const messageSearch = this.messageSearch;
     this.teardownClient();
+    this.revokeAvatarUrls();
 
     localStorage.removeItem(this.key(STORAGE.user));
     localStorage.removeItem(this.key(STORAGE.oidc));
     sessionStorage.removeItem(this.key(STORAGE.oidcState));
 
-    let searchCleanup: Promise<void> | undefined;
-    if (search) {
-      searchCleanup = search.remove();
-    } else if (user) {
-      searchCleanup = SearchStorage.remove(this.searchStoreDbName(user));
+    // Both indexes hold message text or room names: neither may outlive the
+    // session. They share one database, which either removal deletes.
+    const searchCleanup: Promise<unknown>[] = [];
+    if (conversationSearch) searchCleanup.push(conversationSearch.remove());
+    if (messageSearch) searchCleanup.push(messageSearch.remove());
+    if (searchCleanup.length === 0 && user) {
+      searchCleanup.push(SearchStorage.remove(this.searchStoreDbName(user)));
     }
 
     await Promise.all([
-      searchCleanup,
+      ...searchCleanup,
       this.deleteIndexedDb(this.key(SYNC_STORE_DB_NAME)),
       this.deleteIndexedDb(this.key(CRYPTO_STORE_DB_NAME)),
       ...(user ? [this.deleteIndexedDb(this.cryptoStoreDbName(user))] : []),
@@ -3428,36 +3489,55 @@ export class MatrixDriver extends Driver {
     );
   }
 
+  /** Reuses the cached set, or the request already on its way for it. */
   private async getJoinedRoomIds(mx: MatrixClient): Promise<Set<string>> {
-    return this.joinedRoomIds ?? this.refreshJoinedRoomIds(mx);
+    return (
+      this.joinedRoomIds ??
+      this.joinedRoomRefresh ??
+      this.refreshJoinedRoomIds(mx)
+    );
+  }
+
+  /**
+   * Our membership changed (joined, left, invitation answered): the cached
+   * set is stale, and so is any answer to a request sent before now - it
+   * must not be written back over the change.
+   */
+  private invalidateJoinedRooms(): void {
+    this.joinedRoomIds = null;
+    this.joinedRoomRevision++;
+    this.joinedRoomRefresh = null;
   }
 
   private async refreshJoinedRoomIds(mx: MatrixClient): Promise<Set<string>> {
     const revision = ++this.joinedRoomRevision;
+    // A superseded caller awaits the latest roster, including its failure,
+    // or asks again when the set was invalidated since its request left.
+    const latest = () => this.getJoinedRoomIds(mx);
     const refresh = (async () => {
       try {
         const { joined_rooms: joinedRooms } = await mx.getJoinedRooms();
         if (this.mx !== mx) throw new Error("Matrix client has been replaced.");
-        if (revision !== this.joinedRoomRevision && this.joinedRoomRefresh)
-          return this.joinedRoomRefresh;
+        if (revision !== this.joinedRoomRevision) return latest();
         const ids = new Set(joinedRooms);
         this.joinedRoomIds = ids;
         this.conversationSearch?.setJoinedRooms(ids);
         this.messageSearch?.setJoinedRooms(ids);
         return ids;
       } catch (error) {
-        // A superseded caller awaits the latest roster, including its failure.
         // Never turn an unknown membership state into a successful empty list.
-        if (
-          this.mx === mx &&
-          revision !== this.joinedRoomRevision &&
-          this.joinedRoomRefresh
-        )
-          return this.joinedRoomRefresh;
+        if (this.mx === mx && revision !== this.joinedRoomRevision)
+          return latest();
         throw error;
       }
     })();
     this.joinedRoomRefresh = refresh;
+    // Settled: the next caller reads the cache, or asks again on failure.
+    void refresh
+      .catch(() => undefined)
+      .then(() => {
+        if (this.joinedRoomRefresh === refresh) this.joinedRoomRefresh = null;
+      });
     return refresh;
   }
 }

@@ -1,23 +1,9 @@
-import { useMemo } from "react";
-
-import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import { useAccountDriver } from "@/features/drivers/useAccountDriver";
 import type { AccountId, ChatRef } from "@/features/drivers/types";
 
 export const useAccountChatCompositionSupport = (
   accountId: AccountId | null,
-): boolean => {
-  const entries = useDriverEntries();
-
-  return useMemo(() => {
-    if (!accountId) {
-      return false;
-    }
-    return (
-      entries.find((entry) => entry.accountId === accountId)?.driver
-        .supportsComposition ?? false
-    );
-  }, [accountId, entries]);
-};
+): boolean => useAccountDriver(accountId)?.supportsComposition ?? false;
 
 export const useChatCompositionSupport = (ref: ChatRef | null): boolean =>
   useAccountChatCompositionSupport(ref?.accountId ?? null);

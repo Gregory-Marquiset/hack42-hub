@@ -1,8 +1,8 @@
-// Our profile actions (photo, role, logout) land inside the
-// library's `.user-menu__actions__left` wrapper, which is a row flexbox
-// by default (`display: flex; align-items: center`) — that's what puts
-// them side by side, not the outer `.user-menu__actions` container. The
-// user wants logout stacked below the change-photo action instead.
+// Our profile actions (presence, photo, role, notifications, logout) land
+// inside the library's `.user-menu__actions__left` wrapper, which is a row
+// flexbox by default (`display: flex; align-items: center`) — that's what
+// puts them side by side, not the outer `.user-menu__actions` container.
+// They are stacked in one column instead, in the order `UserProfile` gives.
 .user-menu__actions__left {
   flex-direction: column;
   align-items: stretch;

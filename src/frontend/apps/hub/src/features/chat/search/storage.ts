@@ -43,9 +43,9 @@ export const transactionDone = (transaction: IDBTransaction): Promise<void> =>
  * create every store either side needs. Guarded by `contains` so this stays
  * safe to call again as later versions add stores.
  */
-export const SEARCH_DB_VERSION = 2;
+const SEARCH_DB_VERSION = 2;
 
-export const upgradeSearchSchema = (db: IDBDatabase): void => {
+const upgradeSearchSchema = (db: IDBDatabase): void => {
   if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
   if (!db.objectStoreNames.contains("rooms"))
     db.createObjectStore("rooms", { keyPath: "id" });
@@ -57,6 +57,54 @@ export const upgradeSearchSchema = (db: IDBDatabase): void => {
   }
   if (!db.objectStoreNames.contains("messageBackfill"))
     db.createObjectStore("messageBackfill", { keyPath: "roomId" });
+};
+
+/**
+ * Hands `revoke` the "logout" broadcast another tab sends before deleting
+ * the database (see `SearchStorage.remove`). Close the channel with the
+ * connection.
+ */
+export const listenForLogout = (
+  name: string,
+  revoke: () => void,
+): BroadcastChannel | undefined => {
+  if (typeof BroadcastChannel === "undefined") return undefined;
+  const channel = new BroadcastChannel(name);
+  channel.onmessage = (event: MessageEvent) => {
+    if (event.data === "logout") revoke();
+  };
+  return channel;
+};
+
+/**
+ * Opens the shared search database, upgraded for every store either side
+ * needs, or rejects after two seconds (a blocked upgrade never settles).
+ * A version change - another tab deleting it - revokes the connection.
+ */
+export const openSearchDatabase = async (
+  name: string,
+  revoke: () => void,
+): Promise<IDBDatabase> => {
+  const request = indexedDB.open(name, SEARCH_DB_VERSION);
+  request.onupgradeneeded = () => upgradeSearchSchema(request.result);
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    let expired = false;
+    const timer = setTimeout(() => {
+      expired = true;
+      reject(new Error("Search database opening timed out"));
+    }, 2_000);
+    request.onsuccess = () => {
+      clearTimeout(timer);
+      if (expired) request.result.close();
+      else resolve(request.result);
+    };
+    request.onerror = () => {
+      clearTimeout(timer);
+      reject(request.error);
+    };
+  });
+  db.onversionchange = revoke;
+  return db;
 };
 
 export const searchDatabaseName = (
@@ -87,44 +135,20 @@ export class SearchStorage {
     private readonly onRevoked: () => void,
   ) {}
 
+  private readonly revoke = () => {
+    this.close();
+    this.onRevoked();
+  };
+
   async open(): Promise<{ snapshot?: SearchSnapshot; rooms: SearchRoom[] }> {
     try {
-      if (typeof BroadcastChannel !== "undefined") {
-        this.channel = new BroadcastChannel(this.name);
-        this.channel.onmessage = (event: MessageEvent) => {
-          if (event.data === "logout") {
-            this.close();
-            this.onRevoked();
-          }
-        };
-      }
-      const request = indexedDB.open(this.name, SEARCH_DB_VERSION);
-      request.onupgradeneeded = () => upgradeSearchSchema(request.result);
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        let expired = false;
-        const timer = setTimeout(() => {
-          expired = true;
-          reject(new Error("Search database opening timed out"));
-        }, 2_000);
-        request.onsuccess = () => {
-          clearTimeout(timer);
-          if (expired) request.result.close();
-          else resolve(request.result);
-        };
-        request.onerror = () => {
-          clearTimeout(timer);
-          reject(request.error);
-        };
-      });
+      this.channel = listenForLogout(this.name, this.revoke);
+      const db = await openSearchDatabase(this.name, this.revoke);
       if (this.disposed) {
         db.close();
         return { rooms: [] };
       }
       this.db = db;
-      db.onversionchange = () => {
-        this.close();
-        this.onRevoked();
-      };
       const tx = db.transaction(["meta", "rooms"], "readonly");
       const done = transactionDone(tx);
       const [snapshot, rooms] = await Promise.all([

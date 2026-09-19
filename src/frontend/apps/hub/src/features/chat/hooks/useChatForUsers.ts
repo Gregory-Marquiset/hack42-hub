@@ -28,6 +28,8 @@ export const useChatForUsers = (
     [userIds],
   );
   const encrypted = options?.encrypted;
+  // Constant for an account, so it needs no place in the query key.
+  const assistantUserId = options?.assistantUserId;
 
   const query = useQuery({
     queryKey: chatKeys.chatForUsers(accountId, participantIds, encrypted),
@@ -37,10 +39,7 @@ export const useChatForUsers = (
       }
       const localChat = await getRegistry()
         .get(accountId)
-        .getChatForUsers(
-          participantIds,
-          encrypted === undefined ? undefined : { encrypted },
-        );
+        .getChatForUsers(participantIds, { encrypted, assistantUserId });
       return localChat ? decorateChat(accountId, localChat) : null;
     },
     enabled: participantIds.length > 0 && accountId !== null,

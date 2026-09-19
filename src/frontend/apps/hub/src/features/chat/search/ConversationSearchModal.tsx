@@ -145,11 +145,19 @@ export const ConversationSearchModal = ({
                 role="status"
                 aria-live="polite"
               >
-                <SearchResultsMessage
+                <ResultsMessage
                   hasResults={results.length > 0}
                   failed={failed}
                   loading={loading}
                   partial={partial}
+                  messages={{
+                    failed: t("Search is unavailable. Please try again."),
+                    loading: t("Searching…"),
+                    partial: t(
+                      "No matches yet. Conversation preparation is incomplete.",
+                    ),
+                    none: t("No chats found."),
+                  }}
                 />
                 {accounts.map((entry, index) => (
                   <SearchStatus
@@ -216,11 +224,21 @@ export const ConversationSearchModal = ({
                   role="status"
                   aria-live="polite"
                 >
-                  <MessageSearchResultsMessage
+                  <ResultsMessage
                     hasResults={messageResults.length > 0}
                     failed={messageFailed}
                     loading={messageLoading}
                     partial={messagePartial}
+                    messages={{
+                      failed: t(
+                        "Message search is unavailable. Please try again.",
+                      ),
+                      loading: t("Searching messages…"),
+                      partial: t(
+                        "No matches yet. Message indexing is incomplete.",
+                      ),
+                      none: t("No messages found."),
+                    }}
                   />
                   {messageAccounts.map((entry, index) => (
                     <MessageSearchStatusHint
@@ -245,25 +263,25 @@ export const ConversationSearchModal = ({
   );
 };
 
-const SearchResultsMessage = ({
+/** Why a list of results is empty, in that list's own words. */
+const ResultsMessage = ({
   hasResults,
   failed,
   loading,
   partial,
+  messages,
 }: {
   hasResults: boolean;
   failed: boolean;
   loading: boolean;
   partial: boolean;
+  messages: { failed: string; loading: string; partial: string; none: string };
 }) => {
-  const { t } = useTranslation();
   if (hasResults) return null;
-  if (failed) return t("Search is unavailable. Please try again.");
-  if (loading) return t("Searching…");
-  if (partial) {
-    return t("No matches yet. Conversation preparation is incomplete.");
-  }
-  return t("No chats found.");
+  if (failed) return messages.failed;
+  if (loading) return messages.loading;
+  if (partial) return messages.partial;
+  return messages.none;
 };
 
 const SearchStatus = ({
@@ -329,27 +347,6 @@ const SearchStatus = ({
 };
 
 // --- Message search UI helpers ---------------------------------------
-
-const MessageSearchResultsMessage = ({
-  hasResults,
-  failed,
-  loading,
-  partial,
-}: {
-  hasResults: boolean;
-  failed: boolean;
-  loading: boolean;
-  partial: boolean;
-}) => {
-  const { t } = useTranslation();
-  if (hasResults) return null;
-  if (failed) return t("Message search is unavailable. Please try again.");
-  if (loading) return t("Searching messages…");
-  if (partial) {
-    return t("No matches yet. Message indexing is incomplete.");
-  }
-  return t("No messages found.");
-};
 
 const MessageSearchStatusHint = ({
   status,

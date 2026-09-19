@@ -53,7 +53,7 @@ describe("useSetSelfPresencePreference", () => {
 
   afterEach(() => queryClient.clear());
 
-  it.each(["online", "offline"] as const)(
+  it.each(["online", "busy", "offline"] as const)(
     "publishes and caches the %s preference through the requested account",
     async (preference) => {
       const { result } = renderHook(
@@ -74,7 +74,10 @@ describe("useSetSelfPresencePreference", () => {
         queryClient.getQueryData(
           chatKeys.userPresence("account-b", "@me:localhost"),
         ),
-      ).toEqual({ userId: "@me:localhost", state: preference });
+      ).toEqual({
+        userId: "@me:localhost",
+        state: preference === "busy" ? "unavailable" : preference,
+      });
     },
   );
 

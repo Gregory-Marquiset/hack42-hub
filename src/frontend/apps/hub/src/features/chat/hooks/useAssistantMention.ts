@@ -19,6 +19,8 @@ export type AssistantMention = {
    * `null` when she already is, cannot be (encrypted room) or is unknown.
    */
   candidate: ChatMember | null;
+  /** Everyone `@` can suggest in this room: its members, and `candidate`. */
+  mentionCandidates: ChatMember[];
   /**
    * Invites the assistant if `content` addresses her and she is not in the
    * room. Resolves at once otherwise, and never rejects: the message is what
@@ -138,5 +140,12 @@ export const useAssistantMention = (
         })
       : null;
 
-  return { candidate, ensureInvited, unavailableReason };
+  // Who `@` can suggest: the members, already cached by react-query and
+  // shared with the members modal, and the assistant when she can be invited.
+  const mentionCandidates = useMemo(
+    () => (candidate ? [...present, candidate] : present),
+    [candidate, present],
+  );
+
+  return { candidate, mentionCandidates, ensureInvited, unavailableReason };
 };

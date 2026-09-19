@@ -198,24 +198,34 @@ def closed_message(meeting, document=None):
     return "\n".join(lines)
 
 
+def _to_tell(meeting_pk, field):
+    """
+    The meeting, when its members are to be told about it and were not yet;
+    `None` when there is nobody to tell or Ariane cannot write.
+    """
+    if not is_enabled():
+        return None
+    meeting = models.Meeting.objects.get(pk=meeting_pk)
+    if meeting.chat_id and _claim(meeting, field):
+        return meeting
+    return None
+
+
 def notify_scheduled(meeting_pk):
     """Tell the members a meeting was scheduled, once."""
-    meeting = models.Meeting.objects.get(pk=meeting_pk)
-    if _claim(meeting, "scheduled_notified_at"):
+    if meeting := _to_tell(meeting_pk, "scheduled_notified_at"):
         _send_to_members(meeting, scheduled_message(meeting))
 
 
 def notify_started(meeting_pk):
     """Tell the members a meeting starts, once."""
-    meeting = models.Meeting.objects.get(pk=meeting_pk)
-    if _claim(meeting, "started_notified_at"):
+    if meeting := _to_tell(meeting_pk, "started_notified_at"):
         _send_to_members(meeting, started_message(meeting), meeting_invitation(meeting))
 
 
 def notify_closed(meeting_pk, document=None):
     """Tell the members a meeting is over, once, with its transcript."""
-    meeting = models.Meeting.objects.get(pk=meeting_pk)
-    if _claim(meeting, "closed_notified_at"):
+    if meeting := _to_tell(meeting_pk, "closed_notified_at"):
         _send_to_members(meeting, closed_message(meeting, document))
 
 

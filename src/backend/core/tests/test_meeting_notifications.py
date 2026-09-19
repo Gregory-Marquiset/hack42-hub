@@ -421,3 +421,15 @@ def test_notifications_can_be_turned_off(homeserver):
     _create(_user("orga"))
 
     assert homeserver.sent == []
+
+
+@override_settings(**SETTINGS)
+def test_meeting_outside_a_conversation_tells_nobody(homeserver):
+    """Without a conversation, there is nobody to tell and nothing is claimed."""
+    meeting = _meeting(chat_id="")
+
+    meeting_notifications.notify_closed(meeting.pk)
+
+    assert homeserver.sent == []
+    meeting.refresh_from_db()
+    assert meeting.closed_notified_at is None

@@ -10,9 +10,10 @@ into it. `bin/seed-matrix` provisions humans; this provisions the robot.
 One token does the work: the AS token, committed in the registration file, lets
 the service act as any account in its namespace through `?user_id=`.
 
-There is no admin token. An earlier version issued one so Ariane could enter a
-room nobody had invited her to - which let a single member put an assistant into
-a conversation without asking the others. She waits for an invitation now.
+No admin token is issued here: Ariane never uses one, and enters a room only
+when invited. The backend's `MATRIX_ADMIN_TOKEN`, used read-only by the
+meetings for a room's members and name (see `bots/matrix.py`), is configured
+separately.
 
 Idempotent: re-running registers nothing twice and reuses the existing token.
 """
@@ -21,7 +22,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -34,9 +34,6 @@ AS_TOKEN = "ThisIsAnAppServiceTokenForDevOnly"
 HS_TOKEN = "ThisIsAHomeserverTokenForDevOnly"
 BOT_LOCALPART = "hub-as_ariane"
 BOT_DISPLAYNAME = "Ariane"
-
-MAS_CONTAINER = "hub-mas-1"
-MAS_CONFIG = "/config/config.yaml"
 
 ENV_FILE = pathlib.Path("env.d/development/bots.local")
 
@@ -62,15 +59,6 @@ def http_json(method: str, path: str, token: str, body: dict | None = None) -> d
         return payload
     except urllib.error.URLError as error:
         fail(f"{HOMESERVER} unreachable ({error.reason}). Run `make run-matrix` first.")
-
-
-def mas_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", "exec", MAS_CONTAINER, "mas-cli", "manage", "--config", MAS_CONFIG, *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
 
 
 def register_ghost() -> str:
@@ -124,8 +112,9 @@ def write_env(user_id: str) -> None:
         "#   MATRIX_HS_TOKEN  Synapse -> Hub, proves an incoming transaction\n"
         "#                    really comes from Synapse.\n"
         "#\n"
-        "# There is deliberately no Synapse admin token here. Ariane joins a\n"
-        "# room when she is invited, and not otherwise.\n"
+        "# No Synapse admin token here: Ariane joins a room when she is\n"
+        "# invited, and not otherwise. The meetings' MATRIX_ADMIN_TOKEN, if\n"
+        "# needed, is set separately.\n"
         "#\n"
         "# ALBERT_API_KEY is preserved across runs: paste it once, here.\n"
         f"MATRIX_BOT_USER_ID={user_id}\n"

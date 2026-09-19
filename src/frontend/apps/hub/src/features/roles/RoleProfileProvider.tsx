@@ -33,12 +33,12 @@ export const RoleProfileProvider = ({ children }: { children: ReactNode }) => {
   const save = useMutation({
     mutationFn: async (role: string): Promise<RoleProfile> => {
       if (!account) throw new Error("No chat account is connected.");
-      const token = await account.driver.getProfileIdentityToken();
+      const token = await account.driver.getOpenIdToken();
       const response = await fetchAPI(
         "profile-role/",
         {
           method: "PATCH",
-          body: JSON.stringify({ role, matrix_access_token: token }),
+          body: JSON.stringify({ role, openid_token: token }),
         },
         { redirectOn40x: false },
       );

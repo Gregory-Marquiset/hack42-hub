@@ -66,15 +66,29 @@ const toDocuments = (raw: unknown): ChatMeetingDocument[] =>
  * `null` when its content is missing the fields the call needs to be joined. */
 export const chatMeetingFromStateEvent = (
   event: MatrixEvent,
+): ChatMeeting | null =>
+  chatMeetingFromContent(
+    event.getStateKey(),
+    event.getContent<Record<string, unknown>>(),
+    event.getSender(),
+  );
+
+/**
+ * Maps the content of a meeting state to a `ChatMeeting`, or `null` when it
+ * misses the fields the call needs to be joined. `sender` names the organizer
+ * of an older state that does not. Pure: also used for a meeting just written.
+ */
+export const chatMeetingFromContent = (
+  stateKey: string | undefined,
+  content: Record<string, unknown>,
+  sender?: string,
 ): ChatMeeting | null => {
-  const content = event.getContent<Record<string, unknown>>();
   const url = content.meetingUrl;
   const startedAt = content.startedAt;
   const organizerId =
     typeof content.organizerId === "string" && content.organizerId
       ? content.organizerId
-      : event.getSender();
-  const stateKey = event.getStateKey();
+      : sender;
   if (
     typeof url !== "string" ||
     !url ||

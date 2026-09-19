@@ -7,9 +7,9 @@ import type {
   ChatMeeting,
   StartMeetingOptions,
 } from "@/features/drivers/types";
-import { isWebLink } from "@/features/drivers/webLink";
 import { notify } from "@/features/ui/components/toast";
 
+import { DocsLinkDraft } from "./DocsLinkDraft";
 import { formatFileSize } from "./fileSize";
 import { Download } from "./MeetingIcons";
 import { TEXT_FILE_ACCEPT, isTextFile } from "./textFile";
@@ -143,8 +143,6 @@ export const NewMeetingForm = ({
   const [agendaFile, setAgendaFile] = useState<DraftDocument | null>(null);
   const [documents, setDocuments] = useState<DraftDocument[]>([]);
   const [isAddingDocument, setIsAddingDocument] = useState(false);
-  const [draftTitle, setDraftTitle] = useState("");
-  const [draftUrl, setDraftUrl] = useState("");
   const agendaFileInputRef = useRef<HTMLInputElement>(null);
   const documentFileInputRef = useRef<HTMLInputElement>(null);
   const nextDocumentId = useRef(0);
@@ -278,20 +276,8 @@ export const NewMeetingForm = ({
     }
   };
 
-  const addDocument = () => {
-    const url = draftUrl.trim();
-    if (!isWebLink(url)) {
-      return;
-    }
-    const document = {
-      id: newDocumentId(),
-      title: draftTitle.trim() === "" ? url : draftTitle.trim(),
-      url,
-    };
-    setDocuments((current) => [...current, document]);
-    setDraftTitle("");
-    setDraftUrl("");
-    setIsAddingDocument(false);
+  const addDocument = (link: { title: string; url: string }) => {
+    setDocuments((current) => [...current, { id: newDocumentId(), ...link }]);
   };
 
   const removeDocument = (document: DraftDocument) => {
@@ -464,59 +450,11 @@ export const NewMeetingForm = ({
             ))}
           </ul>
 
-          {isAddingDocument ? (
-            <div className="hub__chat-meetings__document-draft">
-              <input
-                type="text"
-                className="hub__chat-meetings__input"
-                value={draftTitle}
-                placeholder={t("Document name")}
-                aria-label={t("Document name")}
-                tabIndex={tabIndex}
-                onChange={(event) => setDraftTitle(event.target.value)}
-              />
-              <input
-                type="url"
-                className="hub__chat-meetings__input"
-                value={draftUrl}
-                placeholder={t("Link")}
-                aria-label={t("Link")}
-                tabIndex={tabIndex}
-                onChange={(event) => setDraftUrl(event.target.value)}
-              />
-              <div className="hub__chat-meetings__document-draft-actions">
-                <button
-                  type="button"
-                  className="hub__chat-meetings__action"
-                  tabIndex={tabIndex}
-                  onClick={() => setIsAddingDocument(false)}
-                >
-                  {t("Cancel")}
-                </button>
-                <button
-                  type="button"
-                  className="hub__chat-meetings__action"
-                  data-primary="true"
-                  disabled={!isWebLink(draftUrl)}
-                  tabIndex={tabIndex}
-                  onClick={addDocument}
-                >
-                  {t("Add")}
-                </button>
-              </div>
-            </div>
-          ) : (
-            // Adds a document by link for now; picking it from Docs comes later.
-            <button
-              type="button"
-              className="hub__chat-meetings__add-document"
-              aria-label={t("Add a Docs link")}
-              tabIndex={tabIndex}
-              onClick={() => setIsAddingDocument(true)}
-            >
-              Docs
-            </button>
-          )}
+          <DocsLinkDraft
+            tabIndex={tabIndex}
+            onAdd={addDocument}
+            onOpenChange={setIsAddingDocument}
+          />
         </section>
 
         {ongoingMeeting && (

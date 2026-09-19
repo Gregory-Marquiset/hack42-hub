@@ -219,6 +219,8 @@ and this project adheres to
 - ♻️(frontend) Simplify the conversation auto-scroll onto the Virtuoso API
 - 💄(frontend) Use the brand color for the current user's message bubbles
 - 🔥(frontend) Remove the meeting entry from the side panel quick actions
+- ♻️(meetings) Share the file transfer, rows, link draft and invitation link
+  of the meetings and documents panels instead of keeping copies of them.
 
 ### Removed
 

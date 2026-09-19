@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import { useChatFiles } from "@/features/chat/hooks/useChatFiles";
 import type { ChatFile, ChatRef } from "@/features/drivers/types";
 
+import { FileRow } from "./FileRow";
 import { formatFileSize } from "./fileSize";
-import { Download } from "./MeetingIcons";
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
 
 type DocumentsToolProps = {
@@ -122,27 +122,15 @@ export const DocumentsTool = ({
         ) : (
           <ul className="hub__tools-list">
             {files.map((file) => (
-              <li key={file.id} className="hub__tools-list__row">
-                <span className="hub__tools-list__text">
-                  <span className="hub__tools-list__label">{file.name}</span>
-                  <span className="hub__tools-list__details">
-                    {details(file)}
-                  </span>
-                </span>
-                <span className="hub__tools-list__actions">
-                  <button
-                    type="button"
-                    className="hub__tools-list__icon-button"
-                    aria-label={t("Download {{name}}", { name: file.name })}
-                    disabled={pendingFileId !== null}
-                    aria-busy={pendingFileId === file.id || undefined}
-                    tabIndex={tabIndex}
-                    onClick={() => void downloadFile(file)}
-                  >
-                    <Download />
-                  </button>
-                </span>
-              </li>
+              <FileRow
+                key={file.id}
+                name={file.name}
+                details={details(file)}
+                tabIndex={tabIndex}
+                isDownloading={pendingFileId === file.id}
+                isDisabled={pendingFileId !== null}
+                onDownload={() => void downloadFile(file)}
+              />
             ))}
           </ul>
         )}

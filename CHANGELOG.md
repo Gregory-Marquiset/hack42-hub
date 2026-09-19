@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(notifications) Show a notification category as off when its rules are
+  set to stay silent (an empty action list since Matrix 1.7), and switch
+  it back on for real by restoring the rules' default actions.
 - 🐛(frontend) Stop leaking a copy of an avatar picture in memory each time
   it is displayed again: one copy per picture, released at logout.
 - 🐛(frontend) Offer the assistant's commands only once she is mentioned

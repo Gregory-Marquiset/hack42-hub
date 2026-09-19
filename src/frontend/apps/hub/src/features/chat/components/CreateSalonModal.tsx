@@ -16,6 +16,7 @@ import { useComposerAccountId } from "@/features/chat/hooks/useChatAccounts";
 import { useChatEncryptionSupport } from "@/features/chat/hooks/useChatEncryptionSupport";
 import { useChatUserSearch } from "@/features/chat/hooks/useChatUserSearch";
 import { useCreateChatForUsers } from "@/features/chat/hooks/useCreateChatForUsers";
+import { SpaceChildNotAllowedError } from "@/features/drivers/spaceErrors";
 import type { ChatUser, Space } from "@/features/drivers/types";
 import { Avatar } from "@/features/ui/components/avatar/Avatar";
 import { notify } from "@/features/ui/components/toast";
@@ -123,8 +124,12 @@ export const CreateSalonModal = ({
           shallow: true,
         });
       })
-      .catch(() => {
-        notify.error(t("The room could not be created. Please try again."));
+      .catch((error: unknown) => {
+        notify.error(
+          error instanceof SpaceChildNotAllowedError
+            ? t("You are not allowed to add rooms to this space.")
+            : t("The room could not be created. Please try again."),
+        );
       });
   };
 

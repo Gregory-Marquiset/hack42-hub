@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -6,6 +7,7 @@ import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import type { AccountId, ChatRef } from "@/features/drivers/types";
 
 import { chatHref } from "../chatRefs";
+import { notificationRulesQuery } from "../hooks/useNotificationRules";
 
 import { getMutedRoomRules } from "./describeNotificationRule";
 import { NotificationSound } from "./NotificationSound";
@@ -31,6 +33,7 @@ export const useChatNotifications = (
   isInCall = false,
 ): void => {
   const entries = useDriverEntries();
+  const queryClient = useQueryClient();
   const hasAccounts = entries.length > 0;
   const router = useRouter();
   const { t } = useTranslation();
@@ -80,28 +83,40 @@ export const useChatNotifications = (
     });
 
     let active = true;
+    // Through the query cache the settings panel reads too: one request for
+    // both, and the cache always holds the latest answer even when an older
+    // request settles last.
+    const refreshMuted = (
+      accountId: AccountId,
+      driver: (typeof entries)[number]["driver"],
+      fresh: boolean,
+    ) => {
+      const options = notificationRulesQuery(accountId, driver);
+      const fetching = fresh
+        ? queryClient.fetchQuery({ ...options, staleTime: 0 })
+        : queryClient.ensureQueryData(options);
+      void fetching
+        .then(() => {
+          const rules = queryClient.getQueryData(options.queryKey);
+          if (!active || !rules) return;
+          mutedByAccount.current.set(
+            accountId,
+            new Set(getMutedRoomRules(rules).map((rule) => rule.id)),
+          );
+        })
+        // Not connected yet, or unreadable: the next change tries again.
+        .catch(() => {});
+    };
     entries.forEach(({ accountId, driver }) => {
-      if (!driver.supportsNotificationRules) return;
-      void driver.getNotificationRules().then((rules) => {
-        if (!active) return;
-        mutedByAccount.current.set(
-          accountId,
-          new Set(getMutedRoomRules(rules).map((rule) => rule.id)),
-        );
-      });
+      if (driver.supportsNotificationRules)
+        refreshMuted(accountId, driver, false);
     });
     const unsubscribes = entries.map(({ accountId, driver }) =>
       driver.subscribeToEvents((event) => {
         if (!active || current.disposed) return;
 
         if (event.type === "notification-rules:changed") {
-          void driver.getNotificationRules().then((rules) => {
-            if (!active) return;
-            mutedByAccount.current.set(
-              accountId,
-              new Set(getMutedRoomRules(rules).map((rule) => rule.id)),
-            );
-          });
+          refreshMuted(accountId, driver, true);
           return;
         }
 
@@ -177,5 +192,5 @@ export const useChatNotifications = (
       active = false;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [entries, userId]);
+  }, [entries, queryClient, userId]);
 };

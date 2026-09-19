@@ -451,6 +451,11 @@ export type CreateChatOptions = {
  */
 export type ChatLookupOptions = {
   encrypted?: boolean;
+  /**
+   * Matrix id of the assistant. She joins every clear group on its creation,
+   * so a group lookup that does not ask for her ignores her membership.
+   */
+  assistantUserId?: string;
 };
 
 /** Read-only membership snapshot used by the conversation members modal. */

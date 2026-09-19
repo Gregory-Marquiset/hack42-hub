@@ -2,6 +2,7 @@ import type { TFunction } from "i18next";
 
 import type {
   NotificationRule,
+  NotificationRuleAction,
   NotificationRuleKind,
   NotificationRules,
 } from "@/features/drivers/types";
@@ -38,16 +39,36 @@ const RULE_KINDS: NotificationRuleKind[] = [
   "underride",
 ];
 
-/** A rule "notifies" unless it's disabled or explicitly set to `dont_notify`. */
+/**
+ * A rule notifies when it is enabled and asks to. Since Matrix 1.7 an empty
+ * action list means "don't notify", `dont_notify` being its legacy spelling:
+ * only an explicit `notify` does.
+ */
 const ruleNotifies = (rule: NotificationRule): boolean =>
-  rule.isEnabled && !rule.actions.includes("dont_notify");
+  rule.isEnabled && rule.actions.includes("notify");
 
-export type NotificationRuleDescription = {
+/**
+ * The actions the Matrix spec gives each default rule, restored when its
+ * category is switched back on: enabling a rule that is set to stay silent
+ * would change nothing.
+ */
+const SOUND: NotificationRuleAction = { setTweak: "sound", value: "default" };
+const HIGHLIGHT: NotificationRuleAction = { setTweak: "highlight" };
+const NOTIFYING_ACTIONS: Record<string, NotificationRuleAction[]> = {
+  [RULE_ID.dm]: ["notify", SOUND],
+  [RULE_ID.encryptedDm]: ["notify", SOUND],
+  [RULE_ID.isUserMention]: ["notify", SOUND, HIGHLIGHT],
+  [RULE_ID.containsDisplayName]: ["notify", SOUND, HIGHLIGHT],
+  [RULE_ID.containsUserName]: ["notify", SOUND, HIGHLIGHT],
+  [RULE_ID.isRoomMention]: ["notify", HIGHLIGHT],
+  [RULE_ID.atRoomNotification]: ["notify", HIGHLIGHT],
+  [RULE_ID.inviteForMe]: ["notify", SOUND],
+  [RULE_ID.tombstone]: ["notify", HIGHLIGHT],
+};
+
+type NotificationRuleDescription = {
   title: string;
   sentence: string;
-  /** False for a custom/unrecognized rule — the caller shows the raw rule
-   * id instead of a curated title for these. */
-  isWellKnown: boolean;
 };
 
 /** Pure: one rule + `t` in, a readable title/sentence out. No React, no Matrix client. */
@@ -64,7 +85,6 @@ export const describeNotificationRule = (
         sentence: rule.isEnabled
           ? t("All notifications are paused.")
           : t("Notifications are on."),
-        isWellKnown: true,
       };
     case RULE_ID.dm:
     case RULE_ID.encryptedDm:
@@ -73,7 +93,6 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you when someone sends you a direct message.")
           : t("Direct messages don't notify you."),
-        isWellKnown: true,
       };
     case RULE_ID.message:
     case RULE_ID.encryptedMessage:
@@ -82,7 +101,6 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you when a message is sent in a group conversation.")
           : t("Group messages don't notify you."),
-        isWellKnown: true,
       };
     case RULE_ID.isUserMention:
     case RULE_ID.containsDisplayName:
@@ -92,7 +110,6 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you when someone mentions you.")
           : t("Mentions don't notify you."),
-        isWellKnown: true,
       };
     case RULE_ID.isRoomMention:
     case RULE_ID.atRoomNotification:
@@ -101,7 +118,6 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you when someone pings the whole room.")
           : t("Room-wide pings don't notify you."),
-        isWellKnown: true,
       };
     case RULE_ID.inviteForMe:
       return {
@@ -109,7 +125,6 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you when you're invited to a conversation.")
           : t("Invitations don't notify you."),
-        isWellKnown: true,
       };
     case RULE_ID.reaction:
       return {
@@ -117,7 +132,6 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you when someone reacts to your message.")
           : t("Reactions don't notify you."),
-        isWellKnown: true,
       };
     case RULE_ID.memberEvent:
     case RULE_ID.tombstone:
@@ -126,14 +140,12 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you about membership changes and room upgrades.")
           : t("Room updates don't notify you."),
-        isWellKnown: true,
       };
     default:
       if (rule.kind === "room" && rule.actions.includes("dont_notify")) {
         return {
           title: t("Muted conversation"),
           sentence: t("This conversation is muted."),
-          isWellKnown: false,
         };
       }
       return {
@@ -141,7 +153,6 @@ export const describeNotificationRule = (
         sentence: ruleNotifies(rule)
           ? t("Notifies you for this custom rule.")
           : t("This custom rule doesn't notify you."),
-        isWellKnown: false,
       };
   }
 };
@@ -157,11 +168,6 @@ const findRule = (
   return undefined;
 };
 
-export type NotificationCategoryRuleRef = {
-  kind: NotificationRuleKind;
-  ruleId: string;
-};
-
 export type NotificationCategoryRow = {
   id: string;
   title: string;
@@ -169,8 +175,38 @@ export type NotificationCategoryRow = {
   /** True when at least one of the category's underlying rules notifies —
    * toggling the row flips every rule listed in `rules` together. */
   isEnabled: boolean;
-  rules: NotificationCategoryRuleRef[];
+  rules: NotificationRule[];
 };
+
+/** One write to a push rule: its enabled flag, or its actions. */
+export type NotificationRuleChange = {
+  kind: NotificationRuleKind;
+  ruleId: string;
+} & ({ enabled: boolean } | { actions: NotificationRuleAction[] });
+
+/**
+ * What switching a category row writes. Off disables every rule of it. On
+ * makes every rule notify: a disabled one is enabled, and one enabled but
+ * set to stay silent gets its default actions back - enabling it alone would
+ * leave the switch off.
+ */
+export const categoryRuleChanges = (
+  row: NotificationCategoryRow,
+  on: boolean,
+): NotificationRuleChange[] =>
+  row.rules.flatMap((rule): NotificationRuleChange[] => {
+    const ref = { kind: rule.kind, ruleId: rule.id };
+    if (!on) return rule.isEnabled ? [{ ...ref, enabled: false }] : [];
+    const changes: NotificationRuleChange[] = [];
+    if (!rule.actions.includes("notify")) {
+      changes.push({
+        ...ref,
+        actions: NOTIFYING_ACTIONS[rule.id] ?? ["notify"],
+      });
+    }
+    if (!rule.isEnabled) changes.push({ ...ref, enabled: true });
+    return changes;
+  });
 
 const CATEGORY_RULE_IDS: { id: string; ruleIds: string[] }[] = [
   { id: "direct-messages", ruleIds: [RULE_ID.dm, RULE_ID.encryptedDm] },
@@ -214,13 +250,18 @@ export const groupNotificationRulesByCategory = (
       .map((ruleId) => findRule(rules, ruleId))
       .filter((rule): rule is NotificationRule => rule !== undefined);
     if (matched.length === 0) return null;
-    const { title, sentence } = describeNotificationRule(matched[0], t);
+    // The sentence agrees with the switch: a notifying rule speaks for the
+    // row when there is one.
+    const { title, sentence } = describeNotificationRule(
+      matched.find(ruleNotifies) ?? matched[0],
+      t,
+    );
     const row: NotificationCategoryRow = {
       id,
       title,
       sentence,
       isEnabled: matched.some(ruleNotifies),
-      rules: matched.map((rule) => ({ kind: rule.kind, ruleId: rule.id })),
+      rules: matched,
     };
     return row;
   }).filter((row): row is NotificationCategoryRow => row !== null);

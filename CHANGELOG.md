@@ -214,6 +214,15 @@ and this project adheres to
   ALBERT_API_KEY as secrets, which also accept a `_FILE` variant.
 - ♻️(meetings) Tidy the meetings and assistant code: refusals raised once,
   one room-name helper, shared command parsing and test fixtures.
+- ♻️(search) Share the search database opening and the empty-results
+  message between conversations and messages, and drop unused state.
+- ♻️(frontend) Decide a new room's encryption and invitations in one
+  place, and share the account-driver lookup, the mention candidates, the
+  joined-room check, the presence preference query and availability menu.
+- ♻️(notifications) Unmute from the settings panel through the same hook
+  as the conversation header.
+- ♻️(search) Reduce the message history pool to a first-come queue of two
+  jobs, whose cancel also stops the jobs already running.
 - ✨(frontend) Expand the message composer up to eight lines
 - ⚡(frontend) Speed up the emoji picker and align reaction artwork
 - 💄(frontend) Improve message dates and bubble readability
@@ -289,6 +298,53 @@ and this project adheres to
   closed, or one past its time, which the Hub then refused.
 - 🌐(meetings) Translate the duration units of the meetings ("min", "h",
   "+15 min"), and state file size limits from the limits themselves.
+- 🐛(frontend) Remove the profile photo laid over a library avatar when
+  it changes or its screen closes, instead of leaving the old one behind,
+  and stop re-checking the page on every change of the document.
+- 🐛(search) Cancel the last step of a jump to a message when its
+  conversation view closes before it runs.
+- 🐛(frontend) Show your own presence right after choosing busy as others
+  see it, instead of a value no presence badge knows, and keep the
+  availability menu working when local storage is refused.
+- 🐛(notifications) Read the muted conversations through the shared cache
+  of notification rules, without an unhandled error before the chat
+  account is connected, and without an older answer overwriting a newer.
+- 🐛(notifications) Show a notification category as off when its rules are
+  set to stay silent (an empty action list since Matrix 1.7), and switch
+  it back on for real by restoring the rules' default actions.
+- 🐛(frontend) Stop leaking a copy of an avatar picture in memory each time
+  it is displayed again: one copy per picture, released at logout.
+- 🐛(frontend) Offer the assistant's commands only once she is mentioned
+  the way she answers to (`@Ariane`, not a name containing hers), and name
+  her as configured in the messages about inviting her.
+- 🐛(frontend) Keep the composer from crashing on Enter when the mention
+  list shrinks under the highlighted row (someone left the room).
+- 🐛(frontend) Open a conversation right after accepting its invitation,
+  instead of reporting it as not joined when a membership check sent just
+  before came back afterwards.
+- 🐛(frontend) Refuse to create a room in a space you may not add rooms
+  to, instead of creating it outside the space and reporting a failure
+  (so that every retry added one more room).
+- 🐛(frontend) Reopen the group already shared with the same people from
+  New Chat, instead of creating a new one each time: the assistant, who
+  joins every clear group, made it look like another set of people.
+- 🐛(search) Stop the message search index from growing without end: a
+  conversation left is dropped from it, and a conversation keeps its most
+  recent 2,000 messages.
+- 🔒️(search) Erase the message search index at logout, even when the
+  Matrix driver never loaded in that tab: it keeps message text.
+- 🐛(search) Make "Retry indexing" fetch again the conversations whose
+  history failed, report a missing message search storage, and recover
+  message search after another tab logged out.
+- 🐛(search) Keep message search in step with the conversation: an edited
+  message is found by its new text instead of appearing twice, a deleted
+  one is no longer found, and your own and encrypted messages are indexed
+  as they arrive instead of waiting for the history to be fetched.
+- 🐛(search) Make `mentions:` find the messages mentioning that person,
+  not the ones they sent, and the replies to their messages.
+- 🐛(search) Highlight the matched words of a message search result: the
+  highlight was computed on a trimmed copy of the message and not moved
+  with the excerpt cut around it, so it landed on other characters.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

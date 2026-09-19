@@ -1,6 +1,4 @@
-import { useMemo } from "react";
-
-import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import { useAccountDriver } from "@/features/drivers/useAccountDriver";
 import type { AccountId } from "@/features/drivers/types";
 
 /**
@@ -9,18 +7,5 @@ import type { AccountId } from "@/features/drivers/types";
  * New Chat composer is usable for a not-yet-existing conversation. Keyed by
  * account id (not a `ChatRef`) since a draft conversation has no id yet.
  */
-export const useChatCreationSupport = (
-  accountId: AccountId | null,
-): boolean => {
-  const entries = useDriverEntries();
-
-  return useMemo(() => {
-    if (!accountId) {
-      return false;
-    }
-    return (
-      entries.find((entry) => entry.accountId === accountId)?.driver
-        .supportsConversationCreation ?? false
-    );
-  }, [entries, accountId]);
-};
+export const useChatCreationSupport = (accountId: AccountId | null): boolean =>
+  useAccountDriver(accountId)?.supportsConversationCreation ?? false;

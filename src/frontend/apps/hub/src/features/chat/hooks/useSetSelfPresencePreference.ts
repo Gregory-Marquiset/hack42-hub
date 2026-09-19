@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { chatKeys } from "@/features/chat/chatKeys";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
+import { publishedPresence } from "@/features/drivers/presencePreference";
 import type {
   AccountId,
   ChatSelfPresencePreference,
@@ -32,9 +33,10 @@ export const useSetSelfPresencePreference = (accountId: AccountId): Result => {
       );
       const userId = getRegistry().get(accountId).getCurrentUserId();
       if (userId) {
+        // What others now see, not the preference: "busy" is not a presence.
         queryClient.setQueryData(chatKeys.userPresence(accountId, userId), {
           userId,
-          state: preference,
+          state: publishedPresence(preference),
         });
       }
       notify.brand(t("Your availability has been updated."));

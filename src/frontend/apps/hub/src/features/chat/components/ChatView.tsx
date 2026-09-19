@@ -29,7 +29,6 @@ import { useEditChatMessage } from "../hooks/useEditChatMessage";
 import { useChatThreads } from "../hooks/useChatThreads";
 import { useSendChatMessage } from "../hooks/useSendChatMessage";
 
-import { useChatMembers } from "../hooks/useChatMembers";
 import { ChatComposer } from "./ChatComposer";
 import { ChatConversation } from "./ChatConversation";
 import { ChatInvitationView } from "./ChatInvitationView";
@@ -101,22 +100,13 @@ export const ChatView = ({
   } = useSendChatMessage(chatRef);
   const { editMessage, isEditing } = useEditChatMessage(chatRef);
   const { users: typingUsers, onTypingActivity } = useChatTyping(chatRef);
-  // Who `@` can suggest. Already cached by react-query and shared with the
-  // members modal, so opening the list costs no extra request. The assistant
-  // is offered even before she is in the room: mentioning her invites her.
-  const { present } = useChatMembers(
-    chatRef ?? { accountId: "", chatId: "" },
-    Boolean(chatRef),
-  );
+  // The assistant is offered even before she is in the room: mentioning her
+  // invites her.
   const {
-    candidate: assistantCandidate,
+    mentionCandidates,
     ensureInvited,
     unavailableReason: assistantUnavailableReason,
   } = useAssistantMention(chatRef, chat);
-  const mentionCandidates = useMemo(
-    () => (assistantCandidate ? [...present, assistantCandidate] : present),
-    [assistantCandidate, present],
-  );
   const [editingMessage, setEditingMessage] =
     useState<EditingChatMessage | null>(null);
   const [unreadMessagesBanner, setUnreadMessagesBanner] =

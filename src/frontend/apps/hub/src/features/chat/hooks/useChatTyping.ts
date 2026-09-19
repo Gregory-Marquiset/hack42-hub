@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import { useAccountDriver } from "@/features/drivers/useAccountDriver";
 import type { Driver } from "@/features/drivers/Driver";
 import type { ChatRef, ChatTypingUser } from "@/features/drivers/types";
 
@@ -89,17 +89,9 @@ export type UseChatTypingResult = {
  * never flashes the indicator off and back on.
  */
 export const useChatTyping = (ref: ChatRef | null): UseChatTypingResult => {
-  const entries = useDriverEntries();
   const accountId = ref?.accountId;
   const chatId = ref?.chatId;
-  const driver = useMemo(
-    () =>
-      accountId
-        ? (entries.find((entry) => entry.accountId === accountId)?.driver ??
-          null)
-        : null,
-    [accountId, entries],
-  );
+  const driver = useAccountDriver(accountId) ?? null;
   const [users, setUsers] = useState<ChatTypingUser[]>([]);
   const visibleUsersRef = useRef<ChatTypingUser[]>([]);
   const removalTimersRef = useRef(new Map<string, number>());

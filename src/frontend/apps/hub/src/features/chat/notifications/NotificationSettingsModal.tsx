@@ -1,25 +1,56 @@
 import { Modal, ModalSize, Switch } from "@gouvfr-lasuite/ui-components";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { chatKeys } from "@/features/chat/chatKeys";
+import { useChatMute } from "@/features/chat/hooks/useChatMute";
 import { useChats } from "@/features/chat/hooks/useChats";
 import {
   useNotificationRules,
+  useSetNotificationRuleActions,
   useSetNotificationRuleEnabled,
 } from "@/features/chat/hooks/useNotificationRules";
-import { getRegistry } from "@/features/drivers/DriverRegistry";
 import type { AccountId } from "@/features/drivers/types";
-import { notify } from "@/features/ui/components/toast";
 
 import {
+  categoryRuleChanges,
   describeNotificationRule,
   findMasterRule,
   getAdvancedRules,
   getMutedRoomRules,
   groupNotificationRulesByCategory,
 } from "./describeNotificationRule";
+
+/**
+ * One muted conversation, unmuted through the same hook as its header menu.
+ * The list follows on its own: the driver announces the rules change, which
+ * refreshes the rules this panel reads.
+ */
+const MutedConversationRow = ({
+  accountId,
+  chatId,
+  name,
+}: {
+  accountId: AccountId;
+  chatId: string;
+  name: string;
+}) => {
+  const { t } = useTranslation();
+  const ref = useMemo(() => ({ accountId, chatId }), [accountId, chatId]);
+  const { setMuted, isPending } = useChatMute(ref, false);
+  return (
+    <li className="hub__notification-settings__muted-row">
+      <span>{name}</span>
+      <button
+        type="button"
+        className="hub__notification-settings__unmute"
+        disabled={isPending}
+        onClick={() => setMuted(false)}
+      >
+        {t("Unmute")}
+      </button>
+    </li>
+  );
+};
 
 type NotificationSettingsModalProps = {
   accountId: AccountId;
@@ -38,12 +69,12 @@ export const NotificationSettingsModal = ({
   onClose,
 }: NotificationSettingsModalProps) => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const { rules, isInitialLoading, isError } = useNotificationRules(
     accountId,
     isOpen,
   );
   const { setEnabled } = useSetNotificationRuleEnabled(accountId);
+  const { setActions } = useSetNotificationRuleActions(accountId);
   const { all, favourites } = useChats();
   const chatNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -58,23 +89,6 @@ export const NotificationSettingsModal = ({
   );
   const mutedRooms = useMemo(() => getMutedRoomRules(rules), [rules]);
   const advancedRules = useMemo(() => getAdvancedRules(rules), [rules]);
-
-  const { mutate: unmute } = useMutation({
-    mutationFn: (roomId: string) =>
-      getRegistry().get(accountId).setChatMuted(roomId, false),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: chatKeys.notificationRules(accountId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: chatKeys.chatMutedOf(accountId),
-      });
-    },
-    onError: () => {
-      notify.error(t("This setting could not be changed. Please try again."));
-    },
-    meta: { noGlobalError: true },
-  });
 
   return (
     <Modal
@@ -124,8 +138,19 @@ export const NotificationSettingsModal = ({
                     label={row.title}
                     checked={row.isEnabled}
                     onChange={(event) =>
-                      row.rules.forEach(({ kind, ruleId }) =>
-                        setEnabled(kind, ruleId, event.target.checked),
+                      categoryRuleChanges(row, event.target.checked).forEach(
+                        (change) =>
+                          "actions" in change
+                            ? setActions(
+                                change.kind,
+                                change.ruleId,
+                                change.actions,
+                              )
+                            : setEnabled(
+                                change.kind,
+                                change.ruleId,
+                                change.enabled,
+                              ),
                       )
                     }
                   />
@@ -143,19 +168,12 @@ export const NotificationSettingsModal = ({
                 </h3>
                 <ul className="hub__notification-settings__muted-list">
                   {mutedRooms.map((rule) => (
-                    <li
+                    <MutedConversationRow
                       key={rule.id}
-                      className="hub__notification-settings__muted-row"
-                    >
-                      <span>{chatNames.get(rule.id) ?? rule.id}</span>
-                      <button
-                        type="button"
-                        className="hub__notification-settings__unmute"
-                        onClick={() => unmute(rule.id)}
-                      >
-                        {t("Unmute")}
-                      </button>
-                    </li>
+                      accountId={accountId}
+                      chatId={rule.id}
+                      name={chatNames.get(rule.id) ?? rule.id}
+                    />
                   ))}
                 </ul>
               </div>

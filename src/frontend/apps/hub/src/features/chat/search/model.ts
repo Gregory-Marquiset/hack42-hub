@@ -184,9 +184,10 @@ export const matchesMessageFilters = (
   // mentions: filter — match if any mentionedUserIds or replyToSenderId matches
   if (filters.mentions.length > 0) {
     const matchesMentions = filters.mentions.some((token) => {
-      // Check direct mentions
+      // Check direct mentions. Only the mentioned ids are known here: the
+      // sender's name must not stand in for theirs.
       const isMentioned = doc.mentionedUserIds.some((userId) =>
-        userTokenMatches(token, userId, doc.senderName),
+        userTokenMatches(token, userId, ""),
       );
       // Check reply-to (mentions: also matches replies-to-that-user)
       const isReplyTo =

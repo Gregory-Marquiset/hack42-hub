@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Make `mentions:` find the messages mentioning that person,
+  not the ones they sent, and the replies to their messages.
 - 🐛(search) Highlight the matched words of a message search result: the
   highlight was computed on a trimmed copy of the message and not moved
   with the excerpt cut around it, so it landed on other characters.

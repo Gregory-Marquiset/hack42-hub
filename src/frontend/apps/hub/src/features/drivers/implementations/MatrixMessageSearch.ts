@@ -1,6 +1,9 @@
 import {
+  EventStatus,
   EventTimeline,
+  EventType,
   MatrixClient,
+  RelationType,
   RoomEvent,
 } from "matrix-js-sdk/lib/matrix";
 import type { MatrixEvent } from "matrix-js-sdk/lib/models/event";
@@ -29,6 +32,7 @@ import {
   mainTimelineEvents,
   scopedTimelineWindow,
 } from "./matrixTimelineWindow";
+import { isMessageEvent } from "./matrixEventMapping";
 import { matrixJoinedRoomToLocalChat } from "./matrixRoomMapping";
 
 const PERSIST_DEBOUNCE_MS = 250;
@@ -47,6 +51,29 @@ type MatrixMessageContent = {
   "m.mentions"?: { user_ids?: string[] };
   "m.relates_to"?: { "m.in_reply_to"?: { event_id?: string } };
 };
+
+/**
+ * Sent and acknowledged by the server. A local echo keeps a temporary `~` id
+ * until then: it is indexed on its `LocalEchoUpdated`, under its real id.
+ */
+const isSettledEvent = (event: MatrixEvent): boolean => {
+  const id = event.getId();
+  return (
+    !!id &&
+    !id.startsWith("~") &&
+    (!event.status || event.status === EventStatus.SENT)
+  );
+};
+
+/**
+ * Whether an event becomes a search document of its own, for the live and
+ * the backfill paths alike. An edit is not one: it rewrites its original.
+ */
+const isIndexableMessage = (event: MatrixEvent): boolean =>
+  isMessageEvent(event) &&
+  !event.isRedacted() &&
+  !event.isDecryptionFailure() &&
+  isSettledEvent(event);
 
 export class MatrixMessageSearch {
   private readonly messages = new Map<
@@ -90,15 +117,40 @@ export class MatrixMessageSearch {
       );
     }
 
-    // Set up timeline observer for live messages
-    this.detach = () => this.mx.off(RoomEvent.Timeline, this.onTimeline);
+    // Live messages: new events, local echoes once the server has given them
+    // their id, and redactions.
+    this.detach = () => {
+      this.mx.off(RoomEvent.Timeline, this.onTimeline);
+      this.mx.off(RoomEvent.LocalEchoUpdated, this.onLocalEchoUpdated);
+      this.mx.off(RoomEvent.Redaction, this.onRedaction);
+    };
     this.mx.on(RoomEvent.Timeline, this.onTimeline);
+    this.mx.on(RoomEvent.LocalEchoUpdated, this.onLocalEchoUpdated);
+    this.mx.on(RoomEvent.Redaction, this.onRedaction);
 
     this.recomputeStatus();
     this.emit();
   }
 
-  private onTimeline = (event: MatrixEvent, room?: Room) => {
+  private onTimeline = (
+    event: MatrixEvent,
+    room: Room | undefined,
+    _toStartOfTimeline: boolean | undefined,
+    removed: boolean,
+  ) => {
+    if (!removed) this.indexLive(event, room);
+  };
+
+  private onLocalEchoUpdated = (event: MatrixEvent, room: Room) =>
+    this.indexLive(event, room);
+
+  private onRedaction = (event: MatrixEvent, room: Room) => {
+    const redactedId = event.getAssociatedId();
+    if (this.disposed || !redactedId) return;
+    this.removeMessage(room.roomId, redactedId);
+  };
+
+  private indexLive(event: MatrixEvent, room?: Room, decrypted = false): void {
     if (this.disposed || !room) return;
     // Read membership synchronously off the room's own state, not the
     // asynchronously-populated joinedRoomIds set: that set is filled by
@@ -106,16 +158,60 @@ export class MatrixMessageSearch {
     // already fired, so gating on it here silently (and permanently) drops
     // every message received before that population completes.
     if (room.getMyMembership() !== "join") return;
-    if (event.isRedacted() || event.getType() !== "m.room.message") return;
+    // Live events are decrypted on demand, after they are announced.
+    if (event.isEncrypted() && !decrypted) {
+      void this.mx
+        .decryptEventIfNeeded(event)
+        .catch(() => {})
+        .then(() => this.indexLive(event, room, true));
+      return;
+    }
+
+    const relation = event.getRelation();
+    if (
+      relation?.rel_type === RelationType.Replace &&
+      relation.event_id &&
+      event.getType() === EventType.RoomMessage &&
+      isSettledEvent(event)
+    ) {
+      this.applyEdit(room.roomId, relation.event_id, event);
+      return;
+    }
+    if (!isIndexableMessage(event)) return;
 
     const doc = this.buildMessageDocument(room.roomId, event);
-    if (!doc) return;
+    if (doc) this.storeLive(doc);
+  }
 
-    this.indexMessage(room.roomId, doc);
+  /** An edit rewrites the text of the message it replaces, never a new one. */
+  private applyEdit(roomId: string, targetId: string, edit: MatrixEvent) {
+    const original = this.messages.get(roomId)?.get(targetId);
+    // Only the original sender can edit a message (spec, m.replace).
+    if (!original || original.senderId !== edit.getSender()) return;
+    const content = edit.getContent<{
+      "m.new_content"?: MatrixMessageContent;
+    }>()["m.new_content"];
+    const fields = content && this.contentFields(content);
+    if (fields) this.storeLive({ ...original, ...fields });
+  }
+
+  private storeLive(doc: MessageSearchDocument): void {
+    this.indexMessage(doc.roomId, doc);
     this.pendingMessages.push(doc);
     this.schedulePersist();
     this.emit();
-  };
+  }
+
+  private removeMessage(roomId: string, eventId: string): void {
+    const removed = this.messages.get(roomId)?.delete(eventId);
+    // A queued write of it would bring it back after the deletion.
+    const pending = this.pendingMessages.filter(
+      (doc) => doc.roomId !== roomId || doc.eventId !== eventId,
+    );
+    this.pendingMessages.splice(0, this.pendingMessages.length, ...pending);
+    void this.storage.deleteMessage(roomId, eventId);
+    if (removed) this.emit();
+  }
 
   setJoinedRooms(roomIds: Set<string>): void {
     this.joinedRoomIds = new Set(roomIds);
@@ -210,9 +306,7 @@ export class MatrixMessageSearch {
       );
       if (this.disposed || cancelled()) return;
 
-      const events = mainTimelineEvents(window).filter(
-        (event) => !event.isRedacted(),
-      );
+      const events = mainTimelineEvents(window).filter(isIndexableMessage);
       const withinAge = events.filter((event) => event.getTs() > cutoff);
       const bounded =
         withinAge.length > BACKFILL_MAX_MESSAGES
@@ -352,21 +446,12 @@ export class MatrixMessageSearch {
   ): MessageSearchDocument | null {
     try {
       const content = event.getContent<MatrixMessageContent>();
-      if (!content.body || typeof content.body !== "string") return null;
+      const fields = this.contentFields(content);
+      if (!fields) return null;
 
       const senderId = event.getSender();
       const timestamp = event.getTs();
       if (!senderId || !timestamp) return null;
-
-      // Determine content kind from msgtype
-      const msgtype = content.msgtype || "m.text";
-      const contentKind = this.msgtypeToContentKind(msgtype);
-
-      // Extract mentioned user IDs
-      const mentionedUserIds = this.extractMentionedUsers(content);
-
-      // Check for links
-      const hasLink = EXTRACT_URL_REGEX.test(content.body);
 
       // Get sender display name
       const room = this.mx.getRoom(roomId);
@@ -384,11 +469,7 @@ export class MatrixMessageSearch {
         eventId: event.getId() || "",
         senderId,
         senderName,
-        body: content.body,
-        normalizedBody: normalizeSearch(content.body),
-        contentKind,
-        hasLink,
-        mentionedUserIds,
+        ...fields,
         replyToEventId,
         replyToSenderId,
         timestamp,
@@ -400,6 +481,23 @@ export class MatrixMessageSearch {
     } catch {
       return null;
     }
+  }
+
+  /** The part of a document read from the content, which an edit replaces. */
+  private contentFields(
+    content: MatrixMessageContent,
+  ): Pick<
+    MessageSearchDocument,
+    "body" | "normalizedBody" | "contentKind" | "hasLink" | "mentionedUserIds"
+  > | null {
+    if (!content.body || typeof content.body !== "string") return null;
+    return {
+      body: content.body,
+      normalizedBody: normalizeSearch(content.body),
+      contentKind: this.msgtypeToContentKind(content.msgtype || "m.text"),
+      hasLink: EXTRACT_URL_REGEX.test(content.body),
+      mentionedUserIds: this.extractMentionedUsers(content),
+    };
   }
 
   private msgtypeToContentKind(msgtype: string): MessageContentKind {

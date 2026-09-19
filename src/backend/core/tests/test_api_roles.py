@@ -30,20 +30,23 @@ def client_user():
     return client, user
 
 
-def whoami(user_id="@alice:localhost", status=200):
-    """Matrix verifies possession of the active chat account."""
+USERINFO = f"{settings.MATRIX_HOMESERVER_URL}/_matrix/federation/v1/openid/userinfo"
+
+
+def userinfo(user_id="@alice:localhost", status=200):
+    """Matrix vouches for the OpenID token of the active chat account."""
     responses.get(
-        f"{settings.MATRIX_HOMESERVER_URL}/_matrix/client/v3/account/whoami",
-        json={"user_id": user_id},
+        USERINFO,
+        json={"sub": user_id},
         status=status,
-        match=[responses.matchers.header_matcher({"Authorization": "Bearer proof"})],
+        match=[responses.matchers.query_param_matcher({"access_token": "proof"})],
     )
 
 
 def save(client, role, **extra):
     """Send the role and the current chat identity proof."""
     return client.patch(
-        PROFILE, {"role": role, "matrix_access_token": "proof", **extra}, format="json"
+        PROFILE, {"role": role, "openid_token": "proof", **extra}, format="json"
     )
 
 
@@ -66,7 +69,7 @@ def test_empty_profile_does_not_trigger_discovery(client_user):
 def test_save_change_remove_and_read_global_role(client_user):
     """One role survives reloads, is visible to others and can be removed."""
     client, user = client_user
-    whoami()
+    userinfo()
     response = save(client, "  dev  ")
     assert response.status_code == 200
     assert response.json() == {"role": "DEV", "matrix_id": "@alice:localhost"}
@@ -89,7 +92,7 @@ def test_role_is_not_a_permission_or_an_editable_user_id(client_user):
     """A professional label never modifies privileges or another Hub profile."""
     client, user = client_user
     other = factories.UserFactory(professional_role="PO")
-    whoami()
+    userinfo()
     assert save(client, "admin", id=str(other.id), is_staff=True).status_code == 200
     user.refresh_from_db()
     other.refresh_from_db()
@@ -121,7 +124,7 @@ def test_identity_proof_is_required(client_user):
 def test_invalid_proof_does_not_save(client_user):
     """A rejected token cannot claim a chat identity or change a role."""
     client, user = client_user
-    whoami(status=401)
+    userinfo(status=401)
     assert save(client, "DEV").status_code == 400
     user.refresh_from_db()
     assert user.matrix_id is None
@@ -133,7 +136,7 @@ def test_cannot_claim_another_hub_profiles_matrix_identity(client_user):
     """A linked chat account cannot silently transfer to another Hub user."""
     client, _ = client_user
     other = factories.UserFactory(matrix_id="@alice:localhost", professional_role="PO")
-    whoami()
+    userinfo()
     assert save(client, "DEV").status_code == 409
     other.refresh_from_db()
     assert other.professional_role == "PO"
@@ -146,7 +149,7 @@ def test_cannot_silently_switch_linked_chat_account(client_user):
     user.matrix_id = "@bob:localhost"
     user.professional_role = "PM"
     user.save()
-    whoami()
+    userinfo()
     assert save(client, "DEV").status_code == 409
     user.refresh_from_db()
     assert user.professional_role == "PM"
@@ -156,10 +159,7 @@ def test_cannot_silently_switch_linked_chat_account(client_user):
 def test_network_failure_preserves_role(client_user):
     """Report an unavailable chat service instead of pretending to save."""
     client, user = client_user
-    responses.get(
-        f"{settings.MATRIX_HOMESERVER_URL}/_matrix/client/v3/account/whoami",
-        body=requests.Timeout(),
-    )
+    responses.get(USERINFO, body=requests.Timeout())
     assert save(client, "DEV").status_code == 503
     user.refresh_from_db()
     assert user.professional_role == ""
@@ -201,8 +201,8 @@ def test_the_identity_proof_is_kept_out_of_tracebacks():
     """A live credential must not be printed by the technical 500 page.
 
     Django shows every frame local verbatim under DEBUG unless the function is
-    marked, and this one holds a token that grants full control of a chat
-    account.
+    marked, and this one holds a token that proves a chat identity for as long
+    as it lives.
     """
     assert roles.verify_chat_identity.sensitive_variables == ("token",)
 
@@ -211,11 +211,11 @@ def test_the_identity_proof_is_kept_out_of_tracebacks():
 def test_the_identity_proof_is_neither_stored_nor_returned(client_user):
     """The proof buys one answer - the Matrix id - and nothing of it survives."""
     client, user = client_user
-    whoami()
+    userinfo()
 
     body = save(client, "DEV").json()
 
-    assert "matrix_access_token" not in body
+    assert "openid_token" not in body
     assert "proof" not in json.dumps(body)
     user.refresh_from_db()
     assert "proof" not in json.dumps(

@@ -550,7 +550,7 @@ export abstract class Driver {
 
   /**
    * A short-lived OpenID token of the current account, for the Hub backend to
-   * check which user it is (meeting archives) without its access token.
+   * check which user it is (meeting archives, roles) without its access token.
    */
   async getOpenIdToken(): Promise<string> {
     throw new Error(
@@ -727,11 +727,6 @@ export abstract class Driver {
    * link a label to an identity the driver is unable to vouch for.
    */
   readonly supportsProfileRoles: boolean = false;
-
-  /** Current proof of chat identity, sent to Hub only when saving a role. */
-  async getProfileIdentityToken(): Promise<string> {
-    throw new Error("Profile identity is not supported by this driver.");
-  }
 
   /**
    * Whether this driver can create end-to-end encrypted conversations.

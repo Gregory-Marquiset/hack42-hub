@@ -28,7 +28,7 @@ vi.mock("@/features/drivers/DriverRegistry", () => ({
     {
       driver: {
         supportsProfileRoles: true,
-        getProfileIdentityToken: identityToken,
+        getOpenIdToken: identityToken,
       },
     },
   ],
@@ -275,7 +275,7 @@ describe("Profile integration", () => {
       .mock.calls.find(([, init]) => init?.method === "PATCH");
     expect(JSON.parse(mutation?.[1]?.body as string)).toEqual({
       role: "DEV",
-      matrix_access_token: "current-proof",
+      openid_token: "current-proof",
     });
     fireEvent.click(screen.getByRole("button", { name: "My role" }));
     expect(

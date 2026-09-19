@@ -1,10 +1,11 @@
 """Meeting transcripts: from the relayed subtitles to a Docs document."""
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import override
 
-from core import docs
+from core import docs, models
 
 
 class NoTranscriptError(Exception):
@@ -60,22 +61,29 @@ def save_transcript(meeting, title):
     Returns the id of the document. Raises `NoTranscriptError` when there is
     nothing to save, and `docs.DocsError` when Docs refuses it.
     """
-    if meeting.transcript_document_id:
-        return meeting.transcript_document_id
+    # The automatic closing and the organizer (or a double click) can both get
+    # here: the meeting stays locked while Docs creates the document, and the
+    # second one answers the document of the first.
+    with transaction.atomic():
+        locked = models.Meeting.objects.select_for_update().get(pk=meeting.pk)
+        if not locked.transcript_document_id:
+            segments = list(meeting.transcript_segments.all())
+            if not any(segment.text.strip() for segment in segments):
+                raise NoTranscriptError
 
-    segments = list(meeting.transcript_segments.all())
-    if not any(segment.text.strip() for segment in segments):
-        raise NoTranscriptError
+            with (
+                override(meeting.organizer.language),
+                timezone.override(meeting.time_zone),
+            ):
+                content = transcript_markdown(meeting, segments)
 
-    with override(meeting.organizer.language), timezone.override(meeting.time_zone):
-        content = transcript_markdown(meeting, segments)
-
-    meeting.transcript_document_id = docs.create_document_for_owner(
-        title=document_title(meeting, title),
-        content=content,
-        user=meeting.organizer,
-    )
-    meeting.save(update_fields=["transcript_document_id", "updated_at"])
+            locked.transcript_document_id = docs.create_document_for_owner(
+                title=document_title(meeting, title),
+                content=content,
+                user=meeting.organizer,
+            )
+            locked.save(update_fields=["transcript_document_id", "updated_at"])
+    meeting.transcript_document_id = locked.transcript_document_id
     return meeting.transcript_document_id
 
 

@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Save a meeting transcript in Docs once when the automatic
+  closing and the organizer (or a double click) close it at the same time.
 - 🐛(meetings) Refuse a member or fall back to a generic room name when the
   Matrix admin token is missing, instead of failing with a server error.
 - 🐛(search) Fix the jump to a message found via search: it could fail to

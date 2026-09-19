@@ -15,10 +15,12 @@ const {
   getNotificationRules,
   setNotificationRuleEnabled,
   setNotificationRuleActions,
+  setChatMuted,
 } = vi.hoisted(() => ({
   getNotificationRules: vi.fn<() => Promise<NotificationRules>>(),
   setNotificationRuleEnabled: vi.fn(async () => {}),
   setNotificationRuleActions: vi.fn(async () => {}),
+  setChatMuted: vi.fn(async () => {}),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -26,11 +28,15 @@ vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: () => undefined },
 }));
 vi.mock("@/features/drivers/DriverRegistry", () => ({
+  useDriverEntries: () => [
+    { accountId: "account-a", driver: { supportsNotificationRules: true } },
+  ],
   getRegistry: () => ({
     get: () => ({
       getNotificationRules,
       setNotificationRuleEnabled,
       setNotificationRuleActions,
+      setChatMuted,
     }),
   }),
 }));
@@ -140,5 +146,28 @@ describe("NotificationSettingsModal category switches", () => {
       }),
     );
     expect(setNotificationRuleActions).not.toHaveBeenCalled();
+  });
+});
+
+describe("NotificationSettingsModal muted conversations", () => {
+  it("unmutes a conversation through the driver", async () => {
+    getNotificationRules.mockResolvedValue({
+      ...rulesWith([]),
+      room: [
+        rule({
+          id: "!muted:localhost",
+          kind: "room",
+          isDefault: false,
+          actions: ["dont_notify"],
+        }),
+      ],
+    });
+    renderModal();
+
+    fireEvent.click(await screen.findByText("Unmute"));
+
+    await waitFor(() =>
+      expect(setChatMuted).toHaveBeenCalledWith("!muted:localhost", false),
+    );
   });
 });

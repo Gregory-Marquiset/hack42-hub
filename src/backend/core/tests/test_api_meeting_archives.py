@@ -34,25 +34,6 @@ MATRIX_SETTINGS = {
 MEMBER = "@bob:localhost"
 
 
-@pytest.fixture(name="homeserver")
-def fixture_homeserver(monkeypatch):
-    """A homeserver where the token `bob-token` is Bob's, a room member."""
-    calls = []
-
-    def openid_user_id(token):
-        calls.append(("openid", token))
-        return MEMBER if token == "bob-token" else None
-
-    def joined_members(room_id):
-        calls.append(("members", room_id))
-        return {"@orga:localhost", MEMBER}
-
-    monkeypatch.setattr(matrix, "openid_user_id", openid_user_id)
-    monkeypatch.setattr(matrix, "joined_members", joined_members)
-    monkeypatch.setattr(matrix, "room_name", lambda room_id: None)
-    return calls
-
-
 def _closed_meeting(**overrides):
     values = {
         "chat_id": "!room:localhost",
@@ -64,12 +45,6 @@ def _closed_meeting(**overrides):
         "organizer": factories.UserFactory(full_name="Olga Organisatrice"),
     }
     return factories.MeetingFactory(**{**values, **overrides})
-
-
-def _client(user):
-    client = APIClient()
-    client.force_login(user)
-    return client
 
 
 def _archive(client, meeting, **body):
@@ -93,17 +68,17 @@ def test_api_meeting_archive_anonymous():
     assert response.status_code == HTTP_401_UNAUTHORIZED
 
 
-def test_api_meeting_archive_unknown_meeting():
+def test_api_meeting_archive_unknown_meeting(logged_in):
     """An unknown meeting is a 404."""
     response = _archive(
-        _client(factories.UserFactory()), factories.MeetingFactory.build()
+        logged_in(factories.UserFactory()), factories.MeetingFactory.build()
     )
 
     assert response.status_code == HTTP_404_NOT_FOUND
 
 
 @override_settings(**MATRIX_SETTINGS)
-def test_api_meeting_archive_organizer(homeserver):
+def test_api_meeting_archive_organizer(member_homeserver, logged_in):
     """The organizer downloads the full archive without any Matrix check."""
     user = factories.UserFactory(full_name="Olga Organisatrice")
     meeting = _closed_meeting(organizer=user)
@@ -123,7 +98,7 @@ def test_api_meeting_archive_organizer(homeserver):
     )
 
     response = _archive(
-        _client(user),
+        logged_in(user),
         meeting,
         documents=[{"title": "Transcription", "url": "https://docs.test/docs/doc-1/"}],
     )
@@ -132,7 +107,7 @@ def test_api_meeting_archive_organizer(homeserver):
     assert response["Content-Type"] == "application/zip"
     assert "attachment" in response["Content-Disposition"]
     assert "meeting-Point-hebdo-2026-09-17-10h00.zip" in response["Content-Disposition"]
-    assert homeserver == []
+    assert member_homeserver == []
 
     files = _files(response)
     assert set(files) == {
@@ -163,60 +138,63 @@ def test_api_meeting_archive_organizer(homeserver):
 
 
 @override_settings(**MATRIX_SETTINGS)
-def test_api_meeting_archive_member(homeserver):
+def test_api_meeting_archive_member(member_homeserver, logged_in):
     """A member of the conversation proves it with an OpenID token."""
     meeting = _closed_meeting(agenda="")
 
     response = _archive(
-        _client(factories.UserFactory()), meeting, openid_token="bob-token"
+        logged_in(factories.UserFactory()), meeting, openid_token="bob-token"
     )
 
     assert response.status_code == HTTP_200_OK
-    assert homeserver == [("openid", "bob-token"), ("members", "!room:localhost")]
+    assert member_homeserver == [
+        ("openid", "bob-token"),
+        ("members", "!room:localhost"),
+    ]
     assert set(_files(response)) == {"meeting.md"}
 
 
 @override_settings(**MATRIX_SETTINGS)
 @pytest.mark.parametrize("token", ["", "someone-else"])
-@pytest.mark.usefixtures("homeserver")
-def test_api_meeting_archive_not_a_member(token):
+@pytest.mark.usefixtures("member_homeserver")
+def test_api_meeting_archive_not_a_member(token, logged_in):
     """Without a valid token of a member, the meeting does not exist."""
     meeting = _closed_meeting()
 
-    response = _archive(_client(factories.UserFactory()), meeting, openid_token=token)
+    response = _archive(logged_in(factories.UserFactory()), meeting, openid_token=token)
 
     assert response.status_code == HTTP_404_NOT_FOUND
 
 
 @override_settings(**MATRIX_SETTINGS)
-@pytest.mark.usefixtures("homeserver")
-def test_api_meeting_archive_member_of_another_room(monkeypatch):
+@pytest.mark.usefixtures("member_homeserver")
+def test_api_meeting_archive_member_of_another_room(monkeypatch, logged_in):
     """A valid Matrix account outside the conversation gets a 404."""
     monkeypatch.setattr(matrix, "joined_members", lambda room_id: {"@orga:x"})
     meeting = _closed_meeting()
 
     response = _archive(
-        _client(factories.UserFactory()), meeting, openid_token="bob-token"
+        logged_in(factories.UserFactory()), meeting, openid_token="bob-token"
     )
 
     assert response.status_code == HTTP_404_NOT_FOUND
 
 
 @override_settings(MATRIX_AS_TOKEN=None)
-def test_api_meeting_archive_member_without_bot(homeserver):
+def test_api_meeting_archive_member_without_bot(member_homeserver, logged_in):
     """Without the Matrix admin access, only the organizer may download."""
     meeting = _closed_meeting()
 
     response = _archive(
-        _client(factories.UserFactory()), meeting, openid_token="bob-token"
+        logged_in(factories.UserFactory()), meeting, openid_token="bob-token"
     )
 
     assert response.status_code == HTTP_404_NOT_FOUND
-    assert homeserver == []
+    assert member_homeserver == []
 
 
 @override_settings(**{**MATRIX_SETTINGS, "MATRIX_ADMIN_TOKEN": None})
-def test_api_meeting_archive_member_without_admin_token(monkeypatch):
+def test_api_meeting_archive_member_without_admin_token(monkeypatch, logged_in):
     """
     Ariane can write, but nobody can list the members: a member is refused
     like a stranger, rather than answered with a server error.
@@ -225,27 +203,27 @@ def test_api_meeting_archive_member_without_admin_token(monkeypatch):
     meeting = _closed_meeting()
 
     response = _archive(
-        _client(factories.UserFactory()), meeting, openid_token="bob-token"
+        logged_in(factories.UserFactory()), meeting, openid_token="bob-token"
     )
 
     assert response.status_code == HTTP_404_NOT_FOUND
 
 
 @override_settings(**{**MATRIX_SETTINGS, "MATRIX_ADMIN_TOKEN": None})
-def test_api_meeting_archive_organizer_without_admin_token():
+def test_api_meeting_archive_organizer_without_admin_token(logged_in):
     """The archive is named without the room name the admin API would give."""
     user = factories.UserFactory()
     meeting = _closed_meeting(organizer=user)
 
-    response = _archive(_client(user), meeting)
+    response = _archive(logged_in(user), meeting)
 
     assert response.status_code == HTTP_200_OK
     assert "meeting-Point-hebdo-2026-09-17-10h00.zip" in response["Content-Disposition"]
 
 
 @override_settings(**MATRIX_SETTINGS)
-def test_api_meeting_archive_matrix_failure(monkeypatch):
-    """A homeserver failure is a gateway error, not a refusal."""
+def test_api_meeting_archive_matrix_failure(monkeypatch, logged_in):
+    """A member_homeserver failure is a gateway error, not a refusal."""
 
     def fail(_token):
         raise matrix.MatrixError("down")
@@ -254,27 +232,27 @@ def test_api_meeting_archive_matrix_failure(monkeypatch):
     meeting = _closed_meeting()
 
     response = _archive(
-        _client(factories.UserFactory()), meeting, openid_token="bob-token"
+        logged_in(factories.UserFactory()), meeting, openid_token="bob-token"
     )
 
     assert response.status_code == HTTP_502_BAD_GATEWAY
 
 
-def test_api_meeting_archive_open_meeting():
+def test_api_meeting_archive_open_meeting(logged_in):
     """An open meeting has no archive yet."""
     meeting = _closed_meeting(closed_at=None)
 
-    response = _archive(_client(meeting.organizer), meeting)
+    response = _archive(logged_in(meeting.organizer), meeting)
 
     assert response.status_code == HTTP_409_CONFLICT
 
 
-def test_api_meeting_archive_rejects_unsafe_links():
+def test_api_meeting_archive_rejects_unsafe_links(logged_in):
     """Only web links are listed."""
     meeting = _closed_meeting()
 
     response = _archive(
-        _client(meeting.organizer),
+        logged_in(meeting.organizer),
         meeting,
         documents=[{"title": "x", "url": "javascript:alert(1)"}],
     )
@@ -304,11 +282,11 @@ def test_archive_auto_closed_summary():
     assert "Nobody was seen in the call." in summary
 
 
-def test_api_meeting_archive_in_french():
+def test_api_meeting_archive_in_french(logged_in):
     """File names and headings follow the language of the person downloading."""
     meeting = _closed_meeting()
     factories.MeetingTranscriptSegmentFactory(meeting=meeting, text="Bonjour.")
-    client = _client(meeting.organizer)
+    client = logged_in(meeting.organizer)
     client.cookies["hub_language"] = "fr-fr"
 
     response = _archive(client, meeting)
@@ -320,12 +298,12 @@ def test_api_meeting_archive_in_french():
     assert "reunion-Point-hebdo-2026-09-17-10h00.zip" in response["Content-Disposition"]
 
 
-def test_api_meeting_archive_named_after_the_conversation():
+def test_api_meeting_archive_named_after_the_conversation(logged_in):
     """The member's name for the conversation names the archive."""
     meeting = _closed_meeting()
 
     response = _archive(
-        _client(meeting.organizer), meeting, chat_name="Équipe produit / Q3"
+        logged_in(meeting.organizer), meeting, chat_name="Équipe produit / Q3"
     )
 
     assert response.status_code == HTTP_200_OK
@@ -337,13 +315,13 @@ def test_api_meeting_archive_named_after_the_conversation():
 
 
 @override_settings(**MATRIX_SETTINGS)
-@pytest.mark.usefixtures("homeserver")
-def test_api_meeting_archive_named_after_the_matrix_room(monkeypatch):
+@pytest.mark.usefixtures("member_homeserver")
+def test_api_meeting_archive_named_after_the_matrix_room(monkeypatch, logged_in):
     """Without a name from the member, the room's name is asked to Matrix."""
     monkeypatch.setattr(matrix, "room_name", lambda room_id: "Support")
     meeting = _closed_meeting()
 
-    response = _archive(_client(meeting.organizer), meeting)
+    response = _archive(logged_in(meeting.organizer), meeting)
 
     assert (
         "meeting-Point-hebdo-Support-2026-09-17-10h00.zip"
@@ -352,8 +330,8 @@ def test_api_meeting_archive_named_after_the_matrix_room(monkeypatch):
 
 
 @override_settings(**MATRIX_SETTINGS)
-@pytest.mark.usefixtures("homeserver")
-def test_api_meeting_archive_matrix_room_name_unavailable(monkeypatch):
+@pytest.mark.usefixtures("member_homeserver")
+def test_api_meeting_archive_matrix_room_name_unavailable(monkeypatch, logged_in):
     """A room name Matrix cannot give is left out."""
 
     def fail(room_id):
@@ -362,7 +340,7 @@ def test_api_meeting_archive_matrix_room_name_unavailable(monkeypatch):
     monkeypatch.setattr(matrix, "room_name", fail)
     meeting = _closed_meeting()
 
-    response = _archive(_client(meeting.organizer), meeting)
+    response = _archive(logged_in(meeting.organizer), meeting)
 
     assert (
         "meeting-Point-hebdo-2026-09-17-10h00.zip" in (response["Content-Disposition"])

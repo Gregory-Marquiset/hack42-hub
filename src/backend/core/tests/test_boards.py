@@ -98,14 +98,6 @@ def test_boards_scene_file():
     assert scene["elements"] == [RECTANGLE]
 
 
-@pytest.fixture(name="inline")
-def fixture_inline(monkeypatch):
-    """Background work runs at once."""
-    monkeypatch.setattr(
-        meeting_closing, "run_in_background", lambda function, *args: function(*args)
-    )
-
-
 @responses.activate
 @override_settings(MEETING_BOARD_SCENES_URL=SCENES_URL)
 @pytest.mark.usefixtures("inline")

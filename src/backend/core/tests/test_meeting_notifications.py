@@ -11,10 +11,9 @@ from django.utils import timezone
 
 import pytest
 import responses
-from rest_framework.test import APIClient
 
 from bots import matrix
-from core import factories, meeting_closing, meeting_notifications, models
+from core import factories, meeting_notifications, models
 
 pytestmark = pytest.mark.django_db
 
@@ -26,7 +25,6 @@ SETTINGS = {
     "MATRIX_AS_TOKEN": "as-token",
     "MATRIX_ADMIN_TOKEN": "admin-token",
     "MATRIX_BOT_USER_ID": ARIANE,
-    "MEETING_SCRIBE_TOKEN": "scribe-secret",
     "MEET_API_URL": MEET_API_URL,
     "MEET_APPLICATION_CLIENT_ID": "hub-client-id",
     "MEET_APPLICATION_CLIENT_SECRET": "hub-client-secret",
@@ -76,7 +74,7 @@ class FakeHomeserver:
 
 
 @pytest.fixture(name="homeserver")
-def fixture_homeserver(monkeypatch):
+def fixture_homeserver(monkeypatch, inline):  # pylint: disable=unused-argument
     """A fake homeserver, and background steps run right away."""
     fake = FakeHomeserver()
     for name in (
@@ -87,9 +85,6 @@ def fixture_homeserver(monkeypatch):
         "send_message",
     ):
         monkeypatch.setattr(matrix, name, getattr(fake, name))
-    monkeypatch.setattr(
-        meeting_closing, "run_in_background", lambda function, *args: function(*args)
-    )
     return fake
 
 
@@ -293,9 +288,7 @@ def test_messages_without_an_espace():
 # When the messages are sent
 
 
-def _presence(meeting, participants):
-    client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION="Bearer scribe-secret")
+def _presence(client, meeting, participants):
     return client.post(
         f"/api/v1.0/scribe/rooms/{meeting.livekit_room}/presence/",
         {"participants": participants},
@@ -303,9 +296,7 @@ def _presence(meeting, participants):
     )
 
 
-def _create(user, **details):
-    client = APIClient()
-    client.force_login(user)
+def _create(client, **details):
     return client.post(
         "/api/v1.0/meetings/",
         {"chat_id": ROOM, "title": "Point hebdo", **details},
@@ -324,13 +315,13 @@ def _mock_meet():
 
 @override_settings(**SETTINGS)
 @responses.activate
-def test_creating_a_meeting_now_tells_it_starts(homeserver):
+def test_creating_a_meeting_now_tells_it_starts(homeserver, logged_in):
     """A meeting started right away is announced as starting, with its link."""
     _mock_meet()
     organizer = _user("orga")
     homeserver.members[ROOM] = {"@orga:hack42"}
 
-    _create(organizer)
+    _create(logged_in(organizer))
 
     [(_, body)] = homeserver.sent
     assert body.startswith("🎥 La réunion « Point hebdo » commence")
@@ -344,14 +335,16 @@ def test_creating_a_meeting_now_tells_it_starts(homeserver):
 
 @override_settings(**SETTINGS)
 @responses.activate
-def test_scheduling_a_meeting_tells_it_is_scheduled(homeserver):
+def test_scheduling_a_meeting_tells_it_is_scheduled(
+    homeserver, scribe_client, logged_in
+):
     """A meeting for later is announced as scheduled; its start comes later."""
     _mock_meet()
     organizer = _user("orga")
     homeserver.members[ROOM] = {"@orga:hack42"}
     starts_at = timezone.now() + timedelta(minutes=10)
 
-    _create(organizer, starts_at=starts_at.isoformat())
+    _create(logged_in(organizer), starts_at=starts_at.isoformat())
 
     [(_, body)] = homeserver.sent
     assert body.startswith("📅 Réunion programmée")
@@ -359,26 +352,25 @@ def test_scheduling_a_meeting_tells_it_is_scheduled(homeserver):
     assert meeting.started_notified_at is None
 
     # Before its start, the scribe's reports do not announce it.
-    _presence(meeting, [])
+    _presence(scribe_client, meeting, [])
     assert len(homeserver.sent) == 1
 
     models.Meeting.objects.filter(pk=meeting.pk).update(
         starts_at=timezone.now() - timedelta(seconds=5)
     )
-    _presence(meeting, [])
-    _presence(meeting, [{"identity": "orga-id", "name": "Orga"}])
+    _presence(scribe_client, meeting, [])
+    _presence(scribe_client, meeting, [{"identity": "orga-id", "name": "Orga"}])
 
     assert len(homeserver.sent) == 2
     assert homeserver.sent[1][1].startswith("🎥 La réunion « Point hebdo » commence")
 
 
 @override_settings(**SETTINGS)
-def test_organizer_closing_tells_the_members(homeserver):
+def test_organizer_closing_tells_the_members(homeserver, logged_in):
     """Closing by the organizer is announced once, even without Docs."""
     meeting = _meeting()
     homeserver.members[ROOM] = {"@orga:hack42"}
-    client = APIClient()
-    client.force_login(meeting.organizer)
+    client = logged_in(meeting.organizer)
 
     for _ in range(2):
         response = client.post(
@@ -392,7 +384,7 @@ def test_organizer_closing_tells_the_members(homeserver):
 
 
 @override_settings(**SETTINGS)
-def test_automatic_closing_tells_the_members(homeserver, monkeypatch):
+def test_automatic_closing_tells_the_members(homeserver, monkeypatch, scribe_client):
     """The automatic closing is announced as such."""
     monkeypatch.setattr(matrix, "ensure_in_room", lambda room_id: True)
     monkeypatch.setattr(
@@ -405,7 +397,7 @@ def test_automatic_closing_tells_the_members(homeserver, monkeypatch):
     )
     homeserver.members[ROOM] = {"@orga:hack42"}
 
-    _presence(meeting, [])
+    _presence(scribe_client, meeting, [])
 
     [(_, body)] = homeserver.sent
     assert "(clôturée automatiquement)" in body
@@ -413,12 +405,12 @@ def test_automatic_closing_tells_the_members(homeserver, monkeypatch):
 
 @override_settings(**{**SETTINGS, "MEETING_NOTIFICATIONS_ENABLED": False})
 @responses.activate
-def test_notifications_can_be_turned_off(homeserver):
+def test_notifications_can_be_turned_off(homeserver, logged_in):
     """Nothing is sent when notifications are off."""
     _mock_meet()
     homeserver.members[ROOM] = {"@orga:hack42"}
 
-    _create(_user("orga"))
+    _create(logged_in(_user("orga")))
 
     assert homeserver.sent == []
 

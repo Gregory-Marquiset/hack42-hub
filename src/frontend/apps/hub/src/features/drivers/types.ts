@@ -211,8 +211,6 @@ export type ChatMeeting = {
   endedBy?: "organizer" | "auto";
   /** Documents shared for this meeting (agenda, support…), newest first. */
   documents: ChatMeetingDocument[];
-  /** Recap/summary document, once attached. */
-  summary?: ChatMeetingDocument;
   /** Whether the whiteboard is open: opening it opens it for everyone. */
   isBoardOpen?: boolean;
 };

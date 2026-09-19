@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useMeetingArchive } from "@/features/chat/hooks/useMeetingArchive";
@@ -38,28 +38,18 @@ export const MeetingHistory = ({
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // A selection that no longer exists falls back to the first meeting.
   const selected =
     meetings.find((meeting) => meeting.id === selectedId) ??
     meetings[0] ??
     null;
-
-  // A meeting id belongs to one conversation — drop a selection that no longer
-  // exists so the view falls back to the first available meeting.
-  useEffect(() => {
-    if (selectedId && !meetings.some((meeting) => meeting.id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [meetings, selectedId]);
 
   const tabIndex = isOpen ? 0 : -1;
 
   const { downloadArchive, pendingMeetingId } = useMeetingArchive(chatRef);
 
   const documents = selected
-    ? [
-        ...(selected.summary ? [selected.summary] : []),
-        ...selected.documents,
-      ].filter((doc) => isWebLink(doc.url))
+    ? selected.documents.filter((doc) => isWebLink(doc.url))
     : [];
 
   return (

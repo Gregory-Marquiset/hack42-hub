@@ -16,26 +16,6 @@ export const Download = () => (
   </svg>
 );
 
-export const Calendar = () => (
-  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-    <rect
-      x="3.5"
-      y="5.5"
-      width="17"
-      height="15"
-      rx="2.5"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    />
-    <path
-      d="M3.5 10h17M8 3.5v4m8-4v4"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
 export const Whiteboard = () => (
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
     <rect

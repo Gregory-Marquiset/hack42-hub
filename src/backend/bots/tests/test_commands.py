@@ -23,7 +23,7 @@ def fixture_ping_names():
         "@Ariane, tu peux résumer ?",
         "merci @ARIANE",
         "(@ariane) et ensuite ?",
-        "> une citation\n@ariane et toi ?",
+        "> une citation\n@ariane et vous ?",
     ],
 )
 def test_is_pinged(body):
@@ -57,7 +57,7 @@ def test_is_not_pinged(body):
         ("@ariane /aide", ("aide", False)),
         ("@ariane /help", ("aide", False)),
         ("@ariane /inconnue", (None, True)),
-        ("@ariane voir http://exemple.fr/juriste", (None, False)),
+        ("@ariane voir http://example.org/juriste", (None, False)),
         ("> @ariane /juriste\n@ariane bonjour", (None, False)),
         ("@ariane /po puis /pm", ("po", False)),
     ],

@@ -8,7 +8,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { NewMeetingForm } from "../NewMeetingForm";
+import {
+  MAX_AGENDA_LENGTH,
+  MAX_ATTACHMENTS,
+  NewMeetingForm,
+} from "../NewMeetingForm";
 
 const notifyError = vi.hoisted(() => vi.fn());
 
@@ -138,6 +142,37 @@ describe("NewMeetingForm files", () => {
       "A file is too large to be attached (100 KB at most).",
     );
     expect(screen.queryByText("gros.md")).toBeNull();
+  });
+
+  it("keeps to the number of files the Hub accepts", async () => {
+    renderForm();
+    await pick("agenda-file-input", text("odj.md"));
+
+    await pick(
+      "document-file-input",
+      ...Array.from({ length: MAX_ATTACHMENTS }, (_, index) =>
+        text(`note-${index}.txt`),
+      ),
+    );
+
+    expect(notifyError).toHaveBeenCalledWith(
+      "A meeting can have {{max}} attached files at most.",
+    );
+    expect(screen.getByText(`note-${MAX_ATTACHMENTS - 2}.txt`)).toBeTruthy();
+    expect(screen.queryByText(`note-${MAX_ATTACHMENTS - 1}.txt`)).toBeNull();
+  });
+
+  it("holds the agenda to the length the Hub accepts", () => {
+    renderForm();
+    const agenda = screen.getByLabelText("Agenda");
+
+    expect(agenda.getAttribute("maxlength")).toBe(String(MAX_AGENDA_LENGTH));
+    fireEvent.change(agenda, {
+      target: { value: "x".repeat(MAX_AGENDA_LENGTH) },
+    });
+    expect(
+      screen.getByText("The agenda is limited to {{max}} characters."),
+    ).toBeTruthy();
   });
 
   it("adds a document by link from the Docs button", () => {

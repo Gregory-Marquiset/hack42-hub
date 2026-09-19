@@ -29,6 +29,9 @@ export const MEETING_DURATIONS = [15, 30, 45, 60, 90, 120, 180] as const;
 export const DEFAULT_MEETING_DURATION = 60;
 /** Attached text files are kept by the Hub: small ones only. */
 export const MAX_ATTACHMENT_BYTES = 100_000;
+/** What the Hub accepts (see `MeetingCreateSerializer`). */
+export const MAX_AGENDA_LENGTH = 20_000;
+export const MAX_ATTACHMENTS = 20;
 
 type NewMeetingFormProps = {
   isOpen: boolean;
@@ -225,8 +228,23 @@ export const NewMeetingForm = ({
     return accepted;
   };
 
+  /** The files that still fit in the Hub's limit, with a message if any does not. */
+  const withinLimit = (files: File[], room: number): File[] => {
+    if (files.length <= room) {
+      return files;
+    }
+    notify.error(
+      t("A meeting can have {{max}} attached files at most.", {
+        max: MAX_ATTACHMENTS,
+      }),
+    );
+    return files.slice(0, Math.max(room, 0));
+  };
+
   const attachAgendaFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const [file] = pickTextFiles(event);
+    // The agenda file replaces the current one, if any.
+    const room = MAX_ATTACHMENTS - pickedFiles.length + (agendaFile ? 1 : 0);
+    const [file] = withinLimit(pickTextFiles(event), room);
     if (!file) {
       return;
     }
@@ -244,7 +262,9 @@ export const NewMeetingForm = ({
   };
 
   const attachDocumentFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    const added = await readFiles(pickTextFiles(event));
+    const added = await readFiles(
+      withinLimit(pickTextFiles(event), MAX_ATTACHMENTS - pickedFiles.length),
+    );
     if (added.length > 0) {
       setDocuments((current) => [...current, ...added]);
     }
@@ -376,9 +396,17 @@ export const NewMeetingForm = ({
             value={agenda}
             rows={4}
             placeholder={t("One item per line")}
+            maxLength={MAX_AGENDA_LENGTH}
             tabIndex={tabIndex}
             onChange={(event) => setAgenda(event.target.value)}
           />
+          {agenda.length >= MAX_AGENDA_LENGTH && (
+            <p className="hub__chat-meetings__details-text" role="status">
+              {t("The agenda is limited to {{max}} characters.", {
+                max: MAX_AGENDA_LENGTH,
+              })}
+            </p>
+          )}
           {agendaFile && (
             <ul className="hub__chat-meetings__list">
               <DocumentRow

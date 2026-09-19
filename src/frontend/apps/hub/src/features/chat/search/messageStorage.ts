@@ -10,9 +10,10 @@ import type { MessageBackfillState } from "./types";
 const STORES = ["messages", "messageBackfill"] as const;
 
 /**
- * Messages are immutable once indexed (a given eventId never changes), so
- * unlike SearchStorage this needs no cross-tab lease: concurrent puts from
- * several tabs are just redundant, never conflicting. Still listens for the
+ * A message only changes by an edit or a redaction, which every tab applies
+ * alike from the same sync, so unlike SearchStorage this needs no cross-tab
+ * lease: concurrent writes from several tabs are redundant, never
+ * conflicting. Still listens for the
  * "logout" broadcast so its connection does not block SearchStorage's
  * deleteDatabase call on the shared database name.
  */
@@ -93,6 +94,20 @@ export class MessageSearchStorage {
       const tx = this.db.transaction("messages", "readwrite");
       const store = tx.objectStore("messages");
       for (const doc of docs) store.put(doc);
+      await transactionDone(tx);
+    } catch {
+      this.state = "memory";
+      this.db?.close();
+      this.db = undefined;
+    }
+  }
+
+  /** Drops a redacted message, whose text must not stay searchable. */
+  async deleteMessage(roomId: string, eventId: string): Promise<void> {
+    if (!this.db || this.disposed) return;
+    try {
+      const tx = this.db.transaction("messages", "readwrite");
+      tx.objectStore("messages").delete([roomId, eventId]);
       await transactionDone(tx);
     } catch {
       this.state = "memory";

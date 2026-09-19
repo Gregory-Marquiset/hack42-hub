@@ -222,6 +222,10 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Keep message search in step with the conversation: an edited
+  message is found by its new text instead of appearing twice, a deleted
+  one is no longer found, and your own and encrypted messages are indexed
+  as they arrive instead of waiting for the history to be fetched.
 - 🐛(search) Make `mentions:` find the messages mentioning that person,
   not the ones they sent, and the replies to their messages.
 - 🐛(search) Highlight the matched words of a message search result: the

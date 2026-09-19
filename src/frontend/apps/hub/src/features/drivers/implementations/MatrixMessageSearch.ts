@@ -368,14 +368,16 @@ export class MatrixMessageSearch {
       // Check for links
       const hasLink = EXTRACT_URL_REGEX.test(content.body);
 
-      // Extract reply-to info
-      const { replyToEventId, replyToSenderId } =
-        this.extractReplyInfo(content);
-
       // Get sender display name
       const room = this.mx.getRoom(roomId);
       const member = room?.getMember(senderId);
       const senderName = member?.name || senderId;
+
+      // Extract reply-to info
+      const { replyToEventId, replyToSenderId } = this.extractReplyInfo(
+        content,
+        room,
+      );
 
       return {
         roomId,
@@ -440,7 +442,14 @@ export class MatrixMessageSearch {
     return Array.from(mentioned);
   }
 
-  private extractReplyInfo(content: MatrixMessageContent): {
+  /**
+   * The replied-to sender is read off the loaded timeline, best effort: a
+   * reply to a message outside it only records the event id.
+   */
+  private extractReplyInfo(
+    content: MatrixMessageContent,
+    room: Room | null,
+  ): {
     replyToEventId?: string;
     replyToSenderId?: string;
   } {
@@ -449,9 +458,11 @@ export class MatrixMessageSearch {
       return {};
     }
 
-    return { replyToEventId: inReplyTo.event_id };
-    // Note: replyToSenderId will be resolved best-effort on indexing,
-    // or lazily when needed for matching
+    return {
+      replyToEventId: inReplyTo.event_id,
+      replyToSenderId:
+        room?.findEventById(inReplyTo.event_id)?.getSender() ?? undefined,
+    };
   }
 
   private emit(): void {

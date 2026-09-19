@@ -209,7 +209,7 @@ export type ChatMeeting = {
   endedAt?: string;
   /** Who closed it: its organizer, or the server once it was over and empty. */
   endedBy?: "organizer" | "auto";
-  /** Documents shared for this meeting (agenda, support…), newest first. */
+  /** Documents shared for this meeting (agenda, support…), oldest first. */
   documents: ChatMeetingDocument[];
   /** Whether the whiteboard is open: opening it opens it for everyone. */
   isBoardOpen?: boolean;

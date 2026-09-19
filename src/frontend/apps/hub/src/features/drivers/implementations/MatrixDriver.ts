@@ -674,7 +674,7 @@ export class MatrixDriver extends Driver {
         return { meeting: ongoing, isReused: true };
       }
     }
-    const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
+    const selfUserId = this.requireMeetingWriteRights(mx, room, chatId);
     // The Meet slug is unique per room: it doubles as the state key.
     const startedAt = isScheduled ? scheduledStart : now;
     const planned = options.plannedDurationMinutes;
@@ -827,7 +827,7 @@ export class MatrixDriver extends Driver {
    * before creating a Meet room, which would otherwise be left unused when the
    * homeserver refuses the state event.
    */
-  private requireMeetingOrganizerRights(
+  private requireMeetingWriteRights(
     mx: MatrixClient,
     room: Room,
     chatId: string,
@@ -883,7 +883,7 @@ export class MatrixDriver extends Driver {
         `MatrixDriver.${method}: meeting "${meetingId}" not found in "${chatId}".`,
       );
     }
-    const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
+    const selfUserId = this.requireMeetingWriteRights(mx, room, chatId);
     if (organizerOnly && local.organizerId !== selfUserId) {
       throw new MeetingNotAllowedError(chatId);
     }

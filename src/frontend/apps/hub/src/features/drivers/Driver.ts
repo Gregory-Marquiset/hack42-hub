@@ -543,7 +543,14 @@ export abstract class Driver {
     );
   }
 
-  /** Closes a meeting for every member. Only its organizer may do it. */
+  /**
+   * Closes a meeting for every member. Only its organizer may do it.
+   *
+   * The organizer-only rules (closing, renaming, extending) are enforced by
+   * the client alone: the conversations the Hub creates let any member write
+   * the meeting state event (power level 0, so that everyone can start a
+   * call), and another Matrix client could bypass them.
+   */
   async endChatMeeting(_chatId: string, _meetingId: string): Promise<void> {
     void _chatId;
     void _meetingId;
@@ -562,8 +569,10 @@ export abstract class Driver {
     );
   }
 
-  /** Adds a document to a meeting, for every member. Only its organizer may do it. */
-  /** Opens or closes the whiteboard of a meeting, for every participant. */
+  /**
+   * Opens or closes the whiteboard of a meeting, for every participant. Any
+   * member may do it.
+   */
   async setChatMeetingBoard(
     _chatId: string,
     _meetingId: string,
@@ -577,6 +586,7 @@ export abstract class Driver {
     );
   }
 
+  /** Adds a document to a meeting, for every member. Any member may do it. */
   async addChatMeetingDocument(
     _chatId: string,
     _meetingId: string,

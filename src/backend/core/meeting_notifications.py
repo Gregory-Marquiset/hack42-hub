@@ -34,8 +34,12 @@ SERVICE_PREFIX = "hub-as_"
 
 
 def is_enabled():
-    """Whether Ariane can write to the members."""
-    return settings.MEETING_NOTIFICATIONS_ENABLED and matrix.can_write_rooms()
+    """Whether Ariane can find the members and write to them."""
+    return (
+        settings.MEETING_NOTIFICATIONS_ENABLED
+        and matrix.can_write_rooms()
+        and matrix.can_read_members()
+    )
 
 
 def _claim(meeting, field):
@@ -122,7 +126,7 @@ def _names(meeting):
     """The meeting's and the conversation's names, for the messages."""
     title = meeting.title or "sans titre"
     room = None
-    if meeting.chat_id and matrix.can_write_rooms():
+    if meeting.chat_id and matrix.can_read_members():
         try:
             room = matrix.room_name(meeting.chat_id)
         except matrix.MatrixError:

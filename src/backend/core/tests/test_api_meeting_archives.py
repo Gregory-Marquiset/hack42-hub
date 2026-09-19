@@ -215,6 +215,34 @@ def test_api_meeting_archive_member_without_bot(homeserver):
     assert homeserver == []
 
 
+@override_settings(**{**MATRIX_SETTINGS, "MATRIX_ADMIN_TOKEN": None})
+def test_api_meeting_archive_member_without_admin_token(monkeypatch):
+    """
+    Ariane can write, but nobody can list the members: a member is refused
+    like a stranger, rather than answered with a server error.
+    """
+    monkeypatch.setattr(matrix, "openid_user_id", lambda token: MEMBER)
+    meeting = _closed_meeting()
+
+    response = _archive(
+        _client(factories.UserFactory()), meeting, openid_token="bob-token"
+    )
+
+    assert response.status_code == HTTP_404_NOT_FOUND
+
+
+@override_settings(**{**MATRIX_SETTINGS, "MATRIX_ADMIN_TOKEN": None})
+def test_api_meeting_archive_organizer_without_admin_token():
+    """The archive is named without the room name the admin API would give."""
+    user = factories.UserFactory()
+    meeting = _closed_meeting(organizer=user)
+
+    response = _archive(_client(user), meeting)
+
+    assert response.status_code == HTTP_200_OK
+    assert "meeting-Point-hebdo-2026-09-17-10h00.zip" in response["Content-Disposition"]
+
+
 @override_settings(**MATRIX_SETTINGS)
 def test_api_meeting_archive_matrix_failure(monkeypatch):
     """A homeserver failure is a gateway error, not a refusal."""

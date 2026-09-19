@@ -313,20 +313,33 @@ def can_write_rooms() -> bool:
     return bool(settings.MATRIX_AS_TOKEN and settings.MATRIX_BOT_USER_ID)
 
 
+def can_read_members() -> bool:
+    """Whether the backend may ask who is in a room and what it is called."""
+    return bool(settings.MATRIX_ADMIN_TOKEN)
+
+
 def _admin(method: str, path: str) -> dict[str, Any]:
     """Call the Synapse admin API. Read-only by convention - see `joined_members`."""
+    if not can_read_members():
+        raise MatrixError(f"{method:s} {path:s}: no Matrix admin token")
     try:
         response = requests.request(
             method,
-            f"{settings.MATRIX_HOMESERVER_URL:s}{path:s}",
+            f"{settings.MATRIX_HOMESERVER_URL.rstrip('/'):s}{path:s}",
             headers={"Authorization": f"Bearer {settings.MATRIX_ADMIN_TOKEN:s}"},
             timeout=settings.MATRIX_REQUEST_TIMEOUT,
         )
     except requests.RequestException as exc:
         raise MatrixError(f"{method:s} {path:s} failed: {exc!s}") from exc
     if response.status_code >= 400:
-        raise MatrixError(f"{method:s} {path:s} -> {response.status_code:d}")
-    return response.json() or {}
+        raise MatrixError(
+            f"{method:s} {path:s} -> {response.status_code:d}",
+            status_code=response.status_code,
+        )
+    try:
+        return response.json() or {}
+    except ValueError as exc:
+        raise MatrixError(f"{method:s} {path:s}: unreadable answer") from exc
 
 
 def _state_path(room_id: str, event_type: str, state_key: str) -> str:

@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Refuse a member or fall back to a generic room name when the
+  Matrix admin token is missing, instead of failing with a server error.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

@@ -218,6 +218,15 @@ def test_messages():
     assert "Transcription : https://docs.test/docs/d/" in closed
 
 
+@override_settings(**{**SETTINGS, "MATRIX_ADMIN_TOKEN": None})
+def test_messages_without_admin_token():
+    """Without the admin API, the conversation keeps its generic name."""
+    meeting = _meeting()
+
+    assert "« votre conversation »" in meeting_notifications.started_message(meeting)
+    assert not meeting_notifications.is_enabled()
+
+
 @override_settings(**SETTINGS)
 @pytest.mark.usefixtures("homeserver")
 def test_messages_name_the_espace():

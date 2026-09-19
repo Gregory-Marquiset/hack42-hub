@@ -39,6 +39,7 @@ import {
 } from "../types";
 import { isWebLink } from "../webLink";
 import { initialsFor } from "./matrixIdentity";
+import { chatFileFromEvent } from "./matrixRoomFiles";
 
 type ReactionRelations = NonNullable<
   ReturnType<Room["relations"]["getChildEventsForEvent"]>
@@ -941,6 +942,7 @@ export const timelineEventToChatEvent = (
       chatId: room.roomId,
       message: matrixEventToChatMessage(event, room, selfUserId),
       authors: buildAuthors(room, [event], selfUserId),
+      ...(chatFileFromEvent(event, room) ? { isFile: true } : {}),
     },
   ];
 };

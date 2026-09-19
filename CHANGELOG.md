@@ -237,6 +237,9 @@ and this project adheres to
 - 🐛(meetings) Hold the new meeting form to what the Hub accepts, an agenda
   of 20,000 characters and 20 attached files, with a message, instead of
   failing to create the meeting.
+- ⚡(frontend) Refresh the open Documents panel only when a new message
+  shares a document, not on every message: each refresh read up to 500
+  events of the conversation's history.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

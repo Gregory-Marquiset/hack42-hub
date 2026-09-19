@@ -27,7 +27,6 @@ export type MeetingStateEventContent = {
   /** "auto" when the server closed it; the organizer otherwise. */
   endedBy?: "organizer" | "auto";
   documents?: unknown;
-  summary?: unknown;
   /** Whether the whiteboard is open, for every participant at once. */
   boardOpen?: boolean;
 };
@@ -104,7 +103,6 @@ export const chatMeetingFromStateEvent = (
         }
       : {}),
     documents: toDocuments(content.documents),
-    summary: toDocument(content.summary),
     isBoardOpen: content.boardOpen === true,
   };
 };

@@ -220,6 +220,11 @@ and this project adheres to
 - 💄(frontend) Use the brand color for the current user's message bubbles
 - 🔥(frontend) Remove the meeting entry from the side panel quick actions
 
+### Removed
+
+- 🔥(meetings) Remove the meeting summary field nothing wrote, an unused
+  icon and a redundant refresh of the meetings once a transcript is saved.
+
 ### Fixed
 
 - 🐛(meetings) Keep a closed meeting closed: toggling its board or adding a

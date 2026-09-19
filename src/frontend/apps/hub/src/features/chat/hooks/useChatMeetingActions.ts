@@ -67,7 +67,7 @@ export const useChatMeetingActions = (
       await getRegistry()
         .get(chat.accountId)
         .addChatMeetingDocument(chat.chatId, meetingId, document);
-      invalidate();
+      // The mutation's `onSuccess` refreshes the meetings with it.
       notify.brand(t("The transcript was saved in Docs."));
     } catch {
       notify.warning(
@@ -101,6 +101,7 @@ export const useChatMeetingActions = (
       switch (action.kind) {
         case "end":
           await driver.endChatMeeting(ref.chatId, action.meetingId);
+          // Shows the closing now: saving the transcript takes a while.
           invalidate();
           await attachTranscript(ref, action.meetingId, action.title);
           return;

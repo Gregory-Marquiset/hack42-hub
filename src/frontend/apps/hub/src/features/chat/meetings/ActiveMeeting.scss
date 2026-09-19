@@ -220,6 +220,20 @@
     background: #000;
   }
 
+  &__over {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 24px;
+    font-size: 15px;
+    color: var(
+      --c--contextuals--content--semantic--neutral--secondary,
+      #5e6275
+    );
+  }
+
   &__board {
     flex: 0 0 45%;
     min-width: 0;

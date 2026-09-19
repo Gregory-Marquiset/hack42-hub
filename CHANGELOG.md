@@ -225,6 +225,14 @@ and this project adheres to
 - ♻️(frontend) Simplify the conversation auto-scroll onto the Virtuoso API
 - 💄(frontend) Use the brand color for the current user's message bubbles
 - 🔥(frontend) Remove the meeting entry from the side panel quick actions
+- ♻️(meetings) Share the file transfer, rows, link draft and invitation link
+  of the meetings and documents panels instead of keeping copies of them.
+
+### Removed
+
+- 🔥(meetings) Remove the meeting summary field nothing wrote, an unused
+  icon and a redundant refresh of the meetings once a transcript is saved.
+- 🔥(frontend) Remove seven French translations no code uses any more.
 
 ### Fixed
 
@@ -256,6 +264,31 @@ and this project adheres to
   closing and the organizer (or a double click) close it at the same time.
 - 🐛(meetings) Refuse a member or fall back to a generic room name when the
   Matrix admin token is missing, instead of failing with a server error.
+- 🐛(meetings) Keep a closed meeting closed: toggling its board or adding a
+  document before the closing reached this device rewrote the meeting
+  without it. Every change now starts from the homeserver's latest copy.
+- 🐛(meetings) Offer to join the call in progress from the new meeting form,
+  instead of silently dropping its name, agenda and documents when "Start
+  now" could only rejoin that call.
+- 🐛(meetings) Say "This meeting is over" when an old invitation opens a
+  closed meeting, instead of joining its call and closing the window at once
+  as if its organizer had just closed it.
+- 🐛(meetings) Refuse a meeting link typed without `http(s)://`: it was
+  accepted, then hidden from the details and the archive, or listed in the
+  history as a broken link.
+- 🐛(meetings) Hold the new meeting form to what the Hub accepts, an agenda
+  of 20,000 characters and 20 attached files, with a message, instead of
+  failing to create the meeting.
+- ⚡(frontend) Refresh the open Documents panel only when a new message
+  shares a document, not on every message: each refresh read up to 500
+  events of the conversation's history.
+- 🐛(meetings) Keep the new Docs document draft open when the document is
+  created but cannot be listed with the meeting, and retry listing that
+  same document instead of leaving it orphaned in Docs.
+- 🐛(meetings) Stop offering to add documents to a meeting the Hub already
+  closed, or one past its time, which the Hub then refused.
+- 🌐(meetings) Translate the duration units of the meetings ("min", "h",
+  "+15 min"), and state file size limits from the limits themselves.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

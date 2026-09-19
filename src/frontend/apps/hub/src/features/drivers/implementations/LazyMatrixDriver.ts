@@ -49,6 +49,7 @@ import type {
   NotificationRules,
   SetNotificationRuleActionsParams,
   SetNotificationRuleEnabledParams,
+  StartedChatMeeting,
   StartMeetingOptions,
   User,
 } from "../types";
@@ -402,7 +403,7 @@ export class LazyMatrixDriver extends BaseDriver {
     chatId: string,
     createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     options?: StartMeetingOptions,
-  ): Promise<ChatMeeting> {
+  ): Promise<StartedChatMeeting> {
     return this.withTarget((driver) =>
       driver.startChatMeeting(chatId, createRoom, options),
     );

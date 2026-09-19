@@ -31,7 +31,7 @@ import {
 import type { ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
-import { copyMeetingLink } from "./copyMeetingLink";
+import { InvitationLink } from "./InvitationLink";
 import { useMeetingBoardUrl } from "./meetingBoard";
 import { useNow } from "./useNow";
 
@@ -399,28 +399,7 @@ const MeetingWindow = ({
             role="region"
             aria-label={t("Invitation link")}
           >
-            <p className="hub__meeting-window__share-text">
-              {t(
-                "Anyone with this link can join the call, even without an account.",
-              )}
-            </p>
-            <div className="hub__meeting-window__share-row">
-              <input
-                type="text"
-                readOnly
-                className="hub__meeting-window__share-link"
-                value={target.url}
-                aria-label={t("Invitation link")}
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <button
-                type="button"
-                className="hub__meeting-window__text-button"
-                onClick={() => void copyMeetingLink(target.url, t)}
-              >
-                {t("Copy the link")}
-              </button>
-            </div>
+            <InvitationLink url={target.url} variant="window" />
           </div>
         )}
         <div className="hub__meeting-window__body">

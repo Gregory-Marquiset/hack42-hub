@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/features/auth/Auth";
 import { useChatMeetingActions } from "@/features/chat/hooks/useChatMeetingActions";
 import { useMeetingDocuments } from "@/features/chat/hooks/useMeetingDocuments";
-import { copyMeetingLink } from "@/features/chat/meetings/copyMeetingLink";
+import { InvitationLink } from "@/features/chat/meetings/InvitationLink";
 import {
   formatMeetingDuration,
   getMeetingStatus,
@@ -17,8 +17,9 @@ import type {
 } from "@/features/drivers/types";
 import { isWebLink } from "@/features/drivers/webLink";
 
+import { DocsLinkDraft } from "./DocsLinkDraft";
+import { FileRow } from "./FileRow";
 import { formatFileSize } from "./fileSize";
-import { Download } from "./MeetingIcons";
 import { formatMeetingLabel } from "./meetingLabels";
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
 
@@ -50,14 +51,11 @@ export const MeetingDetails = ({
   const tabIndex = isOpen ? 0 : -1;
   const linkId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [isAddingLink, setIsAddingLink] = useState(false);
   const [isNaming, setIsNaming] = useState(false);
   const [newDocTitle, setNewDocTitle] = useState("");
   // Created in Docs, but not listed with the meeting yet.
   const [unlinkedDocument, setUnlinkedDocument] =
     useState<ChatMeetingDocument | null>(null);
-  const [linkTitle, setLinkTitle] = useState("");
-  const [linkUrl, setLinkUrl] = useState("");
 
   const isOrganizer = meeting.organizerId === chatUser?.userId;
   const documents = useMeetingDocuments(
@@ -83,26 +81,6 @@ export const MeetingDetails = ({
     if (picked.length > 0) {
       void documents.addFiles(picked);
     }
-  };
-
-  const saveLink = () => {
-    const url = linkUrl.trim();
-    if (!isWebLink(url)) {
-      return;
-    }
-    void addLink(meeting.id, {
-      id: `link-${Date.now()}`,
-      title: linkTitle.trim() || url,
-      url,
-    })
-      .then(() => {
-        setIsAddingLink(false);
-        setLinkTitle("");
-        setLinkUrl("");
-      })
-      .catch(() => {
-        // useChatMeetingActions already surfaces a toast.
-      });
   };
 
   const closeNaming = () => {
@@ -185,30 +163,11 @@ export const MeetingDetails = ({
           <h3 id={`${linkId}-title`} className="hub__chat-meetings__card-title">
             {t("Invitation link")}
           </h3>
-          <p className="hub__chat-meetings__details-text">
-            {t(
-              "Anyone with this link can join the call, even without an account.",
-            )}
-          </p>
-          <div className="hub__chat-meetings__invite-row">
-            <input
-              type="text"
-              readOnly
-              className="hub__chat-meetings__input"
-              value={meeting.url}
-              aria-label={t("Invitation link")}
-              tabIndex={tabIndex}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-            <button
-              type="button"
-              className="hub__chat-meetings__action hub__chat-meetings__invite-copy"
-              tabIndex={tabIndex}
-              onClick={() => void copyMeetingLink(meeting.url, t)}
-            >
-              {t("Copy the link")}
-            </button>
-          </div>
+          <InvitationLink
+            url={meeting.url}
+            variant="panel"
+            tabIndex={tabIndex}
+          />
         </section>
 
         <section className="hub__chat-meetings__card">
@@ -286,34 +245,17 @@ export const MeetingDetails = ({
                   </li>
                 ))}
                 {documents.attachments.map((attachment) => (
-                  <li key={attachment.id} className="hub__tools-list__row">
-                    <span className="hub__tools-list__text">
-                      <span className="hub__tools-list__label">
-                        {attachment.name}
-                      </span>
-                      <span className="hub__tools-list__details">
-                        {formatFileSize(attachment.size, locale)}
-                      </span>
-                    </span>
-                    <span className="hub__tools-list__actions">
-                      <button
-                        type="button"
-                        className="hub__tools-list__icon-button"
-                        aria-label={t("Download {{name}}", {
-                          name: attachment.name,
-                        })}
-                        disabled={documents.pendingAttachmentId !== null}
-                        aria-busy={
-                          documents.pendingAttachmentId === attachment.id ||
-                          undefined
-                        }
-                        tabIndex={tabIndex}
-                        onClick={() => void documents.download(attachment)}
-                      >
-                        <Download />
-                      </button>
-                    </span>
-                  </li>
+                  <FileRow
+                    key={attachment.id}
+                    name={attachment.name}
+                    details={formatFileSize(attachment.size, locale)}
+                    tabIndex={tabIndex}
+                    isDownloading={
+                      documents.pendingAttachmentId === attachment.id
+                    }
+                    isDisabled={documents.pendingAttachmentId !== null}
+                    onDownload={() => void documents.download(attachment)}
+                  />
                 ))}
               </ul>
             </>
@@ -374,64 +316,23 @@ export const MeetingDetails = ({
               </button>
             ))}
 
-          {canAdd &&
-            (isAddingLink ? (
-              <div className="hub__chat-meetings__document-draft">
-                <input
-                  type="text"
-                  className="hub__chat-meetings__input"
-                  value={linkTitle}
-                  placeholder={t("Document name")}
-                  aria-label={t("Document name")}
-                  tabIndex={tabIndex}
-                  onChange={(event) => setLinkTitle(event.target.value)}
-                />
-                <input
-                  type="url"
-                  className="hub__chat-meetings__input"
-                  value={linkUrl}
-                  placeholder={t("Link")}
-                  aria-label={t("Link")}
-                  tabIndex={tabIndex}
-                  onChange={(event) => setLinkUrl(event.target.value)}
-                />
-                <p className="hub__chat-meetings__details-text">
-                  {t(
-                    "Share the document in Docs too: a link alone opens for nobody else.",
-                  )}
-                </p>
-                <div className="hub__chat-meetings__document-draft-actions">
-                  <button
-                    type="button"
-                    className="hub__chat-meetings__action"
-                    tabIndex={tabIndex}
-                    onClick={() => setIsAddingLink(false)}
-                  >
-                    {t("Cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    className="hub__chat-meetings__action"
-                    data-primary="true"
-                    disabled={!isWebLink(linkUrl) || isSavingLink}
-                    tabIndex={tabIndex}
-                    onClick={saveLink}
-                  >
-                    {t("Add")}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="hub__chat-meetings__add-document"
-                aria-label={t("Add a Docs link")}
-                tabIndex={tabIndex}
-                onClick={() => setIsAddingLink(true)}
-              >
-                Docs
-              </button>
-            ))}
+          {canAdd && (
+            <DocsLinkDraft
+              tabIndex={tabIndex}
+              hint={t(
+                "Share the document in Docs too: a link alone opens for nobody else.",
+              )}
+              isSaving={isSavingLink}
+              onAdd={({ title: linkTitle, url }) =>
+                // useChatMeetingActions already surfaces a toast on failure.
+                addLink(meeting.id, {
+                  id: `link-${Date.now()}`,
+                  title: linkTitle,
+                  url,
+                })
+              }
+            />
+          )}
         </section>
       </div>
     </>

@@ -68,7 +68,9 @@ class MeetingAttachmentSerializer(serializers.Serializer):  # pylint: disable=ab
 class MeetingCreateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """What the Hub keeps of a meeting it creates a Meet room for."""
 
-    chat_id = serializers.CharField(max_length=255, required=False, default="")
+    chat_id = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default=""
+    )
     space_name = serializers.CharField(
         max_length=255, required=False, allow_blank=True, default=""
     )

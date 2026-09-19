@@ -22,7 +22,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(options?.[name] ?? ""),
+      ),
+    i18n: { language: "en" },
+  }),
 }));
 vi.mock("@/features/api/APIError", () => ({
   APIError: class APIError extends Error {

@@ -88,3 +88,31 @@ describe("MeetingHistory archives", () => {
     }
   });
 });
+
+describe("MeetingHistory documents", () => {
+  afterEach(cleanup);
+
+  it("lists only the web links of the selected meeting", () => {
+    render(
+      <MeetingHistory
+        chatRef={CHAT_REF}
+        meetings={[
+          {
+            ...MEETINGS[0],
+            documents: [
+              { id: "ok", title: "Compte rendu", url: "https://x/cr" },
+              { id: "bad", title: "Sans schéma", url: "docs.example.org/1" },
+            ],
+          },
+        ]}
+        isInitialLoading={false}
+        isOpen
+        onClose={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Compte rendu")).toBeTruthy();
+    expect(screen.queryByText("Sans schéma")).toBeNull();
+  });
+});

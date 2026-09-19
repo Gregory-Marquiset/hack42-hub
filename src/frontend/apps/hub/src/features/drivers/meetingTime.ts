@@ -1,3 +1,5 @@
+import type { TFunction } from "i18next";
+
 import type { ChatMeeting } from "./types";
 
 const MINUTE = 60 * 1000;
@@ -68,18 +70,33 @@ export const getMeetingProgress = (
   };
 };
 
-/** `45 min`, `1 h`, `1 h 05`: the shape used in the meeting window. */
-export const formatMeetingDuration = (ms: number): string => {
+/**
+ * `45 min`, `1 h`, `1 h 05`: the shape used in the meeting window, with the
+ * units translated by `t`.
+ */
+export const formatMeetingDuration = (ms: number, t: TFunction): string => {
   const totalMinutes = Math.floor(ms / MINUTE);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (hours === 0) {
-    return `${minutes} min`;
+    return t("{{minutes}} min", { minutes });
   }
   return minutes === 0
-    ? `${hours} h`
-    : `${hours} h ${String(minutes).padStart(2, "0")}`;
+    ? t("{{hours}} h", { hours })
+    : t("{{hours}} h {{minutes}}", {
+        hours,
+        minutes: String(minutes).padStart(2, "0"),
+      });
 };
+
+/** `12 min`, or `12 min / 45 min` against the planned duration. */
+export const formatMeetingProgress = (
+  progress: MeetingProgress,
+  t: TFunction,
+): string =>
+  progress.plannedMs === undefined
+    ? formatMeetingDuration(progress.elapsedMs, t)
+    : `${formatMeetingDuration(progress.elapsedMs, t)} / ${formatMeetingDuration(progress.plannedMs, t)}`;
 
 /** A scheduled meeting counts as "soon" this long before its start. */
 export const MEETING_SOON_MS = 15 * MINUTE;

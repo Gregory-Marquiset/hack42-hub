@@ -45,6 +45,9 @@ export const MeetingsTool = ({
   // The scheduled meeting shown, as last known: a meeting just created may
   // not be in the list yet.
   const [shown, setShown] = useState<ChatMeeting | null>(null);
+  // A call the driver found ongoing when this user tried to start one: it
+  // may not be in the list yet.
+  const [reused, setReused] = useState<ChatMeeting | null>(null);
   const { openMeeting } = useActiveMeeting();
   const now = useNow();
   const { meetings, isInitialLoading } = useChatMeetings(chatRef, isOpen);
@@ -92,6 +95,23 @@ export const MeetingsTool = ({
     ? (meetings.find((candidate) => candidate.id === shown.id) ?? shown)
     : null;
 
+  // The call to join instead of starting another one.
+  const ongoingMeeting =
+    ongoing[0] ??
+    (reused && getMeetingStatus(reused, now) === "ongoing" ? reused : null);
+
+  /**
+   * Someone started a call meanwhile, and the driver returned it instead of
+   * creating this one: the form stays, for the user to join that call or to
+   * schedule theirs, rather than dropping what they typed.
+   */
+  const keepForm = (meeting: ChatMeeting) => {
+    setReused(meeting);
+    notify.brand(
+      t("A meeting is already in progress: join it, or plan yours."),
+    );
+  };
+
   const startNow = (options: StartMeetingOptions) => {
     if (isPending) {
       return;
@@ -99,7 +119,11 @@ export const MeetingsTool = ({
     // A new call opens with its invitation link in view, and the panel gets
     // out of the way: the meeting window is where everything happens now.
     void startMeeting(options)
-      .then((meeting) => {
+      .then(({ meeting, isReused }) => {
+        if (isReused) {
+          keepForm(meeting);
+          return;
+        }
         join(meeting, true);
         setView("list");
         onClose();
@@ -114,7 +138,11 @@ export const MeetingsTool = ({
       return;
     }
     void startMeeting(options)
-      .then((meeting) => {
+      .then(({ meeting, isReused }) => {
+        if (isReused) {
+          keepForm(meeting);
+          return;
+        }
         notify.brand(t("Meeting scheduled"));
         // Lands on the meeting, with the link to share.
         openDetails(meeting);
@@ -154,6 +182,8 @@ export const MeetingsTool = ({
         <NewMeetingForm
           isOpen={isOpen}
           isStarting={isPending}
+          ongoingMeeting={ongoingMeeting}
+          onJoinOngoing={(meeting) => join(meeting)}
           onClose={onClose}
           onBack={() => setView("list")}
           onStartNow={startNow}

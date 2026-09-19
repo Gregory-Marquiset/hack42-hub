@@ -28,10 +28,10 @@ const browserTimeZone = (): string | undefined => {
  * reach the browser.
  */
 export const createMeetRoom = async (
-  details?: MeetRoomDetails,
+  details: MeetRoomDetails,
 ): Promise<MeetRoom> => {
   const timeZone = browserTimeZone();
-  const body = details && {
+  const body = {
     chat_id: details.chatId,
     space_name: details.spaceName ?? "",
     title: details.title ?? "",
@@ -43,7 +43,7 @@ export const createMeetRoom = async (
   };
   const response = await fetchAPI("meetings/", {
     method: "POST",
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    body: JSON.stringify(body),
   });
   return (await response.json()) as MeetRoom;
 };

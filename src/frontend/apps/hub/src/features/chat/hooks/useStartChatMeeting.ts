@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
 import { MeetingNotAllowedError } from "@/features/drivers/meetingErrors";
 import type {
-  ChatMeeting,
   ChatRef,
+  StartedChatMeeting,
   StartMeetingOptions,
 } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
@@ -17,9 +17,10 @@ import { chatKeys } from "../chatKeys";
 export type UseStartChatMeetingResult = {
   /**
    * Starts (or rejoins) the conversation's meeting, or schedules one when
-   * `options.startsAt` is in the future, and resolves with it.
+   * `options.startsAt` is in the future, and resolves with it. `isReused`
+   * says a call was already ongoing: `options` were then not used.
    */
-  startMeeting: (options?: StartMeetingOptions) => Promise<ChatMeeting>;
+  startMeeting: (options?: StartMeetingOptions) => Promise<StartedChatMeeting>;
   isPending: boolean;
 };
 
@@ -36,7 +37,7 @@ export const useStartChatMeeting = (
   const { t } = useTranslation();
 
   const { mutateAsync, isPending } = useMutation<
-    ChatMeeting,
+    StartedChatMeeting,
     Error,
     StartMeetingOptions | undefined
   >({

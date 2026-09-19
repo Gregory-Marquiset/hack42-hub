@@ -1,35 +1,37 @@
 import { Plus, XMark } from "@gouvfr-lasuite/ui-components/icons";
-import { type ChangeEvent, useEffect, useId, useRef, useState } from "react";
+import { type ChangeEvent, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatMeetingDuration } from "@/features/drivers/meetingTime";
-import type { StartMeetingOptions } from "@/features/drivers/types";
-import { notify } from "@/features/ui/components/toast";
+import type {
+  ChatMeeting,
+  StartMeetingOptions,
+} from "@/features/drivers/types";
 
+import { DocsLinkDraft } from "./DocsLinkDraft";
 import { Download } from "./MeetingIcons";
-import { TEXT_FILE_ACCEPT, isTextFile } from "./textFile";
+import { TEXT_FILE_ACCEPT } from "./textFile";
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
+import { type DraftDocument, useDraftDocuments } from "./useDraftDocuments";
 
-type DraftDocument = {
-  id: string;
-  title: string;
-  url: string;
-  /** Picked on this device and served from a blob URL, to release on removal. */
-  isLocalFile?: boolean;
-  /** Text of a picked file, kept by the Hub for the meeting archive. */
-  content?: string;
-};
+export { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "./useDraftDocuments";
 
 /** Planned lengths offered in the form, in minutes. */
 export const MEETING_DURATIONS = [15, 30, 45, 60, 90, 120, 180] as const;
 export const DEFAULT_MEETING_DURATION = 60;
-/** Attached text files are kept by the Hub: small ones only. */
-export const MAX_ATTACHMENT_BYTES = 100_000;
+/** What the Hub accepts (see `MeetingCreateSerializer`). */
+export const MAX_AGENDA_LENGTH = 20_000;
 
 type NewMeetingFormProps = {
   isOpen: boolean;
   /** Whether a call is already being created or scheduled. */
   isStarting: boolean;
+  /**
+   * The conversation's call in progress, if any: "Start now" would only
+   * rejoin it without this form, so the form offers to join it instead.
+   */
+  ongoingMeeting?: ChatMeeting | null;
+  onJoinOngoing: (meeting: ChatMeeting) => void;
   onClose: () => void;
   onBack: () => void;
   /** Starts the conversation's call right away ("Appel immédiat"). */
@@ -37,15 +39,6 @@ type NewMeetingFormProps = {
   /** Schedules the call at the chosen date and time. */
   onSchedule: (options: StartMeetingOptions) => void;
 };
-
-/** The text of a picked file. */
-const readText = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
-  });
 
 /** The local date and time of the form as a `Date`, when both are set. */
 const toStartDate = (date: string, time: string): Date | undefined => {
@@ -67,12 +60,12 @@ const DocumentRow = ({ document, tabIndex, onRemove }: DocumentRowProps) => {
   const { t } = useTranslation();
 
   return (
-    <li className="hub__chat-meetings__row">
-      <span className="hub__chat-meetings__row-label">{document.title}</span>
-      <span className="hub__chat-meetings__row-actions">
+    <li className="hub__tools-list__row">
+      <span className="hub__tools-list__label">{document.title}</span>
+      <span className="hub__tools-list__actions">
         <button
           type="button"
-          className="hub__chat-meetings__icon-button"
+          className="hub__tools-list__icon-button"
           aria-label={t("Remove {{name}}", { name: document.title })}
           tabIndex={tabIndex}
           onClick={onRemove}
@@ -80,7 +73,7 @@ const DocumentRow = ({ document, tabIndex, onRemove }: DocumentRowProps) => {
           <XMark />
         </button>
         <a
-          className="hub__chat-meetings__icon-button"
+          className="hub__tools-list__icon-button"
           href={document.url}
           {...(document.isLocalFile
             ? { download: document.title }
@@ -106,6 +99,8 @@ const DocumentRow = ({ document, tabIndex, onRemove }: DocumentRowProps) => {
 export const NewMeetingForm = ({
   isOpen,
   isStarting,
+  ongoingMeeting,
+  onJoinOngoing,
   onClose,
   onBack,
   onStartNow,
@@ -124,139 +119,39 @@ export const NewMeetingForm = ({
     DEFAULT_MEETING_DURATION,
   );
   const [agenda, setAgenda] = useState("");
-  const [agendaFile, setAgendaFile] = useState<DraftDocument | null>(null);
-  const [documents, setDocuments] = useState<DraftDocument[]>([]);
   const [isAddingDocument, setIsAddingDocument] = useState(false);
-  const [draftTitle, setDraftTitle] = useState("");
-  const [draftUrl, setDraftUrl] = useState("");
   const agendaFileInputRef = useRef<HTMLInputElement>(null);
   const documentFileInputRef = useRef<HTMLInputElement>(null);
-  const nextDocumentId = useRef(0);
-  const localFileUrls = useRef(new Set<string>());
+  const {
+    agendaFile,
+    documents,
+    attachments,
+    links,
+    attachAgendaFile,
+    removeAgendaFile,
+    attachDocumentFiles,
+    addLink,
+    removeDocument,
+  } = useDraftDocuments();
 
   const tabIndex = isOpen ? 0 : -1;
 
-  const pickedFiles = [agendaFile, ...documents].filter(
-    (doc): doc is DraftDocument => doc?.content !== undefined,
-  );
   const meetingOptions: StartMeetingOptions = {
     title: title.trim() || undefined,
     plannedDurationMinutes: durationMinutes,
     agenda: agenda.trim() || undefined,
-    attachments: pickedFiles.map((doc) => ({
-      name: doc.title,
-      content: doc.content ?? "",
-    })),
+    attachments,
     // Links are listed for every member; picked files only go to the archive.
-    documents: documents
-      .filter((doc) => !doc.isLocalFile)
-      .map(({ id, title: docTitle, url }) => ({ id, title: docTitle, url })),
+    documents: links,
   };
   const startsAt = toStartDate(date, time);
   const canSchedule = startsAt !== undefined && startsAt.getTime() > Date.now();
 
-  // Blob URLs of picked files live until their document is removed, or the
-  // form goes away.
-  useEffect(() => {
-    const urls = localFileUrls.current;
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-      urls.clear();
-    };
-  }, []);
-
-  const newDocumentId = () => `document-${nextDocumentId.current++}`;
-
-  const toLocalDocument = async (file: File): Promise<DraftDocument> => {
-    const content = await readText(file);
-    const url = URL.createObjectURL(file);
-    localFileUrls.current.add(url);
-    return {
-      id: newDocumentId(),
-      title: file.name,
-      url,
-      isLocalFile: true,
-      content,
-    };
-  };
-
-  /** The picked files, read; an unreadable or too large one is refused. */
-  const readFiles = async (files: File[]): Promise<DraftDocument[]> => {
-    const readable = files.filter((file) => file.size <= MAX_ATTACHMENT_BYTES);
-    if (readable.length !== files.length) {
-      notify.error(t("A file is too large to be attached (100 KB at most)."));
-    }
-    try {
-      return await Promise.all(readable.map(toLocalDocument));
-    } catch {
-      notify.error(t("The file could not be read."));
-      return [];
-    }
-  };
-
-  const release = (document: DraftDocument | null | undefined) => {
-    if (document?.isLocalFile) {
-      URL.revokeObjectURL(document.url);
-      localFileUrls.current.delete(document.url);
-    }
-  };
-
-  /** The picked .txt/.md files; any other type is refused with a message. */
-  const pickTextFiles = (event: ChangeEvent<HTMLInputElement>): File[] => {
+  /** The files of a picker, which is reset to fire again on the same file. */
+  const picked = (event: ChangeEvent<HTMLInputElement>): File[] => {
     const files = Array.from(event.target.files ?? []);
-    // Reset so picking the same file again still fires `change`.
     event.target.value = "";
-    const accepted = files.filter((file) => isTextFile(file.name));
-    if (accepted.length !== files.length) {
-      notify.error(t("Only .txt or .md files can be attached."));
-    }
-    return accepted;
-  };
-
-  const attachAgendaFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const [file] = pickTextFiles(event);
-    if (!file) {
-      return;
-    }
-    const picked = await readFiles([file]);
-    if (picked.length === 0) {
-      return;
-    }
-    release(agendaFile);
-    setAgendaFile(picked[0]);
-  };
-
-  const removeAgendaFile = () => {
-    release(agendaFile);
-    setAgendaFile(null);
-  };
-
-  const attachDocumentFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    const added = await readFiles(pickTextFiles(event));
-    if (added.length > 0) {
-      setDocuments((current) => [...current, ...added]);
-    }
-  };
-
-  const addDocument = () => {
-    const url = draftUrl.trim();
-    if (url === "") {
-      return;
-    }
-    const document = {
-      id: newDocumentId(),
-      title: draftTitle.trim() === "" ? url : draftTitle.trim(),
-      url,
-    };
-    setDocuments((current) => [...current, document]);
-    setDraftTitle("");
-    setDraftUrl("");
-    setIsAddingDocument(false);
-  };
-
-  const removeDocument = (document: DraftDocument) => {
-    release(document);
-    setDocuments((current) => current.filter((doc) => doc.id !== document.id));
+    return files;
   };
 
   return (
@@ -328,7 +223,7 @@ export const NewMeetingForm = ({
             >
               {MEETING_DURATIONS.map((minutes) => (
                 <option key={minutes} value={minutes}>
-                  {formatMeetingDuration(minutes * 60_000)}
+                  {formatMeetingDuration(minutes * 60_000, t)}
                 </option>
               ))}
             </select>
@@ -342,7 +237,7 @@ export const NewMeetingForm = ({
             </label>
             <button
               type="button"
-              className="hub__chat-meetings__icon-button"
+              className="hub__tools-list__icon-button"
               aria-label={t("Attach an agenda file")}
               tabIndex={tabIndex}
               onClick={() => agendaFileInputRef.current?.click()}
@@ -355,7 +250,7 @@ export const NewMeetingForm = ({
               accept={TEXT_FILE_ACCEPT}
               hidden
               data-testid="agenda-file-input"
-              onChange={attachAgendaFile}
+              onChange={(event) => void attachAgendaFile(picked(event))}
             />
           </div>
           <textarea
@@ -364,11 +259,19 @@ export const NewMeetingForm = ({
             value={agenda}
             rows={4}
             placeholder={t("One item per line")}
+            maxLength={MAX_AGENDA_LENGTH}
             tabIndex={tabIndex}
             onChange={(event) => setAgenda(event.target.value)}
           />
+          {agenda.length >= MAX_AGENDA_LENGTH && (
+            <p className="hub__chat-meetings__details-text" role="status">
+              {t("The agenda is limited to {{max}} characters.", {
+                max: MAX_AGENDA_LENGTH,
+              })}
+            </p>
+          )}
           {agendaFile && (
-            <ul className="hub__chat-meetings__list">
+            <ul className="hub__tools-list">
               <DocumentRow
                 document={agendaFile}
                 tabIndex={tabIndex}
@@ -383,7 +286,7 @@ export const NewMeetingForm = ({
             <h3 className="hub__chat-meetings__card-title">{t("Documents")}</h3>
             <button
               type="button"
-              className="hub__chat-meetings__icon-button"
+              className="hub__tools-list__icon-button"
               aria-label={t("Attach document files")}
               tabIndex={tabIndex}
               onClick={() => documentFileInputRef.current?.click()}
@@ -397,7 +300,7 @@ export const NewMeetingForm = ({
               multiple
               hidden
               data-testid="document-file-input"
-              onChange={attachDocumentFiles}
+              onChange={(event) => void attachDocumentFiles(picked(event))}
             />
           </div>
           {documents.length === 0 && !isAddingDocument && (
@@ -405,7 +308,7 @@ export const NewMeetingForm = ({
               {t("No document yet")}
             </p>
           )}
-          <ul className="hub__chat-meetings__list">
+          <ul className="hub__tools-list">
             {documents.map((doc) => (
               <DocumentRow
                 key={doc.id}
@@ -416,61 +319,18 @@ export const NewMeetingForm = ({
             ))}
           </ul>
 
-          {isAddingDocument ? (
-            <div className="hub__chat-meetings__document-draft">
-              <input
-                type="text"
-                className="hub__chat-meetings__input"
-                value={draftTitle}
-                placeholder={t("Document name")}
-                aria-label={t("Document name")}
-                tabIndex={tabIndex}
-                onChange={(event) => setDraftTitle(event.target.value)}
-              />
-              <input
-                type="url"
-                className="hub__chat-meetings__input"
-                value={draftUrl}
-                placeholder={t("Link")}
-                aria-label={t("Link")}
-                tabIndex={tabIndex}
-                onChange={(event) => setDraftUrl(event.target.value)}
-              />
-              <div className="hub__chat-meetings__document-draft-actions">
-                <button
-                  type="button"
-                  className="hub__chat-meetings__action"
-                  tabIndex={tabIndex}
-                  onClick={() => setIsAddingDocument(false)}
-                >
-                  {t("Cancel")}
-                </button>
-                <button
-                  type="button"
-                  className="hub__chat-meetings__action"
-                  data-primary="true"
-                  disabled={draftUrl.trim() === ""}
-                  tabIndex={tabIndex}
-                  onClick={addDocument}
-                >
-                  {t("Add")}
-                </button>
-              </div>
-            </div>
-          ) : (
-            // Adds a document by link for now; picking it from Docs comes later.
-            <button
-              type="button"
-              className="hub__chat-meetings__add-document"
-              aria-label={t("Add a Docs link")}
-              tabIndex={tabIndex}
-              onClick={() => setIsAddingDocument(true)}
-            >
-              Docs
-            </button>
-          )}
+          <DocsLinkDraft
+            tabIndex={tabIndex}
+            onAdd={addLink}
+            onOpenChange={setIsAddingDocument}
+          />
         </section>
 
+        {ongoingMeeting && (
+          <p className="hub__chat-meetings__details-text" role="status">
+            {t("A meeting is already in progress: join it, or plan yours.")}
+          </p>
+        )}
         <div className="hub__chat-meetings__start-actions">
           <button
             type="button"
@@ -484,17 +344,29 @@ export const NewMeetingForm = ({
           >
             {t("Schedule")}
           </button>
-          <button
-            type="button"
-            className="hub__chat-meetings__action hub__chat-meetings__start-now"
-            data-primary="true"
-            disabled={isStarting}
-            aria-busy={isStarting || undefined}
-            tabIndex={tabIndex}
-            onClick={() => onStartNow(meetingOptions)}
-          >
-            {t("Start now")}
-          </button>
+          {ongoingMeeting ? (
+            <button
+              type="button"
+              className="hub__chat-meetings__action hub__chat-meetings__start-now"
+              data-primary="true"
+              tabIndex={tabIndex}
+              onClick={() => onJoinOngoing(ongoingMeeting)}
+            >
+              {t("Join the ongoing meeting")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="hub__chat-meetings__action hub__chat-meetings__start-now"
+              data-primary="true"
+              disabled={isStarting}
+              aria-busy={isStarting || undefined}
+              tabIndex={tabIndex}
+              onClick={() => onStartNow(meetingOptions)}
+            >
+              {t("Start now")}
+            </button>
+          )}
         </div>
       </div>
     </>

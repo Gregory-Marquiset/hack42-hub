@@ -43,10 +43,7 @@ export const useMeetingArchive = (
       const { blob, fileName } = await fetchMeetingArchive(meeting.id, {
         openIdToken,
         chatName: chat?.name,
-        documents: [
-          ...(meeting.summary ? [meeting.summary] : []),
-          ...meeting.documents,
-        ],
+        documents: meeting.documents,
       });
       saveFile(blob, fileName);
     },

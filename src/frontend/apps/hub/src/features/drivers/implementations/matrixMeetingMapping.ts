@@ -9,6 +9,7 @@
 import type { MatrixEvent, Room } from "matrix-js-sdk/lib/matrix";
 
 import type { ChatMeeting, ChatMeetingDocument } from "../types";
+import { isWebLink } from "../webLink";
 
 export const MEETING_EVENT_TYPE = "io.lasuite.hub.meeting";
 
@@ -26,7 +27,6 @@ export type MeetingStateEventContent = {
   /** "auto" when the server closed it; the organizer otherwise. */
   endedBy?: "organizer" | "auto";
   documents?: unknown;
-  summary?: unknown;
   /** Whether the whiteboard is open, for every participant at once. */
   boardOpen?: boolean;
 };
@@ -43,10 +43,12 @@ const toDocument = (raw: unknown): ChatMeetingDocument | undefined => {
     return undefined;
   }
   const { id, title, url } = raw as Record<string, unknown>;
+  // A link typed without its scheme would render as a broken relative link.
   if (
     typeof id !== "string" ||
     typeof title !== "string" ||
-    typeof url !== "string"
+    typeof url !== "string" ||
+    !isWebLink(url)
   ) {
     return undefined;
   }
@@ -64,15 +66,29 @@ const toDocuments = (raw: unknown): ChatMeetingDocument[] =>
  * `null` when its content is missing the fields the call needs to be joined. */
 export const chatMeetingFromStateEvent = (
   event: MatrixEvent,
+): ChatMeeting | null =>
+  chatMeetingFromContent(
+    event.getStateKey(),
+    event.getContent<Record<string, unknown>>(),
+    event.getSender(),
+  );
+
+/**
+ * Maps the content of a meeting state to a `ChatMeeting`, or `null` when it
+ * misses the fields the call needs to be joined. `sender` names the organizer
+ * of an older state that does not. Pure: also used for a meeting just written.
+ */
+export const chatMeetingFromContent = (
+  stateKey: string | undefined,
+  content: Record<string, unknown>,
+  sender?: string,
 ): ChatMeeting | null => {
-  const content = event.getContent<Record<string, unknown>>();
   const url = content.meetingUrl;
   const startedAt = content.startedAt;
   const organizerId =
     typeof content.organizerId === "string" && content.organizerId
       ? content.organizerId
-      : event.getSender();
-  const stateKey = event.getStateKey();
+      : sender;
   if (
     typeof url !== "string" ||
     !url ||
@@ -101,7 +117,6 @@ export const chatMeetingFromStateEvent = (
         }
       : {}),
     documents: toDocuments(content.documents),
-    summary: toDocument(content.summary),
     isBoardOpen: content.boardOpen === true,
   };
 };
@@ -122,6 +137,40 @@ export const getMeetingStateContent = (
   return {
     ...event.getContent<MeetingStateEventContent>(),
     organizerId: meeting.organizerId,
+  };
+};
+
+/**
+ * The content to update a meeting from: the homeserver's `latest` copy, read
+ * right before the write, since the local one may not have synced a closing
+ * yet. A closing known on either side is kept: a state rewritten without it
+ * would reopen the meeting. `latest` is ignored when it is not a meeting.
+ */
+export const mergeLatestMeetingContent = (
+  local: MeetingStateEventContent & { organizerId: string },
+  latest: unknown,
+): MeetingStateEventContent & { organizerId: string } => {
+  const fetched =
+    typeof latest === "object" && latest !== null
+      ? (latest as Partial<MeetingStateEventContent>)
+      : null;
+  const base =
+    fetched &&
+    typeof fetched.meetingUrl === "string" &&
+    typeof fetched.startedAt === "number"
+      ? (fetched as MeetingStateEventContent)
+      : local;
+  const closing = typeof base.endedAt === "number" ? base : local;
+  return {
+    ...base,
+    // The organizer never changes, and older states only name it as sender.
+    organizerId: local.organizerId,
+    ...(typeof closing.endedAt === "number"
+      ? {
+          endedAt: closing.endedAt,
+          endedBy: closing.endedBy === "auto" ? "auto" : "organizer",
+        }
+      : {}),
   };
 };
 

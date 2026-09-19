@@ -9,7 +9,12 @@ from django.test import override_settings
 from django.utils import timezone
 
 import pytest
-from rest_framework.status import HTTP_200_OK, HTTP_204_NO_CONTENT, HTTP_410_GONE
+from rest_framework.status import (
+    HTTP_200_OK,
+    HTTP_204_NO_CONTENT,
+    HTTP_400_BAD_REQUEST,
+    HTTP_410_GONE,
+)
 
 from bots import albert
 from core import factories, meeting_assistant, models
@@ -52,8 +57,12 @@ def _message(message_id, text, identity="bob", name="Bob"):
     }
 
 
-def _replies(client, meeting):
-    return client.post(f"/api/v1.0/scribe/rooms/{meeting.livekit_room}/replies/")
+def _replies(client, meeting, **body):
+    return client.post(
+        f"/api/v1.0/scribe/rooms/{meeting.livekit_room}/replies/",
+        body or None,
+        format="json",
+    )
 
 
 @override_settings(**SETTINGS)
@@ -210,6 +219,36 @@ def test_meeting_assistant_unknown_asker_reads_nothing_before(
     [(messages, _)] = albert_calls
     assert len(messages) == 2
     assert not any("Dit avant." in message["content"] for message in messages)
+
+
+@override_settings(**SETTINGS)
+@pytest.mark.usefixtures("albert_calls")
+def test_api_scribe_replies_handed_until_acknowledged(scribe_client):
+    """An answer the scribe did not say it posted is handed again, not lost."""
+    meeting = factories.MeetingFactory()
+    _chat(scribe_client, meeting, _message("m1", "@ariane bonjour"))
+
+    [reply] = _replies(scribe_client, meeting, delivered=[]).json()["replies"]
+    # The post failed: the scribe does not list it, and gets it again.
+    assert _replies(scribe_client, meeting, delivered=[]).json()["replies"] == [reply]
+    stored = models.MeetingChatMessage.objects.get(pk=reply["id"])
+    assert stored.delivered_at is None
+
+    response = _replies(scribe_client, meeting, delivered=[reply["id"]])
+
+    assert response.json()["replies"] == []
+    stored.refresh_from_db()
+    assert stored.delivered_at is not None
+
+
+@override_settings(**SETTINGS)
+def test_api_scribe_replies_invalid_acknowledgement(scribe_client):
+    """Only answer ids can be acknowledged."""
+    meeting = factories.MeetingFactory()
+
+    response = _replies(scribe_client, meeting, delivered=["not-an-id"])
+
+    assert response.status_code == HTTP_400_BAD_REQUEST
 
 
 @override_settings(**SETTINGS)

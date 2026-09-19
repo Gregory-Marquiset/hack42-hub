@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Keep Ariane's answer in a call until the scribe reports it
+  posted: an answer that failed to send was marked delivered and lost.
 - 🐛(bots) Have Ariane say she cannot answer whatever fails after a ping,
   a homeserver error or a bug, instead of staying silent.
 - 🐛(bots) Check whether a room is encrypted once Ariane is in it: before,

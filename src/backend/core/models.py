@@ -372,7 +372,7 @@ class MeetingChatMessage(BaseModel):
         _("delivered on"),
         null=True,
         blank=True,
-        help_text=_("When the scribe took an assistant message to post it."),
+        help_text=_("When the scribe said it posted an assistant message."),
     )
 
     class Meta:

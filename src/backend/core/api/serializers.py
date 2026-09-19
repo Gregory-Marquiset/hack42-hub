@@ -198,6 +198,14 @@ class ScribeChatMessagesSerializer(serializers.Serializer):  # pylint: disable=a
     messages = ScribeChatMessageSerializer(many=True, max_length=200)
 
 
+class ScribeRepliesSerializer(serializers.Serializer):  # pylint: disable=abstract-method
+    """The assistant's answers the scribe posted since it last asked."""
+
+    delivered = serializers.ListField(
+        child=serializers.UUIDField(), required=False, max_length=200
+    )
+
+
 class ScribeParticipantSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """Someone in the call."""
 

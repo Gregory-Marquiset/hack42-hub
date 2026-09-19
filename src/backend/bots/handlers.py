@@ -429,49 +429,55 @@ def handle_message(room_id: str, event: dict) -> None:
         return
 
     logger.info("Ariane pinged in %s by %s", room_id, sender)
-
+    # One destination, always: the thread hanging off the message that asked.
+    thread_root = aside_root(event)
     try:
-        refusal = access_refusal(room_id)
-        if refusal is not None:
-            if refusal is not SILENT:
-                matrix.send_message(
-                    room_id, refusal, thread_root=aside_root(event), aside=True
-                )
-            return
+        _answer(room_id, event, body, thread_root)
+    except albert.AlbertError as exc:
+        logger.warning("Albert failed: %s", exc)
+        _say_failure(room_id, thread_root)
     except matrix.MatrixError as exc:
-        logger.warning("could not enter %s: %s", room_id, exc)
+        logger.warning("Matrix failed while answering in %s: %s", room_id, exc)
+        _say_failure(room_id, thread_root)
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Silence after a ping reads as a broken product, whatever broke.
+        logger.exception("could not answer in %s", room_id)
+        _say_failure(room_id, thread_root)
+
+
+def _answer(room_id: str, event: dict, body: str, thread_root: str) -> None:
+    """Enter the room if invited, then answer the ping in its thread."""
+    refusal = access_refusal(room_id)
+    if refusal is not None:
+        if refusal is not SILENT:
+            matrix.send_message(room_id, refusal, thread_root=thread_root, aside=True)
         return
 
     command, unknown = parse_command(body)
-    # One destination, always: the thread hanging off the message that asked.
-    answer_root = aside_root(event)
+    canned = canned_reply(command, unknown)
+    if canned:
+        matrix.send_message(room_id, canned, thread_root=thread_root, aside=True)
+        return
 
+    messages, _ = build_context(room_id, event)
+    question = clean_question(body)
+    if question:
+        messages.append({"role": "user", "content": question})
+
+    matrix.set_typing(room_id, True)
     try:
-        canned = canned_reply(command, unknown)
-        if canned:
-            matrix.send_message(
-                room_id, canned, thread_root=aside_root(event), aside=True
-            )
-            return
+        reply = albert.answer(messages, command)
+    finally:
+        matrix.set_typing(room_id, False)
 
-        messages, _ = build_context(room_id, event)
-        question = clean_question(body)
-        if question:
-            messages.append({"role": "user", "content": question})
+    matrix.send_message(room_id, reply, thread_root=thread_root)
 
-        matrix.set_typing(room_id, True)
-        try:
-            reply = albert.answer(messages, command)
-        finally:
-            matrix.set_typing(room_id, False)
 
-        matrix.send_message(room_id, reply, thread_root=answer_root)
-
-    except albert.AlbertError as exc:
-        # Silence after a ping reads as a broken product. Say something.
-        logger.warning("Albert failed: %s", exc)
+def _say_failure(room_id: str, thread_root: str) -> None:
+    """Say that no answer is coming. Best effort: Matrix may be what failed."""
+    try:
         matrix.send_message(
-            room_id, FAILURE_MESSAGE, thread_root=aside_root(event), aside=True
+            room_id, FAILURE_MESSAGE, thread_root=thread_root, aside=True
         )
     except matrix.MatrixError as exc:
-        logger.warning("Matrix failed while answering: %s", exc)
+        logger.warning("could not say the failure in %s: %s", room_id, exc)

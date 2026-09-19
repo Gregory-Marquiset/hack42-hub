@@ -703,16 +703,6 @@ class MeetingAttachmentView(drf.views.APIView):
         )
 
 
-def _room_name(meeting):
-    """The conversation's name as Matrix knows it, when Ariane can ask."""
-    if not meeting.chat_id or not matrix.can_read_members():
-        return ""
-    try:
-        return matrix.room_name(meeting.chat_id) or ""
-    except matrix.MatrixError:
-        return ""
-
-
 class MeetingArchiveView(drf.views.APIView):
     """API view downloading the archive of a closed meeting."""
 
@@ -738,9 +728,9 @@ class MeetingArchiveView(drf.views.APIView):
                 status=drf.status.HTTP_409_CONFLICT,
             )
 
-        chat_name = serializer.validated_data["chat_name"].strip() or _room_name(
-            meeting
-        )
+        chat_name = serializer.validated_data[
+            "chat_name"
+        ].strip() or meeting_notifications.chat_name(meeting)
         with timezone.override(meeting.time_zone):
             content = archives.build_archive(
                 meeting,

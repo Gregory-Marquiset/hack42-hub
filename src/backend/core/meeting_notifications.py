@@ -122,16 +122,21 @@ def _send_to_members(meeting, text, extra=None):
             logger.warning("meeting %s: %s not told: %s", meeting.slug, user_id, error)
 
 
+def chat_name(meeting):
+    """The conversation's name as Matrix knows it, or "" when it cannot be read."""
+    if not meeting.chat_id:
+        return ""
+    try:
+        return matrix.room_name(meeting.chat_id) or ""
+    except matrix.MatrixError:
+        return ""
+
+
 def _names(meeting):
     """The meeting's and the conversation's names, for the messages."""
     title = meeting.title or "sans titre"
-    room = None
-    if meeting.chat_id and matrix.can_read_members():
-        try:
-            room = matrix.room_name(meeting.chat_id)
-        except matrix.MatrixError:
-            room = None
-    return title, _room_and_space(meeting, room or "votre conversation")
+    room = chat_name(meeting) or "votre conversation"
+    return title, _room_and_space(meeting, room)
 
 
 def _room_and_space(meeting, room):

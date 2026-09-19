@@ -1,6 +1,16 @@
-import type { User as MatrixUser } from "matrix-js-sdk/lib/matrix";
+import { SetPresence, type User as MatrixUser } from "matrix-js-sdk/lib/matrix";
 
 import type { ChatUserPresence, ChatUserPresenceState } from "../types";
+
+const SET_PRESENCE: Record<ChatUserPresenceState, SetPresence> = {
+  online: SetPresence.Online,
+  unavailable: SetPresence.Unavailable,
+  offline: SetPresence.Offline,
+};
+
+/** The SDK's own value for a presence state, without a blind cast. */
+export const toSetPresence = (state: ChatUserPresenceState): SetPresence =>
+  SET_PRESENCE[state];
 
 const MATRIX_PRESENCE_STATES = new Set<ChatUserPresenceState>([
   "online",

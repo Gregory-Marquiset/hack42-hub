@@ -142,12 +142,14 @@ import {
 import { matrixDirectoryUserToChatUser } from "./matrixIdentity";
 import { subscribeToIncomingMatrixEvents } from "./matrixIncomingEvents";
 import {
+  publishedPresence,
   readChatSelfPresencePreference,
   writeChatSelfPresencePreference,
 } from "../presencePreference";
 import {
   matrixPresenceResponseToChatUserPresence,
   matrixUserToChatUserPresence,
+  toSetPresence,
 } from "./matrixPresence";
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
@@ -937,10 +939,7 @@ export class MatrixDriver extends Driver {
     preference: ChatSelfPresencePreference,
   ): Promise<void> {
     const previous = this.getSelfPresencePreference();
-    // Matrix knows nothing of "busy": it is published as the closest standard
-    // value, and kept as itself only in the local preference, which is what
-    // decides whether notification sounds play.
-    const published = preference === "busy" ? "unavailable" : preference;
+    const published = publishedPresence(preference);
     if (previous === preference && this.syncPresence === published) return;
 
     await this.setUserPresence(published);
@@ -967,7 +966,7 @@ export class MatrixDriver extends Driver {
       );
     }
     const mx = this.requireClient("setUserPresence");
-    const syncPresence = state as SetPresence;
+    const syncPresence = toSetPresence(state);
     if (this.syncPresence === syncPresence) return;
 
     // `disablePresence` wins over setSyncPresence for the lifetime of SyncApi.
@@ -2660,7 +2659,7 @@ export class MatrixDriver extends Driver {
     this.mx = mx;
     localStorage.removeItem(this.key("matrixRedactedThreads"));
     const preference = this.getSelfPresencePreference();
-    this.syncPresence = preference as SetPresence;
+    this.syncPresence = toSetPresence(publishedPresence(preference));
     this.presenceSyncDisabled = preference === "offline";
     await this.startClientOrFailOnLogout(mx, this.presenceSyncDisabled);
     if (generation !== this.clientGeneration) return;

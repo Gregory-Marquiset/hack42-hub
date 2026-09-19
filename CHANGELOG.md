@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Show your own presence right after choosing busy as others
+  see it, instead of a value no presence badge knows, and keep the
+  availability menu working when local storage is refused.
 - 🐛(notifications) Read the muted conversations through the shared cache
   of notification rules, without an unhandled error before the chat
   account is connected, and without an older answer overwriting a newer.

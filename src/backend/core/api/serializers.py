@@ -90,6 +90,15 @@ class MeetingCreateSerializer(serializers.Serializer):  # pylint: disable=abstra
         many=True, required=False, default=list, max_length=20
     )
 
+    def validate(self, attrs):
+        """A planned end comes after the start."""
+        starts_at, planned_end_at = attrs.get("starts_at"), attrs.get("planned_end_at")
+        if starts_at and planned_end_at and planned_end_at <= starts_at:
+            raise serializers.ValidationError(
+                {"planned_end_at": "The planned end must come after the start."}
+            )
+        return attrs
+
 
 class MeetingUpdateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """A renaming or an extension, from the organizer's window."""

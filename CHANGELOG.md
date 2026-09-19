@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Refuse a meeting whose planned end is not after its start,
+  which gave negative durations in Ariane's messages.
 - 🐛(meetings) Save a meeting transcript in Docs once when the automatic
   closing and the organizer (or a double click) close it at the same time.
 - 🐛(meetings) Refuse a member or fall back to a generic room name when the

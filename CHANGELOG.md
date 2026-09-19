@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Accept an empty `chat_id` when creating a meeting, as when it
+  is left out, instead of answering 400.
 - 🐛(meetings) Close a meeting planned without an end once its call is empty
   an hour after it began: it used to stay open for good.
 - 🐛(meetings) Refuse a meeting whose planned end is not after its start,

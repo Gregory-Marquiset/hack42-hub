@@ -17,10 +17,9 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
-from collections import OrderedDict
 
 from django.conf import settings
+from django.core.cache import cache
 
 from bots import albert, matrix
 
@@ -92,41 +91,20 @@ def help_message() -> str:
     return "\n".join(lines)
 
 
-class _Seen:
-    """Event ids already handled, bounded.
+# How long a handled event id is remembered: far longer than Synapse keeps
+# replaying a transaction whose 200 got lost.
+SEEN_SECONDS = 24 * 60 * 60
 
-    Synapse replays a transaction until it gets a 200, and a retry after a slow
-    Albert call would post the answer twice. An unbounded set in a long-lived
-    process is a leak, so this forgets the oldest.
+
+def first_time(event_id: str) -> bool:
+    """Record an event as handled, and say whether it was new.
+
+    Synapse replays a transaction until it gets a 200, so the same ping can
+    arrive twice. The record lives in the shared cache (Redis in production),
+    not in the process: gunicorn runs several workers, and a replay may reach
+    another one than the first delivery.
     """
-
-    def __init__(self, capacity: int = 500):
-        self._ids: OrderedDict[str, None] = OrderedDict()
-        self._capacity = capacity
-        self._lock = threading.Lock()
-
-    def add_if_new(self, event_id: str) -> bool:
-        """Record the id, and say whether it was new."""
-        with self._lock:
-            if event_id in self._ids:
-                return False
-            self._ids[event_id] = None
-            while len(self._ids) > self._capacity:
-                self._ids.popitem(last=False)
-            return True
-
-    def forget(self, event_id: str) -> None:
-        """Take the id back, so a ping lost to a passing failure can be retried.
-
-        Marking an event handled is a promise that it was answered. When the
-        homeserver is the one that failed - a timeout, a 5xx, a rate limit -
-        that promise is false, and keeping it would silence the ping for good.
-        """
-        with self._lock:
-            self._ids.pop(event_id, None)
-
-
-SEEN = _Seen()
+    return cache.add(f"bots:seen:{event_id:s}", True, SEEN_SECONDS)
 
 
 def strip_quotes(body: str) -> str:
@@ -446,7 +424,7 @@ def handle_message(room_id: str, event: dict) -> None:
         return
     if not is_pinged(body):
         return
-    if not SEEN.add_if_new(event["event_id"]):
+    if not first_time(event["event_id"]):
         logger.debug("event %s already handled", event["event_id"])
         return
 
@@ -462,7 +440,6 @@ def handle_message(room_id: str, event: dict) -> None:
             return
     except matrix.MatrixError as exc:
         logger.warning("could not enter %s: %s", room_id, exc)
-        SEEN.forget(event["event_id"])
         return
 
     command, unknown = parse_command(body)

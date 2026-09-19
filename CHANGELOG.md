@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🔒️(profiles) Prove the chat account with a short-lived OpenID token when
+  saving a role, instead of sending the browser's Matrix access token.
 - 🐛(meetings) Keep Ariane's answer in a call until the scribe reports it
   posted: an answer that failed to send was marked delivered and lost.
 - 🐛(bots) Have Ariane say she cannot answer whatever fails after a ping,

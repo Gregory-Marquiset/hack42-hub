@@ -280,10 +280,6 @@ export class LazyMatrixDriver extends BaseDriver {
 
   override readonly supportsProfileRoles = true;
 
-  override async getProfileIdentityToken(): Promise<string> {
-    return this.withTarget((driver) => driver.getProfileIdentityToken());
-  }
-
   async setUserAvatar(file: File): Promise<string> {
     return this.withTarget((driver) => driver.setUserAvatar(file));
   }

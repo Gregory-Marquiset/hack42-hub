@@ -2,6 +2,7 @@
 Declare and configure the models for the hub core application
 """
 
+import io
 import uuid
 from logging import getLogger
 
@@ -271,6 +272,15 @@ class MeetingAttachment(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def open_content(self):
+        """
+        What the document holds, as a binary file to read. Raises `OSError` when
+        its stored file cannot be opened.
+        """
+        if self.file:
+            return self.file.open("rb")
+        return io.BytesIO(self.content.encode())
 
 
 class MeetingParticipant(BaseModel):

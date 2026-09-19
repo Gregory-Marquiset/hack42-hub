@@ -392,7 +392,11 @@ class MeetingView(drf.views.APIView):
                 time_zone=details["time_zone"],
             )
             models.MeetingAttachment.objects.bulk_create(
-                models.MeetingAttachment(meeting=meeting, **attachment)
+                models.MeetingAttachment(
+                    meeting=meeting,
+                    size=len(attachment["content"].encode()),
+                    **attachment,
+                )
                 for attachment in details["attachments"]
             )
         # Ariane tells the members: scheduled for later, or starting now.
@@ -688,13 +692,10 @@ class MeetingAttachmentView(drf.views.APIView):
         if attachment is None:
             raise Http404
 
-        if attachment.file:
-            try:
-                content = attachment.file.open("rb")
-            except OSError as error:
-                raise Http404 from error
-        else:
-            content = io.BytesIO(attachment.content.encode())
+        try:
+            content = attachment.open_content()
+        except OSError as error:
+            raise Http404 from error
         return FileResponse(
             content,
             as_attachment=True,

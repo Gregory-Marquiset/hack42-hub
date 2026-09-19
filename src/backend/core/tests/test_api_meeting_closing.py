@@ -129,9 +129,9 @@ def test_api_meetings_create_with_details():
     )
     assert meeting.planned_end_at.isoformat() == "2026-09-17T10:00:00+00:00"
     assert meeting.agenda == "1. Tour de table\n2. Démo"
-    assert [(a.name, a.content) for a in meeting.attachments.all()] == [
-        ("notes.md", "# Notes\n"),
-        ("vide.txt", ""),
+    assert [(a.name, a.content, a.size) for a in meeting.attachments.all()] == [
+        ("notes.md", "# Notes\n", 8),
+        ("vide.txt", "", 0),
     ]
 
 

@@ -152,6 +152,7 @@ import {
 import { MatrixConversationSearch } from "./MatrixConversationSearch";
 import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
+  chatMeetingFromContent,
   getChatMeetingsFromRoom,
   getMeetingStateContent,
   mergeLatestMeetingContent,
@@ -696,21 +697,15 @@ export class MatrixDriver extends Driver {
       ...(planned ? { plannedDurationMinutes: planned } : {}),
       ...(documents.length > 0 ? { documents } : {}),
     };
+    // Read back as any member will read it, before the sync brings it.
+    const meeting = chatMeetingFromContent(meetingId, content);
+    if (!meeting) {
+      throw new Error(
+        `MatrixDriver.startChatMeeting: Meet returned no usable room for "${chatId}".`,
+      );
+    }
     await mx.sendStateEvent(chatId, MEETING_EVENT_TYPE, content, meetingId);
-    return {
-      meeting: {
-        id: meetingId,
-        url,
-        organizerId: selfUserId,
-        ...(title ? { title } : {}),
-        startedAt: new Date(content.startedAt).toISOString(),
-        ...(content.plannedDurationMinutes
-          ? { plannedDurationMinutes: content.plannedDurationMinutes }
-          : {}),
-        documents,
-      },
-      isReused: false,
-    };
+    return { meeting, isReused: false };
   }
 
   async endChatMeeting(chatId: string, meetingId: string): Promise<void> {

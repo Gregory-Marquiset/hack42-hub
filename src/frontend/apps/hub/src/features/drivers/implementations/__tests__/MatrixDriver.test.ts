@@ -1150,10 +1150,14 @@ describe("MatrixDriver.startChatMeeting", () => {
       MEET_ROOM.slug,
     );
     expect(isReused).toBe(false);
-    expect(meeting).toMatchObject({
+    // The same meeting as the members will read it from the room state.
+    expect(meeting).toEqual({
       id: MEET_ROOM.slug,
       url: MEET_ROOM.url,
       organizerId: SELF_ID,
+      startedAt: expect.any(String),
+      documents: [],
+      isBoardOpen: false,
     });
   });
 

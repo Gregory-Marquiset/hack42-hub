@@ -2605,7 +2605,6 @@ export class MatrixDriver extends Driver {
       try {
         const created: MatrixMessageSearch = new MatrixMessageSearch(
           mx,
-          this.accountId,
           database,
           () => this.emit({ type: "search:changed" }),
           () => {

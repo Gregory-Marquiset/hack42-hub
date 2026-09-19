@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { useMeetingArchive } from "@/features/chat/hooks/useMeetingArchive";
 import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
+import { isWebLink } from "@/features/drivers/webLink";
 
 import { Download } from "./MeetingIcons";
 import { formatMeetingLabel } from "./meetingLabels";
@@ -55,7 +56,10 @@ export const MeetingHistory = ({
   const { downloadArchive, pendingMeetingId } = useMeetingArchive(chatRef);
 
   const documents = selected
-    ? [...(selected.summary ? [selected.summary] : []), ...selected.documents]
+    ? [
+        ...(selected.summary ? [selected.summary] : []),
+        ...selected.documents,
+      ].filter((doc) => isWebLink(doc.url))
     : [];
 
   return (

@@ -37,6 +37,7 @@ import {
   ChatThreadDetail,
   ChatUnread,
 } from "../types";
+import { isWebLink } from "../webLink";
 import { initialsFor } from "./matrixIdentity";
 
 type ReactionRelations = NonNullable<
@@ -636,7 +637,7 @@ const toMeetingInvite = (
     typeof url !== "string" ||
     !chatId ||
     !meetingId ||
-    !/^https?:\/\//i.test(url)
+    !isWebLink(url)
   ) {
     return undefined;
   }

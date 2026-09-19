@@ -8,6 +8,7 @@ import { useMeetingDocuments } from "@/features/chat/hooks/useMeetingDocuments";
 import { copyMeetingLink } from "@/features/chat/meetings/copyMeetingLink";
 import { formatMeetingDuration } from "@/features/drivers/meetingTime";
 import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
+import { isWebLink } from "@/features/drivers/webLink";
 
 import { formatFileSize } from "./fileSize";
 import { Download } from "./MeetingIcons";
@@ -22,8 +23,6 @@ type MeetingDetailsProps = {
   onBack: () => void;
   onJoin: (meeting: ChatMeeting) => void;
 };
-
-const isWebLink = (url: string) => /^https?:\/\//i.test(url.trim());
 
 /**
  * A scheduled meeting: when it starts, the link that invites people from

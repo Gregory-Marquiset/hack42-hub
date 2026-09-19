@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { chatKeys } from "@/features/chat/chatKeys";
-import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import { useAccountDriver } from "@/features/drivers/useAccountDriver";
 import type { AccountId, ChatUserPresence } from "@/features/drivers/types";
 
 /**
@@ -14,8 +14,7 @@ export const useChatUserPresence = (
   accountId: AccountId,
   userId: string,
 ): ChatUserPresence | null => {
-  const entries = useDriverEntries();
-  const driver = entries.find((entry) => entry.accountId === accountId)?.driver;
+  const driver = useAccountDriver(accountId);
   const { data } = useQuery({
     queryKey: chatKeys.userPresence(accountId, userId),
     // The store first, because it costs nothing and carries live changes. The

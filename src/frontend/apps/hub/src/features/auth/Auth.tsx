@@ -18,8 +18,12 @@ import { attemptSilentLogin, canAttemptSilentLogin } from "./silentLogin";
 export const logout = async () => {
   const registry = getRegistry();
   // Démarrer l'effacement avant destroyAll(), qui détache les drivers Matrix.
+  // L'index des messages en garde le texte en clair : il part aussi.
   const cleanup = registry.getSnapshot().map(async ({ driver }) => {
-    await driver.clearConversationSearch();
+    await Promise.all([
+      driver.clearConversationSearch(),
+      driver.clearMessageSearch(),
+    ]);
   });
   registry.destroyAll();
   // Un stockage indisponible ne doit pas empêcher la déconnexion de Hub.

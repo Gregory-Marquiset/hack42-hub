@@ -1,6 +1,7 @@
 import type { MessageSearchDocument } from "./model";
 import {
   SEARCH_DB_VERSION,
+  SearchStorage,
   requestValue,
   transactionDone,
   upgradeSearchSchema,
@@ -127,6 +128,15 @@ export class MessageSearchStorage {
       this.db?.close();
       this.db = undefined;
     }
+  }
+
+  /**
+   * Erases the stored messages. They share their database with the
+   * conversation index, which goes with them: only a logout calls this.
+   */
+  async remove(): Promise<void> {
+    this.close();
+    await SearchStorage.remove(this.name);
   }
 
   close(): void {

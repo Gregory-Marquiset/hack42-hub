@@ -437,8 +437,11 @@ export class MatrixMessageSearch {
     this.storage.close();
   }
 
+  /** Closes, then erases the index stored for this account. */
   async remove(): Promise<void> {
     this.close();
+    this.messages.clear();
+    await this.storage.remove();
   }
 
   private schedulePersist(): void {

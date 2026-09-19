@@ -34,8 +34,29 @@ MEDIA_BASE_URL=http://localhost:9803
 
 # Meeting whiteboard (self-hosted Excalidraw, see compose.yml)
 MEETING_BOARD_BASE_URL=http://localhost:9814
-# Scene store the Excalidraw image is built with, read for the archive
+# Scene store the Excalidraw image is built with, read for the archive:
+# Excalidraw's public persistence service, which only keeps encrypted scenes
 MEETING_BOARD_SCENES_URL=https://firestore.googleapis.com/v1/projects/excalidraw-room-persistence/databases/(default)/documents/scenes
+# MEETING_BOARD_TIMEOUT=15
+# MEETING_BOARD_SAVE_DELAY=15
+
+# Meetings (see hub/settings.py). Secrets go in common.local (git-ignored).
+# Meet external API, with an application registered in Meet:
+# MEET_API_URL=https://meet.example.com/external-api/v1.0
+# MEET_APPLICATION_CLIENT_ID=...
+# MEET_APPLICATION_CLIENT_SECRET=...
+# MEET_ROOM_ACCESS_LEVEL=public
+# MEET_API_TIMEOUT=10
+# Transcripts: the scribe's shared token (same value in scribe.local)
+# MEETING_SCRIBE_TOKEN=...
+# MEETING_SCRIBE_MAX_AGE_HOURS=24
+# MEETING_NOTIFICATIONS_ENABLED=True
+# MEETING_ATTACHMENT_MAX_BYTES=20971520
+# MEETING_ATTACHMENTS_MAX=30
+# Docs, where transcripts and meeting documents are created:
+# DOCS_BASE_URL=https://docs.example.com
+# DOCS_SERVER_TO_SERVER_API_TOKEN=...
+# DOCS_API_TIMEOUT=60
 
 # OIDC
 OIDC_OP_JWKS_ENDPOINT=http://nginx:9803/realms/hub/protocol/openid-connect/certs

@@ -556,13 +556,7 @@ export class MatrixDriver extends Driver {
   }
 
   async getChatMembers(chatId: string): Promise<ChatMembers> {
-    const { mx, room } = this.requireRoom("getChatMembers", chatId);
-    const joinedRoomIds = await this.getJoinedRoomIds(mx);
-    if (!joinedRoomIds.has(chatId)) {
-      throw new Error(
-        `MatrixDriver.getChatMembers: room "${chatId}" is not joined.`,
-      );
-    }
+    const { mx, room } = await this.requireJoinedRoom("getChatMembers", chatId);
     await room.loadMembersIfNeeded();
     const currentUserId = mx.getUserId() ?? undefined;
     const members = room.getMembers();
@@ -584,13 +578,10 @@ export class MatrixDriver extends Driver {
   }
 
   async setChatFavourite(chatId: string, favourite: boolean): Promise<void> {
-    const { mx, room } = this.requireRoom("setChatFavourite", chatId);
-    const joinedRoomIds = await this.getJoinedRoomIds(mx);
-    if (!joinedRoomIds.has(chatId)) {
-      throw new Error(
-        `MatrixDriver.setChatFavourite: room "${chatId}" is not joined.`,
-      );
-    }
+    const { mx, room } = await this.requireJoinedRoom(
+      "setChatFavourite",
+      chatId,
+    );
     if (isFavouriteRoom(room) === favourite) {
       return;
     }
@@ -1533,19 +1524,10 @@ export class MatrixDriver extends Driver {
     direction = "older",
     limit = DEFAULT_CHAT_PAGE_SIZE,
   }: GetChatMessagesParams): Promise<ChatMessagesPage> {
-    const mx = this.requireClient("getChatMessages");
-    const joinedRoomIds = await this.getJoinedRoomIds(mx);
-    if (!joinedRoomIds.has(chatId)) {
-      throw new Error(
-        `MatrixDriver.getChatMessages: room "${chatId}" is not joined.`,
-      );
-    }
-    const room = mx.getRoom(chatId);
-    if (!room) {
-      throw new Error(
-        `MatrixDriver.getChatMessages: room "${chatId}" not found.`,
-      );
-    }
+    const { mx, room } = await this.requireJoinedRoom(
+      "getChatMessages",
+      chatId,
+    );
     const targetId = anchorId ?? cursor ?? undefined;
     const { window, dispose } = scopedTimelineWindow(mx, room);
     try {
@@ -1861,6 +1843,25 @@ export class MatrixDriver extends Driver {
       throw new Error(`MatrixDriver.${method}: room "${chatId}" not found.`);
     }
     return { mx, room };
+  }
+
+  /**
+   * A room the homeserver confirms this account has joined, and the client
+   * knows. Checked against `/joined_rooms`, not the local membership: a room
+   * restored from IndexedDB after a homeserver reset can still claim "join".
+   */
+  private async requireJoinedRoom(
+    method: string,
+    chatId: string,
+  ): Promise<{ mx: MatrixClient; room: Room }> {
+    const mx = this.requireClient(method);
+    const joinedRoomIds = await this.getJoinedRoomIds(mx);
+    if (!joinedRoomIds.has(chatId)) {
+      throw new Error(
+        `MatrixDriver.${method}: room "${chatId}" is not joined.`,
+      );
+    }
+    return this.requireRoom(method, chatId);
   }
 
   /** Resolves an active message on the main timeline or inside one thread. */

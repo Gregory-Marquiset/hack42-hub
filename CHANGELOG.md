@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Keep the composer from crashing on Enter when the mention
+  list shrinks under the highlighted row (someone left the room).
 - 🐛(frontend) Open a conversation right after accepting its invitation,
   instead of reporting it as not joined when a membership check sent just
   before came back afterwards.

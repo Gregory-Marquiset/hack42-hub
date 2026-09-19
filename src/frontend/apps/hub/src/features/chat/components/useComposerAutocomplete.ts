@@ -151,8 +151,11 @@ export const useComposerAutocomplete = (
         if (suggestions.length === 0) {
           return 0;
         }
-        // Wrap instead of clamp: a list of six is faster to reach backwards.
-        return (current + delta + suggestions.length) % suggestions.length;
+        // Start from the row actually highlighted, which the list shrinking
+        // may have moved, then wrap instead of clamp: a list of six is faster
+        // to reach backwards.
+        const from = Math.min(current, suggestions.length - 1);
+        return (from + delta + suggestions.length) % suggestions.length;
       });
     },
     [suggestions.length],
@@ -189,7 +192,9 @@ export const useComposerAutocomplete = (
 
   return {
     suggestions,
-    activeIndex,
+    // The list can shrink under the highlight without a keystroke (the
+    // members change): the highlight never points past its last row.
+    activeIndex: Math.min(activeIndex, Math.max(0, suggestions.length - 1)),
     move,
     update,
     dismiss,

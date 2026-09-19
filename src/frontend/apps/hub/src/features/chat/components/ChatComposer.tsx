@@ -421,7 +421,8 @@ export const ChatComposer = ({
                   (event.key === "Tab" && !event.shiftKey)
                 ) {
                   event.preventDefault();
-                  insertMention(mention.suggestions[mention.activeIndex]);
+                  const suggestion = mention.suggestions[mention.activeIndex];
+                  if (suggestion) insertMention(suggestion);
                   return;
                 }
                 if (event.key === "Escape") {

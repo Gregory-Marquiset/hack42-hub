@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(bots) Keep the latest replies of a long thread in Ariane's context, not
+  the oldest ones.
 - 🐛(bots) Remember the pings Ariane handled in the shared cache, so a
   replayed transaction reaching another worker is not answered twice.
 - 🐛(bots) Keep Ariane's reading horizon at the join when someone changes

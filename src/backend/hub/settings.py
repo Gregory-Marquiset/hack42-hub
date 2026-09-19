@@ -376,19 +376,19 @@ class Base(Configuration):
         environ_prefix=None,
     )
     # 🔒️ Hub -> Synapse. Lets Ariane act as herself through `?user_id=`.
-    MATRIX_AS_TOKEN = values.Value(
+    MATRIX_AS_TOKEN = SecretFileValue(
         None, environ_name="MATRIX_AS_TOKEN", environ_prefix=None
     )
     # 🔒️ Synapse -> Hub. Proves an incoming transaction really comes from
     # Synapse. Opposite direction from the one above, not a second copy.
-    MATRIX_HS_TOKEN = values.Value(
+    MATRIX_HS_TOKEN = SecretFileValue(
         None, environ_name="MATRIX_HS_TOKEN", environ_prefix=None
     )
     # 🔒️ Synapse admin rights, used read-only: a room's members, to decide who
     # may read a meeting's documents and archive and whom Ariane tells about
     # it, and a room's name, for those messages and the archive. It is no way
     # into a room - Ariane enters on invitation only.
-    MATRIX_ADMIN_TOKEN = values.Value(
+    MATRIX_ADMIN_TOKEN = SecretFileValue(
         None, environ_name="MATRIX_ADMIN_TOKEN", environ_prefix=None
     )
 
@@ -402,6 +402,8 @@ class Base(Configuration):
     BOTS_ROOM_HISTORY = values.PositiveIntegerValue(
         30, environ_name="BOTS_ROOM_HISTORY", environ_prefix=None
     )
+    # How many replies of a thread she reads at most: the latest ones, a long
+    # thread losing its start. Bounded by the same quota as the room history.
     BOTS_MAX_THREAD_EVENTS = values.PositiveIntegerValue(
         200, environ_name="BOTS_MAX_THREAD_EVENTS", environ_prefix=None
     )
@@ -415,7 +417,7 @@ class Base(Configuration):
     )
     # 🔒️ Never expose: Albert sends no CORS header on purpose, and
     # /api/v1.0/config/ is AllowAny.
-    ALBERT_API_KEY = values.Value(
+    ALBERT_API_KEY = SecretFileValue(
         None, environ_name="ALBERT_API_KEY", environ_prefix=None
     )
     ALBERT_MODELS_LARGE = values.ListValue(

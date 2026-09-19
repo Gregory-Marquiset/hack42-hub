@@ -170,6 +170,7 @@ import {
   listRoomFiles,
   uploadRoomFile,
 } from "./matrixRoomFiles";
+import { planRoomCreation } from "./matrixRoomCreation";
 import {
   clearStoredSearch,
   MATRIX_USER_STORAGE_KEY,
@@ -1066,11 +1067,12 @@ export class MatrixDriver extends Driver {
     // Everything that makes two concurrent calls ask a different question
     // belongs in the key, or the second caller silently gets the first one's
     // room. `forceNew` (Salon creation) asks for a brand-new room rather than
-    // the existing one; encryption asks for a different room entirely, and a
-    // direct message is always encrypted so its key never varies.
+    // the existing one; encryption asks for a different room entirely, as
+    // decided by the same plan the creation follows.
+    const { wantsEncryption } = planRoomCreation(participantIds, options);
     const creationKey = `${options?.forceNew ? "new:" : ""}${participantSetKey(
       participantIds,
-    )}|${participantIds.length === 1 || options?.encrypted ? "e2ee" : "clear"}`;
+    )}|${wantsEncryption ? "e2ee" : "clear"}`;
     const inFlight = this.chatCreations.get(creationKey);
     if (inFlight) {
       return inFlight;
@@ -1207,32 +1209,11 @@ export class MatrixDriver extends Driver {
     participantIds: string[],
     options?: CreateChatOptions,
   ): Promise<LocalChat> {
-    // Three shapes of room, three rules.
-    //
-    // A one-to-one between humans is always encrypted: there is no choice to
-    // make, and offering one would only produce private conversations that
-    // are not private.
-    //
-    // A one-to-one with the assistant is never encrypted. She cannot read an
-    // encrypted room, and there is no human on the other side whose privacy
-    // the encryption would protect - it would only make her deaf.
-    //
-    // A group follows the toggle, and the assistant is invited into it unless
-    // it is encrypted: she is meant to be in every room she can actually read,
-    // and an invitation into one she cannot would be a lie in the member list.
     const assistant = options?.assistantUserId;
-    const isDirect = participantIds.length === 1;
-    const isAssistantOnly = isDirect && participantIds[0] === assistant;
-    const wantsEncryption = isAssistantOnly
-      ? false
-      : isDirect || Boolean(options?.encrypted);
-    const invite =
-      !isDirect &&
-      assistant &&
-      !wantsEncryption &&
-      !participantIds.includes(assistant)
-        ? [...participantIds, assistant]
-        : participantIds;
+    const { isDirect, wantsEncryption, invite } = planRoomCreation(
+      participantIds,
+      options,
+    );
 
     if (!options?.forceNew) {
       // Creation is rare and duplicate rooms are permanent, so bypass the

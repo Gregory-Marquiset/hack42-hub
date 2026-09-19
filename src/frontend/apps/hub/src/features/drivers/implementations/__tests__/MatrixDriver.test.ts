@@ -1403,6 +1403,31 @@ describe("MatrixDriver.startChatMeeting", () => {
     );
   });
 
+  it("lets a member open the board of someone else's meeting", async () => {
+    const content = {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now(),
+      organizerId: OTHER_ID,
+    };
+    const { mx, sendStateEvent } = makeClient(
+      makeMeetingRoom([meetingEvent(MEET_ROOM.slug, content)]),
+    );
+
+    // The board is the shared surface of the call, like the call itself.
+    await driverWithClient(mx).setChatMeetingBoard(
+      ROOM_ID,
+      MEET_ROOM.slug,
+      true,
+    );
+
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      MEETING_EVENT_TYPE,
+      { ...content, boardOpen: true },
+      MEET_ROOM.slug,
+    );
+  });
+
   it("refuses to rename a meeting organized by someone else", async () => {
     const event = meetingEvent(MEET_ROOM.slug, {
       meetingUrl: MEET_ROOM.url,

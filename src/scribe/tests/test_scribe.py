@@ -180,6 +180,7 @@ class FakeHub:
     sent: list = field(default_factory=list)
     pending_replies: dict = field(default_factory=dict)
     replies_status: int = 200
+    reported: list = field(default_factory=list)
 
     async def rooms(self):
         return set(self.wanted)
@@ -188,10 +189,18 @@ class FakeHub:
         self.reports.append((room_name, [p["identity"] for p in participants]))
         return self.presence_status.get(room_name, 204)
 
-    async def replies(self, room_name):
+    async def replies(self, room_name, delivered):
+        self.reported.append((room_name, list(delivered)))
         if self.replies_status != 200:
             return self.replies_status, []
-        return 200, self.pending_replies.pop(room_name, [])
+        # Handed again until reported posted, as the Hub does.
+        pending = [
+            reply
+            for reply in self.pending_replies.get(room_name, [])
+            if reply["id"] not in delivered
+        ]
+        self.pending_replies[room_name] = pending
+        return 200, list(pending)
 
     async def send(self, room_name, kind, items):
         self.sent.append((room_name, kind, [item["id"] for item in items]))
@@ -404,6 +413,59 @@ async def test_post_replies_goes_on_after_a_failure():
     assert followed.room.local_participant.posted == [
         (scribe.CHAT_TOPIC, "Voici.", False)
     ]
+
+
+async def test_post_replies_reports_what_was_posted():
+    hub = FakeHub(pending_replies={"room": [{"id": "1", "text": "Voici."}]})
+    bot = TestScribe(hub)
+    follow(bot, "room")
+
+    await bot.flush_all()
+    await bot.flush_all()
+    await bot.flush_all()
+
+    assert hub.reported == [("room", []), ("room", ["1"]), ("room", [])]
+
+
+async def test_post_replies_retries_an_answer_not_posted():
+    hub = FakeHub(pending_replies={"room": [{"id": "1", "text": "raté"}]})
+    bot = TestScribe(hub)
+    followed = follow(bot, "room")
+    followed.room.local_participant.fail_on = "raté"
+
+    await bot.post_replies(followed)
+    followed.room.local_participant.fail_on = None
+    await bot.post_replies(followed)
+    await bot.post_replies(followed)
+
+    assert followed.room.local_participant.posted == [
+        (scribe.CHAT_TOPIC, "raté", False)
+    ]
+    assert hub.reported[-1] == ("room", ["1"])
+
+
+async def test_post_replies_gives_up_an_answer_that_never_posts():
+    hub = FakeHub(pending_replies={"room": [{"id": "1", "text": "raté"}]})
+    bot = TestScribe(hub)
+    followed = follow(bot, "room")
+    followed.room.local_participant.fail_on = "raté"
+
+    for _ in range(scribe.MAX_REPLY_FAILURES + 1):
+        await bot.post_replies(followed)
+
+    assert hub.reported[-1] == ("room", ["1"])
+    assert hub.pending_replies == {"room": []}
+
+
+async def test_post_replies_keeps_reports_the_hub_did_not_take():
+    hub = FakeHub(replies_status=502)
+    bot = TestScribe(hub)
+    followed = follow(bot, "room")
+    followed.posted.append("1")
+
+    await bot.post_replies(followed)
+
+    assert followed.posted == ["1"]
 
 
 async def test_post_replies_leaves_a_closed_meeting():

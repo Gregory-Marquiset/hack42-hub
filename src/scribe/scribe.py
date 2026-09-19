@@ -44,6 +44,8 @@ MAX_PENDING = 1000
 BATCH_SIZE = 200
 # The Hub answers these once a meeting is closed or unknown: leave the room.
 GONE = (404, 410)
+# Attempts at posting one answer of the assistant before giving it up.
+MAX_REPLY_FAILURES = 3
 
 
 @dataclass(frozen=True)
@@ -157,6 +159,10 @@ class FollowedRoom:
         default_factory=lambda: {SEGMENTS: {}, CHAT: {}}
     )
     tasks: set = field(default_factory=set)
+    # Answers of the assistant posted in the chat, to report to the Hub, and
+    # how many times posting each one failed.
+    posted: list[str] = field(default_factory=list)
+    failures: dict[str, int] = field(default_factory=dict)
 
     def add(self, kind: str, item: dict) -> None:
         """Queue an item; a newer version replaces the older one."""
@@ -203,10 +209,16 @@ class HubClient:
         ) as response:
             return response.status
 
-    async def replies(self, room_name: str) -> tuple[int, list[dict]]:
-        """Take the assistant's answers to post; answers the status and them."""
+    async def replies(
+        self, room_name: str, delivered: list[str]
+    ) -> tuple[int, list[dict]]:
+        """
+        Report the answers posted since the last call, and take the ones still
+        to post; answers the status and them.
+        """
         async with self._session.post(
             f"{self._base}/scribe/rooms/{room_name}/replies/",
+            json={"delivered": delivered},
             headers=self._headers,
         ) as response:
             if response.status != 200:
@@ -378,16 +390,25 @@ class Scribe:
                 logger.exception("room %s: could not follow", room_name)
 
     async def post_replies(self, followed: FollowedRoom) -> bool:
-        """Post the assistant's answers; `False` once the meeting is closed."""
+        """
+        Post the assistant's answers; `False` once the meeting is closed.
+
+        The Hub hands an answer again until it is reported posted, on the next
+        call: one that could not be posted is retried rather than lost, and
+        given up (reported anyway) after `MAX_REPLY_FAILURES` attempts.
+        """
         if not followed.is_connected:
             return True
+        reported = list(followed.posted)
         try:
-            status, replies = await self.hub.replies(followed.name)
+            status, replies = await self.hub.replies(followed.name, reported)
         except aiohttp.ClientError as error:
             logger.warning("room %s: Hub unreachable (%s)", followed.name, error)
             return True
         if status in GONE:
             return False
+        if status == 200:
+            del followed.posted[: len(reported)]
         for reply in replies:
             try:
                 # Uncompressed: the browsers of the call read it as is.
@@ -396,6 +417,13 @@ class Scribe:
                 )
             except Exception:  # noqa: BLE001 - the next answers still go out
                 logger.exception("room %s: answer not posted", followed.name)
+                failures = followed.failures.get(reply["id"], 0) + 1
+                followed.failures[reply["id"]] = failures
+                if failures < MAX_REPLY_FAILURES:
+                    continue
+                logger.error("room %s: answer %s given up", followed.name, reply["id"])
+            followed.failures.pop(reply["id"], None)
+            followed.posted.append(reply["id"])
         return True
 
     async def flush_all(self) -> None:

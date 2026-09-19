@@ -3,7 +3,7 @@ import {
   type DropdownMenuOption,
   UserMenuItem,
 } from "@gouvfr-lasuite/ui-components";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useChatSelfPresencePreference } from "@/features/chat/hooks/useChatSelfPresencePreference";
@@ -51,15 +51,48 @@ const usePresencePreferenceControl = (accountId: AccountId) => {
       setSelfPresencePreference(value);
     }
   };
+  const toggle = () => {
+    if (!isPending) setIsOpen((current) => !current);
+  };
 
   return {
     isOpen,
     setIsOpen,
+    toggle,
     preference,
     options,
     onSelectValue,
     isPending,
   };
+};
+
+type PresencePreferenceControl = ReturnType<
+  typeof usePresencePreferenceControl
+>;
+
+/**
+ * The availability menu around a trigger: the profile menu item and the
+ * control over the avatar open the same one, and only their trigger differs.
+ */
+const PresencePreferenceMenu = ({
+  accountId,
+  children,
+}: {
+  accountId: AccountId;
+  children: (control: PresencePreferenceControl) => ReactNode;
+}) => {
+  const control = usePresencePreferenceControl(accountId);
+  return (
+    <DropdownMenu
+      options={control.options}
+      isOpen={control.isOpen}
+      onOpenChange={control.setIsOpen}
+      selectedValues={control.preference ? [control.preference] : []}
+      onSelectValue={control.onSelectValue}
+    >
+      {children(control)}
+    </DropdownMenu>
+  );
 };
 
 export const UserPresenceAction = ({
@@ -72,29 +105,20 @@ export const UserPresenceAction = ({
   showAccountLabel: boolean;
 }) => {
   const { t } = useTranslation();
-  const control = usePresencePreferenceControl(accountId);
   const label = showAccountLabel
     ? t("Availability — {{account}}", { account: accountLabel })
     : t("Availability");
 
   return (
-    <DropdownMenu
-      options={control.options}
-      isOpen={control.isOpen}
-      onOpenChange={control.setIsOpen}
-      selectedValues={control.preference ? [control.preference] : []}
-      onSelectValue={control.onSelectValue}
-    >
-      <UserMenuItem
-        label={control.isPending ? t("Updating availability…") : label}
-        icon={<UserPresenceIndicator state={control.preference} decorative />}
-        onClick={() => {
-          if (!control.isPending) {
-            control.setIsOpen((current) => !current);
-          }
-        }}
-      />
-    </DropdownMenu>
+    <PresencePreferenceMenu accountId={accountId}>
+      {(control) => (
+        <UserMenuItem
+          label={control.isPending ? t("Updating availability…") : label}
+          icon={<UserPresenceIndicator state={control.preference} decorative />}
+          onClick={control.toggle}
+        />
+      )}
+    </PresencePreferenceMenu>
   );
 };
 
@@ -107,29 +131,24 @@ export const UserPresenceQuickControl = ({
   userId: string;
 }) => {
   const { t } = useTranslation();
-  const control = usePresencePreferenceControl(accountId);
   const presence = useChatUserPresence(accountId, userId);
   const label = t("Availability");
 
   return (
-    <DropdownMenu
-      options={control.options}
-      isOpen={control.isOpen}
-      onOpenChange={control.setIsOpen}
-      selectedValues={control.preference ? [control.preference] : []}
-      onSelectValue={control.onSelectValue}
-    >
-      <button
-        type="button"
-        className="hub__user-profile__presence-control"
-        aria-label={label}
-        title={label}
-        disabled={control.isPending}
-        onClick={() => control.setIsOpen((current) => !current)}
-      >
-        <UserPresenceIndicator state={presence?.state ?? null} decorative />
-      </button>
-    </DropdownMenu>
+    <PresencePreferenceMenu accountId={accountId}>
+      {(control) => (
+        <button
+          type="button"
+          className="hub__user-profile__presence-control"
+          aria-label={label}
+          title={label}
+          disabled={control.isPending}
+          onClick={control.toggle}
+        >
+          <UserPresenceIndicator state={presence?.state ?? null} decorative />
+        </button>
+      )}
+    </PresencePreferenceMenu>
   );
 };
 

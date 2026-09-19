@@ -1,11 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  getRegistry,
-  useDriverEntries,
-} from "@/features/drivers/DriverRegistry";
+import { getRegistry } from "@/features/drivers/DriverRegistry";
+import { useAccountDriver } from "@/features/drivers/useAccountDriver";
 import type { ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
@@ -26,15 +24,8 @@ export const useChatMute = (
 ): UseChatMuteResult => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
-  const entries = useDriverEntries();
-  const isSupported = useMemo(
-    () =>
-      ref
-        ? (entries.find((entry) => entry.accountId === ref.accountId)?.driver
-            .supportsNotificationRules ?? false)
-        : false,
-    [entries, ref],
-  );
+  const isSupported =
+    useAccountDriver(ref?.accountId)?.supportsNotificationRules ?? false;
 
   const query = useQuery({
     queryKey: ref ? chatKeys.chatMuted(ref) : chatKeys.noChat(),

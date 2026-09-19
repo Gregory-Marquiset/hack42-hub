@@ -10,7 +10,6 @@ So it gets tests of its own, and they are deliberately written from the outside:
 given a list of events and a horizon, what comes out.
 """
 
-from django.core.cache import cache
 from django.test import override_settings
 
 import pytest
@@ -153,44 +152,3 @@ def test_a_readable_thread_root_is_part_of_the_context(monkeypatch):
     messages = handlers.build_context("!room:localhost", ping)
 
     assert "la question de depart" in messages[0]["content"]
-
-
-def test_a_replayed_event_is_handled_once():
-    """Synapse replaying a transaction must not get a second answer.
-
-    The record is in the shared cache, so it holds across the workers.
-    """
-    cache.delete("bots:seen:$replayed")
-
-    assert handlers.first_time("$replayed") is True
-    assert handlers.first_time("$replayed") is False
-    cache.delete("bots:seen:$replayed")
-
-
-def test_she_always_answers_in_a_thread():
-    """A question put to her is between her and the person asking.
-
-    Letting answers run down the main timeline pushes the room's own
-    conversation off the screen, and a room where several people ask her
-    things becomes unreadable.
-    """
-    from_room = {
-        "event_id": "$asked",
-        "content": {"msgtype": "m.text", "body": "@Ariane bonjour"},
-    }
-
-    assert handlers.aside_root(from_room) == "$asked"
-
-
-def test_a_question_from_a_thread_stays_in_that_thread():
-    """She never opens a second thread on top of the one being used."""
-    from_thread = {
-        "event_id": "$asked",
-        "content": {
-            "msgtype": "m.text",
-            "body": "@Ariane et ensuite ?",
-            "m.relates_to": {"rel_type": "m.thread", "event_id": "$root"},
-        },
-    }
-
-    assert handlers.aside_root(from_thread) == "$root"

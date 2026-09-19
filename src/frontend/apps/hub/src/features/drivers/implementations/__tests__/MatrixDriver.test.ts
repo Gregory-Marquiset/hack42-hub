@@ -548,6 +548,28 @@ describe("timelineEventToChatEvent (real-time sync mapping)", () => {
     });
   });
 
+  it("flags a shared document, and only it, as a file", () => {
+    const text = makeMessageEvent({ sender: OTHER_ID, body: "hello" });
+    const file = {
+      ...makeMessageEvent({ sender: OTHER_ID, id: "$file:localhost" }),
+      getContent: () => ({
+        msgtype: "m.file",
+        body: "notes.txt",
+        url: "mxc://localhost/notes",
+      }),
+    } as unknown as MatrixEvent;
+
+    expect(
+      timelineEventToChatEvent(text, makeRoom(), SELF_ID)[0],
+    ).not.toHaveProperty("isFile");
+    expect(
+      timelineEventToChatEvent(file, makeRoom(), SELF_ID)[0],
+    ).toMatchObject({
+      type: "message:new",
+      isFile: true,
+    });
+  });
+
   it("suppresses this session's own echo so it is not duplicated", () => {
     const txnTagged = makeMessageEvent({
       sender: SELF_ID,

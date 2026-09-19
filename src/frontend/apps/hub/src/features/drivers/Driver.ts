@@ -193,6 +193,8 @@ export type ChatEvent =
       message: ChatMessage;
       /** Authors referenced by the message, to merge into the page cache. */
       authors?: ChatMessageAuthor[];
+      /** The message shares a document: the documents list is stale. */
+      isFile?: boolean;
     }
   | {
       type: "message:updated";

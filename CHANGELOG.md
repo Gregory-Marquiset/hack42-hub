@@ -8,6 +8,8 @@ and this project adheres to
 
 ### Added
 
+- ✨(frontend) Welcome a first-time visitor with a tour of what the Hub does
+  and where each feature lives, reopened from the account menu.
 - ✨(search) Jump to a message found via search that is a thread reply:
   land on its thread in the conversation, open the thread panel and flash
   the reply there.

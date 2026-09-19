@@ -5,11 +5,14 @@ import { useAuth } from "@/features/auth/Auth";
 import { LoginButton } from "@/features/auth/components/LoginButton";
 import { useMyAvatarSrc } from "@/features/chat/hooks/useMyAvatarSrc";
 import { NotificationSettingsModal } from "@/features/chat/notifications/NotificationSettingsModal";
+import { DiscoveryModal } from "@/features/discovery/DiscoveryModal";
+import { useDiscovery } from "@/features/discovery/useDiscovery";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import { RoleProfileAction } from "@/features/roles/RoleProfileAction";
 
 import { useAvatarPortalOverlay } from "../avatar/useAvatarPortalOverlay";
 import { ChangeProfilePhotoAction } from "./ChangeProfilePhotoAction";
+import { DiscoveryAction } from "./DiscoveryAction";
 import { LogoutAction } from "./LogoutAction";
 import { NotificationSettingsAction } from "./NotificationSettingsAction";
 import {
@@ -45,6 +48,7 @@ export const UserProfile = () => {
     (entry) => entry.driver.supportsNotificationRules,
   );
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const discovery = useDiscovery();
 
   if (!user) {
     return <LoginButton />;
@@ -71,6 +75,12 @@ export const UserProfile = () => {
                 onOpen={() => setIsNotificationsOpen(true)}
               />
             )}
+            <DiscoveryAction
+              onOpen={() => {
+                setMenuVersion((version) => version + 1);
+                discovery.open();
+              }}
+            />
             <LogoutAction />
           </>
         }
@@ -102,6 +112,7 @@ export const UserProfile = () => {
           onClose={() => setIsNotificationsOpen(false)}
         />
       )}
+      <DiscoveryModal isOpen={discovery.isOpen} onClose={discovery.close} />
     </div>
   );
 };

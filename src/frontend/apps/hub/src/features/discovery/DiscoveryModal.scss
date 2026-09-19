@@ -1,0 +1,66 @@
+.hub__discovery {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  &__intro,
+  &__footer {
+    margin: 0;
+    font-size: 14px;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+  }
+
+  &__card {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--c--contextuals--border--surface--primary, #dfe2ea);
+  }
+
+  &__icon {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    font-size: 22px;
+    color: var(--c--contextuals--content--semantic--brand--primary, #000091);
+    background: var(--c--contextuals--background--surface--tertiary, #f6f8f9);
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  &__description {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  &__where {
+    margin: 0;
+    font-size: 13px;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+}

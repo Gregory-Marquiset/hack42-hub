@@ -1795,6 +1795,21 @@ describe("getChatForUsers (encryption-aware lookup)", () => {
   });
 });
 
+describe("LazyMatrixDriver capabilities", () => {
+  it("advertises exactly the capabilities of the real driver", () => {
+    // The UI reads them before the SDK loads: a flag the proxy forgot hides a
+    // feature until then, one it claims wrongly offers a dead control.
+    const capabilities = (driver: object) =>
+      Object.fromEntries(
+        Object.entries(driver).filter(([key]) => key.startsWith("supports")),
+      );
+
+    expect(capabilities(new LazyMatrixDriver("matrix"))).toEqual(
+      capabilities(new MatrixDriver()),
+    );
+  });
+});
+
 describe("joined rooms cache", () => {
   const joinedRoomIdsOf = (driver: MatrixDriver, mx: MatrixClient) =>
     (

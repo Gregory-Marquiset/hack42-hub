@@ -20,6 +20,7 @@ import { MatrixDriver } from "../MatrixDriver";
 import { readChatSelfPresencePreference } from "../../presencePreference";
 import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
 import { MeetingNotAllowedError } from "../../meetingErrors";
+import { SpaceChildNotAllowedError } from "../../spaceErrors";
 import type { MeetRoom, MeetRoomSchedule } from "../../types";
 import {
   matrixJoinedRoomToLocalChat,
@@ -1643,6 +1644,54 @@ describe("createChatForUsers (encryption and the assistant)", () => {
 
     expect(chat.id).toBe("!group:localhost");
     expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  const salonClient = (maySendSpaceChild: boolean) => {
+    const space = {
+      roomId: "!space:localhost",
+      currentState: { maySendStateEvent: () => maySendSpaceChild },
+    } as unknown as Room;
+    const { mx, createRoom } = clientFor([]);
+    const sendStateEvent = vi.fn(async () => {
+      throw new Error("M_FORBIDDEN");
+    });
+    Object.assign(mx, {
+      getRoom: (roomId: string) => (roomId === space.roomId ? space : null),
+      getDomain: () => "localhost",
+      sendStateEvent,
+    });
+    return { mx, createRoom, sendStateEvent };
+  };
+
+  it("creates no room in an espace the user may not add rooms to", async () => {
+    const { mx, createRoom } = salonClient(false);
+
+    await expect(
+      driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+        spaceId: "!space:localhost",
+        forceNew: true,
+      }),
+    ).rejects.toBeInstanceOf(SpaceChildNotAllowedError);
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("returns the room created even when listing it in its espace fails", async () => {
+    const { mx, createRoom, sendStateEvent } = salonClient(true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      const pending = driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+        spaceId: "!space:localhost",
+        forceNew: true,
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect((await pending).id).toBe("!new:localhost");
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+    expect(createRoom).toHaveBeenCalledTimes(1);
+    expect(sendStateEvent).toHaveBeenCalledTimes(1);
   });
 
   it("does not take a group with the assistant for a direct message", async () => {

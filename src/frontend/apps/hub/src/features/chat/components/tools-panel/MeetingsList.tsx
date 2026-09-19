@@ -106,13 +106,13 @@ export const MeetingsList = ({
               {t("No meeting planned")}
             </p>
           ) : (
-            <ul className="hub__chat-meetings__list">
+            <ul className="hub__tools-list">
               {rows.map(({ meeting, isOngoing }) => {
                 const isOverdue =
                   isOngoing && getMeetingProgress(meeting, now).isOverdue;
                 const label = formatMeetingLabel(meeting, t("Meeting"), locale);
                 return (
-                  <li key={meeting.id} className="hub__chat-meetings__row">
+                  <li key={meeting.id} className="hub__tools-list__row">
                     <button
                       type="button"
                       className="hub__chat-meetings__row-button"
@@ -121,9 +121,7 @@ export const MeetingsList = ({
                       }
                       tabIndex={tabIndex}
                     >
-                      <span className="hub__chat-meetings__row-label">
-                        {label}
-                      </span>
+                      <span className="hub__tools-list__label">{label}</span>
                       <span
                         className="hub__chat-meetings__row-badge"
                         data-ongoing={isOngoing || undefined}
@@ -138,10 +136,10 @@ export const MeetingsList = ({
                         <ChevronRight />
                       </span>
                     </button>
-                    <span className="hub__chat-meetings__row-actions">
+                    <span className="hub__tools-list__actions">
                       <button
                         type="button"
-                        className="hub__chat-meetings__icon-button"
+                        className="hub__tools-list__icon-button"
                         aria-label={t("Copy the invitation link of {{name}}", {
                           name: label,
                         })}

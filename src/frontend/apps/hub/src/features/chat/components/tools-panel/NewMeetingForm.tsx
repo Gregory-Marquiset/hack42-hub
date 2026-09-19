@@ -81,12 +81,12 @@ const DocumentRow = ({ document, tabIndex, onRemove }: DocumentRowProps) => {
   const { t } = useTranslation();
 
   return (
-    <li className="hub__chat-meetings__row">
-      <span className="hub__chat-meetings__row-label">{document.title}</span>
-      <span className="hub__chat-meetings__row-actions">
+    <li className="hub__tools-list__row">
+      <span className="hub__tools-list__label">{document.title}</span>
+      <span className="hub__tools-list__actions">
         <button
           type="button"
-          className="hub__chat-meetings__icon-button"
+          className="hub__tools-list__icon-button"
           aria-label={t("Remove {{name}}", { name: document.title })}
           tabIndex={tabIndex}
           onClick={onRemove}
@@ -94,7 +94,7 @@ const DocumentRow = ({ document, tabIndex, onRemove }: DocumentRowProps) => {
           <XMark />
         </button>
         <a
-          className="hub__chat-meetings__icon-button"
+          className="hub__tools-list__icon-button"
           href={document.url}
           {...(document.isLocalFile
             ? { download: document.title }
@@ -382,7 +382,7 @@ export const NewMeetingForm = ({
             </label>
             <button
               type="button"
-              className="hub__chat-meetings__icon-button"
+              className="hub__tools-list__icon-button"
               aria-label={t("Attach an agenda file")}
               tabIndex={tabIndex}
               onClick={() => agendaFileInputRef.current?.click()}
@@ -416,7 +416,7 @@ export const NewMeetingForm = ({
             </p>
           )}
           {agendaFile && (
-            <ul className="hub__chat-meetings__list">
+            <ul className="hub__tools-list">
               <DocumentRow
                 document={agendaFile}
                 tabIndex={tabIndex}
@@ -431,7 +431,7 @@ export const NewMeetingForm = ({
             <h3 className="hub__chat-meetings__card-title">{t("Documents")}</h3>
             <button
               type="button"
-              className="hub__chat-meetings__icon-button"
+              className="hub__tools-list__icon-button"
               aria-label={t("Attach document files")}
               tabIndex={tabIndex}
               onClick={() => documentFileInputRef.current?.click()}
@@ -453,7 +453,7 @@ export const NewMeetingForm = ({
               {t("No document yet")}
             </p>
           )}
-          <ul className="hub__chat-meetings__list">
+          <ul className="hub__tools-list">
             {documents.map((doc) => (
               <DocumentRow
                 key={doc.id}

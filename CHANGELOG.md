@@ -208,6 +208,13 @@ and this project adheres to
 
 ### Changed
 
+- ♻️(search) Share the search database opening and the empty-results
+  message between conversations and messages, and drop unused state.
+- ♻️(frontend) Decide a new room's encryption and invitations in one
+  place, and share the account-driver lookup, the mention candidates, the
+  joined-room check, the presence preference query and availability menu.
+- ♻️(notifications) Unmute from the settings panel through the same hook
+  as the conversation header.
 - ♻️(search) Reduce the message history pool to a first-come queue of two
   jobs, whose cancel also stops the jobs already running.
 - ✨(frontend) Expand the message composer up to eight lines

@@ -195,7 +195,7 @@ class Meeting(BaseModel):
     )
     # The espace the conversation belongs to, as the browser saw it when the
     # meeting was created: the room state does not carry its parent.
-    space_name = models.CharField(_("espace"), max_length=255, blank=True)
+    space_name = models.CharField(_("space"), max_length=255, blank=True)
     chat_id = models.CharField(
         _("conversation"),
         max_length=255,

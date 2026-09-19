@@ -376,23 +376,23 @@ def accept_invitation(room_id: str) -> None:
 def access_refusal(room_id: str) -> str | None:
     """Why Ariane cannot answer in this room, if she cannot.
 
-    Encryption is checked before joining, not after: entering a room only to
-    announce that nothing can be read there is a wasted membership, and the
-    answer is known in advance. That one she can say, because she is able to
-    join and then speak.
-
-    Not being invited is different, and there is no message for it: she cannot
+    Not being invited comes first, and there is no message for it: she cannot
     post in a room she is not in, so any refusal would fail to send. Silence is
     the only possible outcome, and the composer is where this is prevented - it
     only ever suggests people who are in the room.
+
+    Encryption is checked once she is in: the room state is only readable by
+    its members, so asking before joining could not tell an encrypted room
+    from a room she may not read yet. An encrypted room is joined anyway when
+    she is invited (see `accept_invitation`), so this costs no membership.
     """
-    if matrix.is_encrypted(room_id):
-        return ENCRYPTED_MESSAGE
     if not matrix.ensure_in_room(room_id):
         logger.info(
             "Ariane was addressed in %s without being invited; staying out", room_id
         )
         return SILENT
+    if matrix.is_encrypted(room_id):
+        return ENCRYPTED_MESSAGE
     return None
 
 

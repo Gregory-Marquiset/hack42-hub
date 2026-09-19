@@ -214,14 +214,19 @@ def _joined_by(room_id: str, event: dict[str, Any]) -> dict[str, Any]:
 
 
 def is_encrypted(room_id: str) -> bool:
-    """A room Ariane cannot read. Better to say so than to post into the void."""
+    """A room Ariane cannot read. Better to say so than to post into the void.
+
+    Asked once she is in the room: before that, the homeserver answers
+    M_FORBIDDEN, which says nothing about encryption and raises like any other
+    failure rather than passing for "not encrypted".
+    """
     try:
         _as(
             "GET",
             f"{CLIENT_API:s}/rooms/{quote(room_id, safe=''):s}/state/m.room.encryption",
         )
     except MatrixError as exc:
-        if exc.errcode in ("M_NOT_FOUND", "M_FORBIDDEN"):
+        if exc.errcode == "M_NOT_FOUND":
             return False
         raise
     return True

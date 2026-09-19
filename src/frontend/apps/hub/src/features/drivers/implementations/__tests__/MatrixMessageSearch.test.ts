@@ -99,6 +99,11 @@ describe("MatrixMessageSearch live indexing", () => {
 
   afterEach(() => search.close());
 
+  it("reports the storage missing once opening it failed", () => {
+    // No IndexedDB in this environment: the index lives in memory only.
+    expect(search.getStatus().storageAvailable).toBe(false);
+  });
+
   it("applies an edit to its original instead of indexing it", async () => {
     receive(makeEvent({ id: "$original", body: "hello world" }));
     receive(

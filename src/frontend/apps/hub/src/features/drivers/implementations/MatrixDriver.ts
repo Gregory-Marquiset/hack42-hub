@@ -326,7 +326,9 @@ export class MatrixDriver extends Driver {
   override retryMessageSearch(): void {
     const mx = this.mx;
     if (!mx) return;
-    void this.startMessageSearch(mx);
+    void this.startMessageSearch(mx).then(() => {
+      if (this.mx === mx) this.messageSearch?.retry();
+    });
   }
 
   override async clearMessageSearch(): Promise<void> {
@@ -2536,9 +2538,19 @@ export class MatrixDriver extends Driver {
       if (this.mx !== mx || this.messageSearchDatabase !== database) return;
       let search: MatrixMessageSearch | undefined;
       try {
-        search = new MatrixMessageSearch(mx, this.accountId, database, () =>
-          this.emit({ type: "search:changed" }),
+        const created: MatrixMessageSearch = new MatrixMessageSearch(
+          mx,
+          this.accountId,
+          database,
+          () => this.emit({ type: "search:changed" }),
+          () => {
+            // Revoked from another tab: drop it, so a retry starts afresh.
+            if (this.messageSearch !== created) return;
+            this.messageSearch = null;
+            this.emit({ type: "search:changed" });
+          },
         );
+        search = created;
         this.messageSearch = search;
         await search.start();
       } catch {

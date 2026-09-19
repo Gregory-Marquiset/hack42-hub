@@ -83,6 +83,8 @@ export class MatrixMessageSearch {
   private revision = 0;
   private status: MessageSearchStatus = { ...EMPTY_MESSAGE_SEARCH_STATUS };
   private disposed = false;
+  /** Storage is only reported missing once opening it has settled. */
+  private opened = false;
   private detach = () => {};
   private readonly poolKey = crypto.randomUUID();
   private joinedRoomIds = new Set<string>();
@@ -96,14 +98,20 @@ export class MatrixMessageSearch {
     private readonly accountId: string,
     databaseName: string,
     private readonly changed: () => void,
+    /** Another tab logged out or deleted the index: this instance is over. */
+    private readonly revoked: () => void = () => {},
   ) {
-    this.storage = new MessageSearchStorage(databaseName, () => this.close());
+    this.storage = new MessageSearchStorage(databaseName, () => {
+      this.close();
+      this.revoked();
+    });
   }
 
   async start(): Promise<void> {
     this.status = { ...EMPTY_MESSAGE_SEARCH_STATUS, freshness: "current" };
 
     const restored = await this.storage.open();
+    this.opened = true;
     if (this.disposed) return;
     for (const doc of restored.messages) this.indexMessage(doc.roomId, doc);
     for (const state of restored.backfill) {
@@ -408,7 +416,17 @@ export class MatrixMessageSearch {
   }
 
   getStatus(): MessageSearchStatus {
-    return { ...this.status };
+    return {
+      ...this.status,
+      storageAvailable: !this.opened || this.storage.state === "persistent",
+    };
+  }
+
+  /** Requests again every room whose history could not be fetched. */
+  retry(): void {
+    for (const state of this.backfillStates.values()) {
+      if (state.status === "error") this.backfillRoom(state.roomId);
+    }
   }
 
   close(): void {

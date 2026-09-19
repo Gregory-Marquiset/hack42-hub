@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Make "Retry indexing" fetch again the conversations whose
+  history failed, report a missing message search storage, and recover
+  message search after another tab logged out.
 - 🐛(search) Keep message search in step with the conversation: an edited
   message is found by its new text instead of appearing twice, a deleted
   one is no longer found, and your own and encrypted messages are indexed

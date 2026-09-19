@@ -7,6 +7,7 @@ import { chatKeys } from "@/features/chat/chatKeys";
 import { useChats } from "@/features/chat/hooks/useChats";
 import {
   useNotificationRules,
+  useSetNotificationRuleActions,
   useSetNotificationRuleEnabled,
 } from "@/features/chat/hooks/useNotificationRules";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
@@ -14,6 +15,7 @@ import type { AccountId } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import {
+  categoryRuleChanges,
   describeNotificationRule,
   findMasterRule,
   getAdvancedRules,
@@ -44,6 +46,7 @@ export const NotificationSettingsModal = ({
     isOpen,
   );
   const { setEnabled } = useSetNotificationRuleEnabled(accountId);
+  const { setActions } = useSetNotificationRuleActions(accountId);
   const { all, favourites } = useChats();
   const chatNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -124,8 +127,19 @@ export const NotificationSettingsModal = ({
                     label={row.title}
                     checked={row.isEnabled}
                     onChange={(event) =>
-                      row.rules.forEach(({ kind, ruleId }) =>
-                        setEnabled(kind, ruleId, event.target.checked),
+                      categoryRuleChanges(row, event.target.checked).forEach(
+                        (change) =>
+                          "actions" in change
+                            ? setActions(
+                                change.kind,
+                                change.ruleId,
+                                change.actions,
+                              )
+                            : setEnabled(
+                                change.kind,
+                                change.ruleId,
+                                change.enabled,
+                              ),
                       )
                     }
                   />

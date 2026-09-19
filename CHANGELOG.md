@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(bots) Have Ariane say she cannot answer whatever fails after a ping,
+  a homeserver error or a bug, instead of staying silent.
 - 🐛(bots) Check whether a room is encrypted once Ariane is in it: before,
   the refusal to read its state passed for "not encrypted".
 - 🐛(bots) Keep the latest replies of a long thread in Ariane's context, not

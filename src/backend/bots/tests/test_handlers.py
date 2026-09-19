@@ -1,5 +1,7 @@
 """How Ariane reacts to a ping: whether she enters, and what she says."""
 
+from django.core.cache import cache
+
 import pytest
 
 from bots import handlers, matrix
@@ -12,7 +14,7 @@ def test_not_invited_stays_silent_without_asking_about_encryption(monkeypatch):
     monkeypatch.setattr(matrix, "is_encrypted", asked.append)
 
     assert handlers.access_refusal("!room:localhost") is handlers.SILENT
-    assert asked == []
+    assert not asked
 
 
 @pytest.mark.parametrize(
@@ -34,3 +36,61 @@ def test_encryption_is_checked_once_in_the_room(monkeypatch, encrypted, refusal)
     monkeypatch.setattr(matrix, "is_encrypted", is_encrypted)
 
     assert handlers.access_refusal("!room:localhost") == refusal
+
+
+def ping(event_id):
+    """Bob addressing Ariane in the room."""
+    return {
+        "type": "m.room.message",
+        "event_id": event_id,
+        "sender": "@bob:localhost",
+        "content": {"msgtype": "m.text", "body": "@ariane résume"},
+    }
+
+
+@pytest.fixture(name="room")
+def fixture_room(monkeypatch):
+    """A room Ariane is in, where what she posts is kept."""
+    sent = []
+
+    def send_message(room_id, body, *, thread_root=None, aside=False):
+        sent.append((room_id, body, thread_root, aside))
+        return "$sent"
+
+    monkeypatch.setattr(handlers, "access_refusal", lambda room_id: None)
+    monkeypatch.setattr(matrix, "send_message", send_message)
+    monkeypatch.setattr(matrix, "set_typing", lambda *args: None)
+    return sent
+
+
+@pytest.mark.parametrize(
+    "failure", [matrix.MatrixError("homeserver down"), RuntimeError("bug")]
+)
+def test_a_failure_after_a_ping_is_said(monkeypatch, room, failure):
+    """Whatever breaks while answering, the ping never meets silence."""
+    event_id = f"$failing-{type(failure).__name__}"
+    cache.delete(f"bots:seen:{event_id}")
+
+    def build_context(_room_id, _event):
+        raise failure
+
+    monkeypatch.setattr(handlers, "build_context", build_context)
+
+    handlers.handle_message("!room:localhost", ping(event_id))
+
+    assert room == [("!room:localhost", handlers.FAILURE_MESSAGE, event_id, True)]
+
+
+def test_a_failure_to_say_the_failure_is_only_logged(monkeypatch, room):
+    """When Matrix is what failed, saying so fails too: nothing more happens."""
+    cache.delete("bots:seen:$unsayable")
+
+    def refuse(*_args, **_kwargs):
+        raise matrix.MatrixError("homeserver down")
+
+    monkeypatch.setattr(handlers, "build_context", refuse)
+    monkeypatch.setattr(matrix, "send_message", refuse)
+
+    handlers.handle_message("!room:localhost", ping("$unsayable"))
+
+    assert room == []

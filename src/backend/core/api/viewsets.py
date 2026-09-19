@@ -494,7 +494,7 @@ def _is_member(request, meeting, openid_token):
     """The organizer, or a member of the meeting's conversation."""
     if meeting.organizer_id == request.user.pk:
         return True
-    if not openid_token or not meeting.chat_id or not matrix.can_write_rooms():
+    if not openid_token or not meeting.chat_id or not matrix.can_read_members():
         return False
     user_id = matrix.openid_user_id(openid_token)
     return bool(user_id) and user_id in matrix.joined_members(meeting.chat_id)
@@ -709,7 +709,7 @@ class MeetingAttachmentView(drf.views.APIView):
 
 def _room_name(meeting):
     """The conversation's name as Matrix knows it, when Ariane can ask."""
-    if not meeting.chat_id or not matrix.can_write_rooms():
+    if not meeting.chat_id or not matrix.can_read_members():
         return ""
     try:
         return matrix.room_name(meeting.chat_id) or ""

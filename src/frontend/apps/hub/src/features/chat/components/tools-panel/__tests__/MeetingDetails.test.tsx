@@ -209,6 +209,35 @@ describe("MeetingDetails", () => {
     expect(screen.getByLabelText("Add a Docs link")).toBeTruthy();
   });
 
+  it("retries listing the created document rather than creating another", async () => {
+    const current = documents();
+    const created = { id: "doc-1", title: "CR", url: "https://docs.test/1/" };
+    current.createDocsDocument = vi.fn(async () => created);
+    mocks.useMeetingDocuments.mockReturnValue(current);
+    mocks.addLink.mockRejectedValueOnce(new Error("refused"));
+    renderDetails();
+
+    fireEvent.click(screen.getByText("New Docs document"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("Create"));
+    });
+
+    // The draft stays, on the document already created.
+    expect(
+      screen.getByText(
+        "The document was created in Docs, but could not be listed with the meeting.",
+      ),
+    ).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    });
+
+    expect(current.createDocsDocument).toHaveBeenCalledOnce();
+    expect(mocks.addLink).toHaveBeenCalledTimes(2);
+    expect(mocks.addLink).toHaveBeenLastCalledWith(MEETING.id, created);
+    expect(screen.queryByLabelText("Name of the new document")).toBeNull();
+  });
+
   it("recalls that a link alone gives no access", () => {
     renderDetails();
 

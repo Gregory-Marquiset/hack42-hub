@@ -7,7 +7,11 @@ import { useChatMeetingActions } from "@/features/chat/hooks/useChatMeetingActio
 import { useMeetingDocuments } from "@/features/chat/hooks/useMeetingDocuments";
 import { copyMeetingLink } from "@/features/chat/meetings/copyMeetingLink";
 import { formatMeetingDuration } from "@/features/drivers/meetingTime";
-import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
+import type {
+  ChatMeeting,
+  ChatMeetingDocument,
+  ChatRef,
+} from "@/features/drivers/types";
 import { isWebLink } from "@/features/drivers/webLink";
 
 import { formatFileSize } from "./fileSize";
@@ -46,6 +50,9 @@ export const MeetingDetails = ({
   const [isAddingLink, setIsAddingLink] = useState(false);
   const [isNaming, setIsNaming] = useState(false);
   const [newDocTitle, setNewDocTitle] = useState("");
+  // Created in Docs, but not listed with the meeting yet.
+  const [unlinkedDocument, setUnlinkedDocument] =
+    useState<ChatMeetingDocument | null>(null);
   const [linkTitle, setLinkTitle] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
 
@@ -93,18 +100,37 @@ export const MeetingDetails = ({
       });
   };
 
+  const closeNaming = () => {
+    setIsNaming(false);
+    setNewDocTitle("");
+    setUnlinkedDocument(null);
+  };
+
+  /**
+   * Lists a document created in Docs with the meeting. On failure the draft
+   * stays open on it, so retrying lists that document rather than creating
+   * another one.
+   */
+  const linkDocument = (document: ChatMeetingDocument) => {
+    void addLink(meeting.id, document)
+      .then(closeNaming)
+      .catch(() => {
+        // useChatMeetingActions already surfaces a toast.
+        setUnlinkedDocument(document);
+      });
+  };
+
   /** A new Docs document, listed with the meeting once it exists. */
   const createDocument = () => {
+    if (unlinkedDocument) {
+      linkDocument(unlinkedDocument);
+      return;
+    }
     const title = newDocTitle.trim() || defaultDocumentTitle;
     void documents.createDocsDocument(title).then((document) => {
-      if (!document) {
-        return;
+      if (document) {
+        linkDocument(document);
       }
-      setIsNaming(false);
-      setNewDocTitle("");
-      void addLink(meeting.id, document).catch(() => {
-        // useChatMeetingActions already surfaces a toast.
-      });
     });
   };
 
@@ -296,15 +322,23 @@ export const MeetingDetails = ({
                   value={newDocTitle}
                   placeholder={defaultDocumentTitle}
                   aria-label={t("Name of the new document")}
+                  disabled={unlinkedDocument !== null}
                   tabIndex={tabIndex}
                   onChange={(event) => setNewDocTitle(event.target.value)}
                 />
+                {unlinkedDocument && (
+                  <p className="hub__chat-meetings__details-text" role="alert">
+                    {t(
+                      "The document was created in Docs, but could not be listed with the meeting.",
+                    )}
+                  </p>
+                )}
                 <div className="hub__chat-meetings__document-draft-actions">
                   <button
                     type="button"
                     className="hub__chat-meetings__action"
                     tabIndex={tabIndex}
-                    onClick={() => setIsNaming(false)}
+                    onClick={closeNaming}
                   >
                     {t("Cancel")}
                   </button>
@@ -312,12 +346,14 @@ export const MeetingDetails = ({
                     type="button"
                     className="hub__chat-meetings__action"
                     data-primary="true"
-                    disabled={documents.isCreatingDocument}
-                    aria-busy={documents.isCreatingDocument || undefined}
+                    disabled={documents.isCreatingDocument || isSavingLink}
+                    aria-busy={
+                      documents.isCreatingDocument || isSavingLink || undefined
+                    }
                     tabIndex={tabIndex}
                     onClick={createDocument}
                   >
-                    {t("Create")}
+                    {unlinkedDocument ? t("Retry") : t("Create")}
                   </button>
                 </div>
               </div>

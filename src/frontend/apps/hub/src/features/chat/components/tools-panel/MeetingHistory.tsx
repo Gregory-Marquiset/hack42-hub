@@ -83,7 +83,7 @@ export const MeetingHistory = ({
         ) : (
           <>
             <section className="hub__chat-meetings__card">
-              <ul className="hub__chat-meetings__list">
+              <ul className="hub__tools-list">
                 {meetings.map((meeting) => {
                   const label = formatMeetingLabel(
                     meeting,
@@ -94,7 +94,7 @@ export const MeetingHistory = ({
                   return (
                     <li
                       key={meeting.id}
-                      className="hub__chat-meetings__row"
+                      className="hub__tools-list__row"
                       data-active={
                         meeting.id === selected?.id ? "true" : undefined
                       }
@@ -106,14 +106,12 @@ export const MeetingHistory = ({
                         tabIndex={tabIndex}
                         onClick={() => setSelectedId(meeting.id)}
                       >
-                        <span className="hub__chat-meetings__row-label">
-                          {label}
-                        </span>
+                        <span className="hub__tools-list__label">{label}</span>
                       </button>
-                      <span className="hub__chat-meetings__row-actions">
+                      <span className="hub__tools-list__actions">
                         <button
                           type="button"
-                          className="hub__chat-meetings__icon-button"
+                          className="hub__tools-list__icon-button"
                           aria-label={t("Download the archive of {{name}}", {
                             name: label,
                           })}
@@ -145,15 +143,15 @@ export const MeetingHistory = ({
                     {t("No document for this meeting")}
                   </p>
                 ) : (
-                  <ul className="hub__chat-meetings__list">
+                  <ul className="hub__tools-list">
                     {documents.map((doc) => (
-                      <li key={doc.id} className="hub__chat-meetings__row">
-                        <span className="hub__chat-meetings__row-label">
+                      <li key={doc.id} className="hub__tools-list__row">
+                        <span className="hub__tools-list__label">
                           {doc.title}
                         </span>
-                        <span className="hub__chat-meetings__row-actions">
+                        <span className="hub__tools-list__actions">
                           <a
-                            className="hub__chat-meetings__icon-button"
+                            className="hub__tools-list__icon-button"
                             href={doc.url}
                             download
                             target="_blank"

@@ -120,21 +120,19 @@ export const DocumentsTool = ({
             {t("No document shared yet. Use + to add one from your device.")}
           </p>
         ) : (
-          <ul className="hub__chat-meetings__list">
+          <ul className="hub__tools-list">
             {files.map((file) => (
-              <li key={file.id} className="hub__chat-meetings__row">
-                <span className="hub__chat-documents__text">
-                  <span className="hub__chat-meetings__row-label">
-                    {file.name}
-                  </span>
-                  <span className="hub__chat-documents__details">
+              <li key={file.id} className="hub__tools-list__row">
+                <span className="hub__tools-list__text">
+                  <span className="hub__tools-list__label">{file.name}</span>
+                  <span className="hub__tools-list__details">
                     {details(file)}
                   </span>
                 </span>
-                <span className="hub__chat-meetings__row-actions">
+                <span className="hub__tools-list__actions">
                   <button
                     type="button"
-                    className="hub__chat-meetings__icon-button"
+                    className="hub__tools-list__icon-button"
                     aria-label={t("Download {{name}}", { name: file.name })}
                     disabled={pendingFileId !== null}
                     aria-busy={pendingFileId === file.id || undefined}

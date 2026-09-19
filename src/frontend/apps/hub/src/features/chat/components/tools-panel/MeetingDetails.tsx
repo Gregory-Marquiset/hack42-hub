@@ -218,7 +218,7 @@ export const MeetingDetails = ({
               <>
                 <button
                   type="button"
-                  className="hub__chat-meetings__icon-button"
+                  className="hub__tools-list__icon-button"
                   aria-label={t("Add documents from your device")}
                   title={t("Add documents from your device")}
                   disabled={documents.isAdding}
@@ -269,9 +269,9 @@ export const MeetingDetails = ({
                   {t("No document yet")}
                 </p>
               )}
-              <ul className="hub__chat-meetings__list">
+              <ul className="hub__tools-list">
                 {links.map((doc) => (
-                  <li key={doc.id} className="hub__chat-meetings__row">
+                  <li key={doc.id} className="hub__tools-list__row">
                     <a
                       className="hub__chat-meetings__row-button"
                       href={doc.url}
@@ -279,26 +279,26 @@ export const MeetingDetails = ({
                       rel="noopener noreferrer"
                       tabIndex={tabIndex}
                     >
-                      <span className="hub__chat-meetings__row-label">
+                      <span className="hub__tools-list__label">
                         {doc.title}
                       </span>
                     </a>
                   </li>
                 ))}
                 {documents.attachments.map((attachment) => (
-                  <li key={attachment.id} className="hub__chat-meetings__row">
-                    <span className="hub__chat-documents__text">
-                      <span className="hub__chat-meetings__row-label">
+                  <li key={attachment.id} className="hub__tools-list__row">
+                    <span className="hub__tools-list__text">
+                      <span className="hub__tools-list__label">
                         {attachment.name}
                       </span>
-                      <span className="hub__chat-documents__details">
+                      <span className="hub__tools-list__details">
                         {formatFileSize(attachment.size, locale)}
                       </span>
                     </span>
-                    <span className="hub__chat-meetings__row-actions">
+                    <span className="hub__tools-list__actions">
                       <button
                         type="button"
-                        className="hub__chat-meetings__icon-button"
+                        className="hub__tools-list__icon-button"
                         aria-label={t("Download {{name}}", {
                           name: attachment.name,
                         })}

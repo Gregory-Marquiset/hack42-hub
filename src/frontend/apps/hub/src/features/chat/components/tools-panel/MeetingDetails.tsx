@@ -162,6 +162,7 @@ export const MeetingDetails = ({
               {t("Planned duration: {{duration}}", {
                 duration: formatMeetingDuration(
                   meeting.plannedDurationMinutes * 60_000,
+                  t,
                 ),
               })}
             </p>

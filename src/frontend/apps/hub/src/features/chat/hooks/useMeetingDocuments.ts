@@ -15,6 +15,7 @@ import type { ChatMeetingDocument, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { chatKeys } from "../chatKeys";
+import { formatFileSize } from "../components/tools-panel/fileSize";
 import { saveFile } from "../saveFile";
 
 /** The Hub keeps documents up to this size (see MEETING_ATTACHMENT_MAX_BYTES). */
@@ -68,7 +69,7 @@ export const useMeetingDocuments = (
   target: Target | null,
   enabled: boolean,
 ): UseMeetingDocumentsResult => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
 
   /** A member proves their Matrix account; the organizer needs nothing. */
@@ -119,7 +120,13 @@ export const useMeetingDocuments = (
     onError: (error) => {
       notify.error(
         error instanceof MeetingDocumentTooLargeError
-          ? t("A meeting document cannot be larger than 20 MB.")
+          ? t("A meeting document cannot be larger than {{size}}.", {
+              size: formatFileSize(
+                MAX_MEETING_DOCUMENT_BYTES,
+                i18n.resolvedLanguage ?? i18n.language,
+                1024,
+              ),
+            })
           : error instanceof APIError && error.code === 409
             ? t("The meeting is closed: its documents can no longer change.")
             : t("The document could not be added. Please try again."),

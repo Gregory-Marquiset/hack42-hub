@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,6 +13,12 @@ import {
 import type { ChatMeeting } from "../types";
 
 const MINUTE = 60_000;
+
+/** Fills in the English keys, as i18next does without a translation. */
+const t = ((key: string, options: Record<string, unknown> = {}) =>
+  key.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+    String(options[name]),
+  )) as unknown as TFunction;
 const NOW = Date.UTC(2026, 8, 16, 10, 0);
 
 const meeting = (overrides: Partial<ChatMeeting> = {}): ChatMeeting => ({
@@ -98,18 +105,19 @@ describe("formatMeetingDuration", () => {
     [65 * MINUTE, "1 h 05"],
     [150 * MINUTE, "2 h 30"],
   ])("formats %d ms as %s", (ms, expected) => {
-    expect(formatMeetingDuration(ms)).toBe(expected);
+    expect(formatMeetingDuration(ms, t)).toBe(expected);
   });
 });
 
 describe("formatMeetingProgress", () => {
   it("shows the time spent, against the planned duration when there is one", () => {
-    expect(formatMeetingProgress(getMeetingProgress(meeting(), NOW))).toBe(
+    expect(formatMeetingProgress(getMeetingProgress(meeting(), NOW), t)).toBe(
       "10 min",
     );
     expect(
       formatMeetingProgress(
         getMeetingProgress(meeting({ plannedDurationMinutes: 45 }), NOW),
+        t,
       ),
     ).toBe("10 min / 45 min");
   });

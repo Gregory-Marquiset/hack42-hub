@@ -10,6 +10,7 @@ import type {
 import { isWebLink } from "@/features/drivers/webLink";
 import { notify } from "@/features/ui/components/toast";
 
+import { formatFileSize } from "./fileSize";
 import { Download } from "./MeetingIcons";
 import { TEXT_FILE_ACCEPT, isTextFile } from "./textFile";
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
@@ -126,7 +127,7 @@ export const NewMeetingForm = ({
   onStartNow,
   onSchedule,
 }: NewMeetingFormProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const titleId = useId();
   const dateId = useId();
   const timeId = useId();
@@ -199,7 +200,14 @@ export const NewMeetingForm = ({
   const readFiles = async (files: File[]): Promise<DraftDocument[]> => {
     const readable = files.filter((file) => file.size <= MAX_ATTACHMENT_BYTES);
     if (readable.length !== files.length) {
-      notify.error(t("A file is too large to be attached (100 KB at most)."));
+      notify.error(
+        t("A file is too large to be attached ({{size}} at most).", {
+          size: formatFileSize(
+            MAX_ATTACHMENT_BYTES,
+            i18n.resolvedLanguage ?? i18n.language,
+          ),
+        }),
+      );
     }
     try {
       return await Promise.all(readable.map(toLocalDocument));
@@ -360,7 +368,7 @@ export const NewMeetingForm = ({
             >
               {MEETING_DURATIONS.map((minutes) => (
                 <option key={minutes} value={minutes}>
-                  {formatMeetingDuration(minutes * 60_000)}
+                  {formatMeetingDuration(minutes * 60_000, t)}
                 </option>
               ))}
             </select>

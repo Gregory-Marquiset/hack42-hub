@@ -263,7 +263,7 @@ const MeetingWindow = ({
                 data-overdue={progress.isOverdue || undefined}
                 data-testid="meeting-progress"
               >
-                {formatMeetingProgress(progress)}
+                {formatMeetingProgress(progress, t)}
                 {progress.isOverdue && ` · ${t("Overtime")}`}
               </span>
             )}
@@ -287,7 +287,9 @@ const MeetingWindow = ({
                     });
                   }}
                 >
-                  {`+${MEETING_EXTENSION_MINUTES} min`}
+                  {t("+{{minutes}} min", {
+                    minutes: MEETING_EXTENSION_MINUTES,
+                  })}
                 </button>
                 <button
                   type="button"

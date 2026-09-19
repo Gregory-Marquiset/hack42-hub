@@ -10,6 +10,7 @@ import type { ChatFile, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { chatKeys } from "../chatKeys";
+import { formatFileSize } from "../components/tools-panel/fileSize";
 import { saveFile } from "../saveFile";
 
 const EMPTY_FILES: ChatFile[] = [];
@@ -46,7 +47,7 @@ export const useChatFiles = (
   ref: ChatRef | null,
   enabled: boolean,
 ): UseChatFilesResult => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const entries = useDriverEntries();
   const isSupported = useMemo(
@@ -95,7 +96,13 @@ export const useChatFiles = (
     onError: (error) => {
       notify.error(
         error instanceof ChatFileTooLargeError
-          ? t("A document cannot be larger than 50 MB.")
+          ? t("A document cannot be larger than {{size}}.", {
+              size: formatFileSize(
+                MAX_CHAT_FILE_BYTES,
+                i18n.resolvedLanguage ?? i18n.language,
+                1024,
+              ),
+            })
           : t("The document could not be shared. Please try again."),
       );
     },

@@ -57,7 +57,7 @@ export const MeetingsList = ({
     if (!isOngoing) {
       return `${formatMeetingDay(meeting.startedAt, locale)} ${formatMeetingTime(meeting.startedAt, locale)}`;
     }
-    const progress = formatMeetingProgress(getMeetingProgress(meeting, now));
+    const progress = formatMeetingProgress(getMeetingProgress(meeting, now), t);
     return `${t("Ongoing")} · ${progress}`;
   };
 

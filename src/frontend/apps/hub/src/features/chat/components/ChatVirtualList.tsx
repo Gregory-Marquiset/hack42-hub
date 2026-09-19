@@ -447,6 +447,18 @@ export const ChatVirtualList = ({
     // jump-to-message flow essentially at random. Primitives only.
   }, [chatRef.accountId, chatRef.chatId]);
 
+  // The glide of a jump outlives no list: its timer would scroll a list
+  // that is gone.
+  useEffect(
+    () => () => {
+      if (pendingGlideTimer.current !== null) {
+        window.clearTimeout(pendingGlideTimer.current);
+        pendingGlideTimer.current = null;
+      }
+    },
+    [],
+  );
+
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({
       index: "LAST",
@@ -471,14 +483,11 @@ export const ChatVirtualList = ({
 
   const scrollToEvent = useCallback(
     // `onSettled` fires once the imperative scroll has actually been issued
-    // (or once we gave up because the row isn't there yet). Callers that
-    // react to it by changing `chatRef` identity (e.g. clearing a URL param)
-    // must wait for this instead of running right after calling
-    // `scrollToEvent`: the "scroll to bottom on chat switch" effect below
-    // cancels any pending `pendingScrollRaf` whenever `chatRef` changes,
-    // which would otherwise cancel *this* scroll before its two rAFs even
-    // get to fire — the exact case hit right after `openAround` loads a room
-    // that wasn't in memory yet, immediately followed by our own URL cleanup.
+    // (or once we gave up because the row isn't there yet). The "scroll to
+    // bottom on chat switch" effect above shares `pendingScrollRaf` and
+    // cancels it on an actual switch of conversation: a caller that moves
+    // on (e.g. clears the jump param) waits for this rather than assuming the
+    // scroll already happened.
     (eventId: string, onSettled?: (found: boolean) => void) => {
       if (pendingScrollRaf.current !== null) {
         cancelAnimationFrame(pendingScrollRaf.current);
@@ -627,8 +636,8 @@ export const ChatVirtualList = ({
             });
           }
         }
-        // Only clear the URL once the scroll was actually issued: changing
-        // `chatRef` identity any earlier would cancel it first (see
+        // Only clear the URL once the scroll was actually issued, so the
+        // jump is never dropped while its frames are still pending (see
         // `scrollToEvent`'s comment).
         clearJumpParam();
       });

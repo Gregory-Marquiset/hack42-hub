@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Cancel the last step of a jump to a message when its
+  conversation view closes before it runs.
 - 🐛(frontend) Show your own presence right after choosing busy as others
   see it, instead of a value no presence badge knows, and keep the
   availability menu working when local storage is refused.

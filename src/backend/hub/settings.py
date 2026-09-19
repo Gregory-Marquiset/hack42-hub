@@ -303,6 +303,11 @@ class Base(Configuration):
                 environ_name="API_MEETING_CREATION_THROTTLE_RATE",
                 environ_prefix=None,
             ),
+            "meeting_update": values.Value(
+                default="30/minute",
+                environ_name="API_MEETING_UPDATE_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
             "meeting_transcript": values.Value(
                 default="30/minute",
                 environ_name="API_MEETING_TRANSCRIPT_THROTTLE_RATE",

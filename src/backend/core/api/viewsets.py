@@ -428,7 +428,7 @@ class MeetingDetailView(drf.views.APIView):
     """API view keeping the Hub's copy of a meeting in step with its state."""
 
     permission_classes = [IsAuthenticated]
-    throttle_scope = "meeting_transcript"
+    throttle_scope = "meeting_update"
 
     def patch(self, request, slug):
         """

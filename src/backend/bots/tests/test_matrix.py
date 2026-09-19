@@ -103,6 +103,34 @@ def test_membership_since_without_profile_change(monkeypatch):
     assert matrix.membership_since(ROOM, "@bob:localhost") == 2_000
 
 
+@pytest.mark.parametrize(
+    ("errcode", "encrypted"), [(None, True), ("M_NOT_FOUND", False)]
+)
+def test_is_encrypted(monkeypatch, errcode, encrypted):
+    """The encryption state event, when there is one, makes the room encrypted."""
+
+    def state(_method, _path, **_kwargs):
+        if errcode:
+            raise matrix.MatrixError("no", errcode=errcode)
+        return {"algorithm": "m.megolm.v1.aes-sha2"}
+
+    monkeypatch.setattr(matrix, "_as", state)
+
+    assert matrix.is_encrypted(ROOM) is encrypted
+
+
+def test_is_encrypted_forbidden_is_not_an_answer(monkeypatch):
+    """A room she may not read yet is not "not encrypted"."""
+
+    def forbidden(_method, _path, **_kwargs):
+        raise matrix.MatrixError("not in room", errcode="M_FORBIDDEN")
+
+    monkeypatch.setattr(matrix, "_as", forbidden)
+
+    with pytest.raises(matrix.MatrixError):
+        matrix.is_encrypted(ROOM)
+
+
 @override_settings(BOTS_MAX_THREAD_EVENTS=150)
 def test_thread_replies_keeps_the_latest_when_capped(monkeypatch):
     """A long thread loses its oldest replies, never the latest ones."""

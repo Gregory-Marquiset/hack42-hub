@@ -148,8 +148,7 @@ def finish_auto_close(meeting_pk):
         except docs.DocsError:
             logger.warning("meeting %s: transcript not saved", meeting.slug)
     publish_closed(meeting, document)
-    if meeting.chat_id and meeting_notifications.is_enabled():
-        meeting_notifications.notify_closed(meeting.pk, document)
+    meeting_notifications.notify_closed(meeting.pk, document)
 
 
 def publish_closed(meeting, document=None):

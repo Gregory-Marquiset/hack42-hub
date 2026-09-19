@@ -494,10 +494,9 @@ class MeetingTranscriptView(drf.views.APIView):
                 )
 
         # Once, whatever became of the transcript.
-        if meeting.chat_id and meeting_notifications.is_enabled():
-            meeting_closing.run_in_background(
-                meeting_notifications.notify_closed, meeting.pk, document
-            )
+        meeting_closing.run_in_background(
+            meeting_notifications.notify_closed, meeting.pk, document
+        )
         return response
 
 

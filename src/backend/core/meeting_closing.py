@@ -2,7 +2,9 @@
 Closing meetings: by their organizer, or by the server once they are over.
 
 A meeting closes on its own when its planned end has passed and nobody is in
-the call any more, as the scribe reports it. The server then saves the
+the call any more, as the scribe reports it. A meeting planned without an end
+is taken to last an hour: people still in the call keep it open, as they do
+past any planned end, and an empty one closes then. The server then saves the
 transcript in Docs and, since no member's client is there to do it, Ariane
 writes the closing into the conversation's meeting state: every member's Hub
 closes the call window and lists the meeting in the history.
@@ -25,6 +27,10 @@ from core import boards, docs, meeting_notifications, models, transcripts
 logger = logging.getLogger(__name__)
 
 MEETING_EVENT_TYPE = "io.lasuite.hub.meeting"
+# The length of a meeting planned without an end. Well within the time the
+# scribe follows a meeting (`MEETING_SCRIBE_MAX_AGE_HOURS`), so that it is
+# still reporting when the meeting is due.
+DEFAULT_DURATION = timedelta(hours=1)
 
 
 def close(meeting, *, auto=False):
@@ -65,13 +71,19 @@ def board_elements(meeting):
         return []
 
 
+def planned_end(meeting):
+    """
+    When the meeting should end: its planned end, or `DEFAULT_DURATION` after
+    it begins when none was given, so that it is not left open for good.
+    """
+    if meeting.planned_end_at is not None:
+        return meeting.planned_end_at
+    return (meeting.starts_at or meeting.created_at) + DEFAULT_DURATION
+
+
 def is_due(meeting, now):
     """Whether the planned end of an open meeting has passed."""
-    return (
-        meeting.closed_at is None
-        and meeting.planned_end_at is not None
-        and now >= meeting.planned_end_at
-    )
+    return meeting.closed_at is None and now >= planned_end(meeting)
 
 
 def record_presence(meeting, participants):

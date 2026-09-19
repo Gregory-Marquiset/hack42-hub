@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(meetings) Close a meeting planned without an end once its call is empty
+  an hour after it began: it used to stay open for good.
 - 🐛(meetings) Refuse a meeting whose planned end is not after its start,
   which gave negative durations in Ariane's messages.
 - 🐛(meetings) Save a meeting transcript in Docs once when the automatic

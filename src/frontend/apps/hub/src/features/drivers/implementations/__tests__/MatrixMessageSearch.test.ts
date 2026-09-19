@@ -91,7 +91,6 @@ describe("MatrixMessageSearch live indexing", () => {
     });
     search = new MatrixMessageSearch(
       client as unknown as MatrixClient,
-      "default",
       "test-db",
       () => {},
     );

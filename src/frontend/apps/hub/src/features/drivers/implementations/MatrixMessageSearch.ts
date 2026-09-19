@@ -82,7 +82,6 @@ export class MatrixMessageSearch {
     string,
     Map<string, MessageSearchDocument>
   >();
-  private revision = 0;
   private status: MessageSearchStatus = { ...EMPTY_MESSAGE_SEARCH_STATUS };
   private disposed = false;
   /** Storage is only reported missing once opening it has settled. */
@@ -97,7 +96,6 @@ export class MatrixMessageSearch {
 
   constructor(
     private readonly mx: MatrixClient,
-    private readonly accountId: string,
     databaseName: string,
     private readonly changed: () => void,
     /** Another tab logged out or deleted the index: this instance is over. */
@@ -140,7 +138,7 @@ export class MatrixMessageSearch {
     this.mx.on(RoomEvent.Redaction, this.onRedaction);
 
     this.recomputeStatus();
-    this.emit();
+    this.changed();
   }
 
   private onTimeline = (
@@ -211,11 +209,11 @@ export class MatrixMessageSearch {
     this.pendingMessages.push(doc);
     this.trimRoom(doc.roomId);
     this.schedulePersist();
-    this.emit();
+    this.changed();
   }
 
   private removeMessage(roomId: string, eventId: string): void {
-    if (this.forget(roomId, eventId)) this.emit();
+    if (this.forget(roomId, eventId)) this.changed();
   }
 
   /** Drops one message from memory, from the write queue and from storage. */
@@ -255,7 +253,7 @@ export class MatrixMessageSearch {
       void this.storage.deleteRoom(roomId);
     }
     this.recomputeStatus();
-    this.emit();
+    this.changed();
   }
 
   private recomputeStatus(): void {
@@ -380,7 +378,7 @@ export class MatrixMessageSearch {
     this.backfillStates.set(state.roomId, state);
     void this.storage.putBackfillState(state);
     this.recomputeStatus();
-    this.emit();
+    this.changed();
   }
 
   async search(request: MessageSearchRequest): Promise<MessageSearchPage> {
@@ -487,7 +485,6 @@ export class MatrixMessageSearch {
       this.messages.set(roomId, new Map());
     }
     this.messages.get(roomId)!.set(doc.eventId, doc);
-    this.revision++;
   }
 
   private buildMessageDocument(
@@ -611,9 +608,5 @@ export class MatrixMessageSearch {
       replyToSenderId:
         room?.findEventById(inReplyTo.event_id)?.getSender() ?? undefined,
     };
-  }
-
-  private emit(): void {
-    this.changed();
   }
 }

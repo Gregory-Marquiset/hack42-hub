@@ -6,7 +6,10 @@ import { useAuth } from "@/features/auth/Auth";
 import { useChatMeetingActions } from "@/features/chat/hooks/useChatMeetingActions";
 import { useMeetingDocuments } from "@/features/chat/hooks/useMeetingDocuments";
 import { copyMeetingLink } from "@/features/chat/meetings/copyMeetingLink";
-import { formatMeetingDuration } from "@/features/drivers/meetingTime";
+import {
+  formatMeetingDuration,
+  getMeetingStatus,
+} from "@/features/drivers/meetingTime";
 import type {
   ChatMeeting,
   ChatMeetingDocument,
@@ -62,7 +65,9 @@ export const MeetingDetails = ({
     isOpen,
   );
   const { addLink, isPending: isSavingLink } = useChatMeetingActions(chatRef);
-  const canAdd = !meeting.endedAt;
+  // The Hub refuses documents once it closed the meeting, which it may do
+  // before the meeting state says so.
+  const canAdd = !documents.isClosed && getMeetingStatus(meeting) !== "ended";
 
   const start = new Date(meeting.startedAt);
   const when = Number.isNaN(start.getTime())

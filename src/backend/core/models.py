@@ -361,6 +361,14 @@ class MeetingChatMessage(BaseModel):
         default=False,
         help_text=_("Written by Ariane, for the scribe to post in the call."),
     )
+    aside = models.BooleanField(
+        _("aside"),
+        default=False,
+        help_text=_(
+            "An assistant message that is no answer (help, failure): it is not "
+            "read back to her as part of the conversation."
+        ),
+    )
     reply_to = models.ForeignKey(
         "self",
         on_delete=models.SET_NULL,

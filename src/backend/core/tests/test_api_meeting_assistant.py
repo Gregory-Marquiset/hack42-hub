@@ -138,6 +138,34 @@ def test_api_scribe_chat_help_is_answered_without_albert(albert_calls, scribe_cl
     assert albert_calls == []
     [reply] = _replies(scribe_client, meeting).json()["replies"]
     assert "@Ariane" in reply["text"]
+    # The help of a call, not the one of a conversation and its threads.
+    assert "discussion de l'appel" in reply["text"]
+    assert "fil" not in reply["text"]
+    assert models.MeetingChatMessage.objects.get(pk=reply["id"]).aside
+
+
+@override_settings(**SETTINGS)
+def test_meeting_assistant_does_not_read_back_its_asides(albert_calls, scribe_client):
+    """A help or a failure of hers is no answer to learn from."""
+    meeting = factories.MeetingFactory()
+    earlier = timezone.now() - timedelta(minutes=1)
+    factories.MeetingParticipantFactory(
+        meeting=meeting, identity="bob", first_seen_at=earlier
+    )
+    for text, aside in [("Réessayez dans une minute.", True), ("Voici.", False)]:
+        factories.MeetingChatMessageFactory(
+            meeting=meeting,
+            text=text,
+            from_assistant=True,
+            aside=aside,
+            sent_at=earlier,
+        )
+
+    _chat(scribe_client, meeting, _message("m1", "@ariane et donc ?"))
+
+    [(messages, _)] = albert_calls
+    assert {"role": "assistant", "content": "Voici."} in messages
+    assert not any("Réessayez" in message["content"] for message in messages)
 
 
 @override_settings(**SETTINGS)

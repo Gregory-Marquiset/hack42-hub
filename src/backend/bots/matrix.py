@@ -167,6 +167,12 @@ def membership_since(room_id: str, user_id: str) -> int | None:
     window we fetched would simply be missing from `/messages`, and a missing
     horizon reads as "no restriction" - the wrong way to fail.
 
+    The state holds the latest membership event, and a new display name or
+    avatar is one too: it is followed back (`unsigned.replaces_state`) to the
+    event that made them join, or the horizon would move to the last profile
+    change. When that walk cannot finish, the latest event is used: later than
+    the real join, so stricter, never looser.
+
     Returns None when the membership event cannot be found, which callers must
     treat as "cut everything", not as "allow everything".
     """
@@ -178,8 +184,33 @@ def membership_since(room_id: str, user_id: str) -> int | None:
 
     for event in events:
         if event.get("type") == "m.room.member" and event.get("state_key") == user_id:
-            return event.get("origin_server_ts")
+            return _joined_by(room_id, event).get("origin_server_ts")
     return None
+
+
+# Profile changes followed back to a join, at most. A person who renamed
+# themselves more often than that gets a later, stricter horizon.
+MAX_PROFILE_CHANGES = 20
+
+
+def _joined_by(room_id: str, event: dict[str, Any]) -> dict[str, Any]:
+    """The membership event that started the membership `event` belongs to."""
+    for _ in range(MAX_PROFILE_CHANGES):
+        unsigned = event.get("unsigned") or {}
+        previous = unsigned.get("prev_content") or {}
+        replaces = unsigned.get("replaces_state")
+        if (
+            (event.get("content") or {}).get("membership") != "join"
+            or previous.get("membership") != "join"
+            or not replaces
+        ):
+            return event
+        try:
+            event = get_event(room_id, replaces)
+        except MatrixError as exc:
+            logger.info("membership history of %s unreadable: %s", room_id, exc)
+            return event
+    return event
 
 
 def is_encrypted(room_id: str) -> bool:

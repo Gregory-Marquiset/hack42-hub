@@ -51,3 +51,60 @@ def test_admin_unreadable_answer_is_a_matrix_error():
 
     with pytest.raises(matrix.MatrixError):
         matrix.joined_members(ROOM)
+
+
+def member_event(event_id, timestamp, membership="join", previous=None, **content):
+    """A membership event of Bob's, replacing `previous` when there is one."""
+    event = {
+        "type": "m.room.member",
+        "state_key": "@bob:localhost",
+        "event_id": event_id,
+        "origin_server_ts": timestamp,
+        "content": {"membership": membership, **content},
+    }
+    if previous:
+        event["unsigned"] = {
+            "replaces_state": previous["event_id"],
+            "prev_content": previous["content"],
+        }
+    return event
+
+
+INVITE = member_event("$invite", 1_000, "invite")
+JOIN = member_event("$join", 2_000, previous=INVITE)
+RENAMED = member_event("$renamed", 5_000, previous=JOIN, displayname="Bobby")
+AVATAR = member_event("$avatar", 8_000, previous=RENAMED, avatar_url="mxc://a")
+
+
+def _state(monkeypatch, state, readable):
+    """A room whose state is `state`, and whose `readable` events can be fetched."""
+    events = {event["event_id"]: event for event in readable}
+
+    def get_event(_room_id, event_id):
+        if event_id not in events:
+            raise matrix.MatrixError("not found", errcode="M_NOT_FOUND")
+        return events[event_id]
+
+    monkeypatch.setattr(matrix, "_as", lambda method, path, **kwargs: state)
+    monkeypatch.setattr(matrix, "get_event", get_event)
+
+
+def test_membership_since_follows_profile_changes_back_to_the_join(monkeypatch):
+    """A new name or avatar does not move the horizon: the join does."""
+    _state(monkeypatch, [AVATAR], [RENAMED, JOIN, INVITE])
+
+    assert matrix.membership_since(ROOM, "@bob:localhost") == 2_000
+
+
+def test_membership_since_without_profile_change(monkeypatch):
+    """The join itself is the current membership event."""
+    _state(monkeypatch, [JOIN], [])
+
+    assert matrix.membership_since(ROOM, "@bob:localhost") == 2_000
+
+
+def test_membership_since_unreadable_history_is_stricter(monkeypatch):
+    """When the join cannot be reached, the latest known event is the horizon."""
+    _state(monkeypatch, [AVATAR], [RENAMED])
+
+    assert matrix.membership_since(ROOM, "@bob:localhost") == 5_000

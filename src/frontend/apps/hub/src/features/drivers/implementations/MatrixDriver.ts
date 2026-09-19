@@ -111,6 +111,7 @@ import {
   User,
 } from "../types";
 import { MeetingNotAllowedError } from "../meetingErrors";
+import { SpaceChildNotAllowedError } from "../spaceErrors";
 import { isMeetingOngoing } from "../meetingTime";
 import {
   authorForSender,
@@ -1266,6 +1267,18 @@ export class MatrixDriver extends Driver {
     }
 
     const selfUserId = mx.getUserId() ?? undefined;
+    // Listing the room in its espace is a state event of the espace, which
+    // its power levels may reserve to moderators. Refuse before creating
+    // anything: a room created first would be left outside its espace, and
+    // every retry would add one more.
+    const space = options?.spaceId ? mx.getRoom(options.spaceId) : null;
+    if (
+      space &&
+      selfUserId &&
+      !space.currentState.maySendStateEvent(EventType.SpaceChild, selfUserId)
+    ) {
+      throw new SpaceChildNotAllowedError(space.roomId);
+    }
     // Encryption is decided here and only here. `m.room.encryption` is a
     // one-way door in Matrix: the state event can be added to an existing room
     // but never removed, so a room created in the clear stays readable and a
@@ -1295,12 +1308,22 @@ export class MatrixDriver extends Driver {
 
     if (options?.spaceId) {
       const domain = mx.getDomain();
-      await mx.sendStateEvent(
-        options.spaceId,
-        EventType.SpaceChild,
-        { via: domain ? [domain] : [] },
-        roomId,
-      );
+      // The room exists from here on: failing the call would hide it from
+      // the caller, who would create another. It stays usable outside the
+      // espace.
+      try {
+        await mx.sendStateEvent(
+          options.spaceId,
+          EventType.SpaceChild,
+          { via: domain ? [domain] : [] },
+          roomId,
+        );
+      } catch (error) {
+        console.warn(
+          "MatrixDriver: the room was created but not added to its espace",
+          error,
+        );
+      }
     }
 
     const room = await this.waitForRoom(mx, roomId);

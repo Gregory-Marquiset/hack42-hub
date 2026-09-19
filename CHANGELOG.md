@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Refuse to create a room in a space you may not add rooms
+  to, instead of creating it outside the space and reporting a failure
+  (so that every retry added one more room).
 - 🐛(frontend) Reopen the group already shared with the same people from
   New Chat, instead of creating a new one each time: the assistant, who
   joins every clear group, made it look like another set of people.

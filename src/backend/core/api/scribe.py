@@ -17,6 +17,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 import rest_framework as drf
+from rest_framework.exceptions import APIException, NotFound
 from rest_framework.permissions import BasePermission
 
 from core import meeting_assistant, meeting_closing, models
@@ -66,14 +67,21 @@ def followed_meetings():
     )
 
 
+class Gone(APIException):
+    """The meeting is closed, or too old to follow: the scribe leaves its room."""
+
+    status_code = drf.status.HTTP_410_GONE
+    default_detail = "The meeting is no longer followed."
+
+
 def _followed_meeting(livekit_room):
-    """The meeting of a room, or the response telling the scribe to leave it."""
+    """The meeting of a room; raises what tells the scribe to leave it."""
     meeting = models.Meeting.objects.filter(livekit_room=livekit_room).first()
     if meeting is None:
-        return None, drf.response.Response(status=drf.status.HTTP_404_NOT_FOUND)
+        raise NotFound
     if not followed_meetings().filter(pk=meeting.pk).exists():
-        return None, drf.response.Response(status=drf.status.HTTP_410_GONE)
-    return meeting, None
+        raise Gone
+    return meeting
 
 
 class ScribeView(drf.views.APIView):
@@ -107,15 +115,13 @@ class ScribePresenceView(ScribeView):
         """
         serializer = serializers.ScribePresenceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        meeting, refusal = _followed_meeting(livekit_room)
-        if refusal:
-            return refusal
+        meeting = _followed_meeting(livekit_room)
 
         closed = meeting_closing.record_presence(
             meeting, serializer.validated_data["participants"]
         )
         if closed:
-            return drf.response.Response(status=drf.status.HTTP_410_GONE)
+            raise Gone
         return drf.response.Response(status=drf.status.HTTP_204_NO_CONTENT)
 
 
@@ -131,9 +137,7 @@ class ScribeSegmentsView(ScribeView):
         """
         serializer = serializers.ScribeSegmentsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        meeting, refusal = _followed_meeting(livekit_room)
-        if refusal:
-            return refusal
+        meeting = _followed_meeting(livekit_room)
 
         now = timezone.now()
         with transaction.atomic():
@@ -163,9 +167,7 @@ class ScribeChatView(ScribeView):
         """
         serializer = serializers.ScribeChatMessagesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        meeting, refusal = _followed_meeting(livekit_room)
-        if refusal:
-            return refusal
+        meeting = _followed_meeting(livekit_room)
 
         now = timezone.now()
         questions = []
@@ -202,9 +204,7 @@ class ScribeRepliesView(ScribeView):
             answers not posted yet, oldest first; they are then marked
             delivered. Answers 410 once the meeting is closed.
         """
-        meeting, refusal = _followed_meeting(livekit_room)
-        if refusal:
-            return refusal
+        meeting = _followed_meeting(livekit_room)
 
         with transaction.atomic():
             pending = list(

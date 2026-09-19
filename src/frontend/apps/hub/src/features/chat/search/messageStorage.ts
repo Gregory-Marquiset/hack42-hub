@@ -1,22 +1,23 @@
 import type { MessageSearchDocument } from "./model";
 import {
-  SEARCH_DB_VERSION,
   SearchStorage,
+  listenForLogout,
+  openSearchDatabase,
   requestValue,
   transactionDone,
-  upgradeSearchSchema,
 } from "./storage";
 import type { MessageBackfillState } from "./types";
 
 const STORES = ["messages", "messageBackfill"] as const;
+type Store = (typeof STORES)[number];
 
 /**
  * A message only changes by an edit or a redaction, which every tab applies
  * alike from the same sync, so unlike SearchStorage this needs no cross-tab
  * lease: concurrent writes from several tabs are redundant, never
- * conflicting. Still listens for the
- * "logout" broadcast so its connection does not block SearchStorage's
- * deleteDatabase call on the shared database name.
+ * conflicting. Still listens for the "logout" broadcast so its connection
+ * does not block SearchStorage's deleteDatabase call on the shared database
+ * name.
  */
 export class MessageSearchStorage {
   private db?: IDBDatabase;
@@ -29,47 +30,23 @@ export class MessageSearchStorage {
     private readonly onRevoked: () => void,
   ) {}
 
+  private readonly revoke = () => {
+    this.close();
+    this.onRevoked();
+  };
+
   async open(): Promise<{
     messages: MessageSearchDocument[];
     backfill: MessageBackfillState[];
   }> {
     try {
-      if (typeof BroadcastChannel !== "undefined") {
-        this.channel = new BroadcastChannel(this.name);
-        this.channel.onmessage = (event: MessageEvent) => {
-          if (event.data === "logout") {
-            this.close();
-            this.onRevoked();
-          }
-        };
-      }
-      const request = indexedDB.open(this.name, SEARCH_DB_VERSION);
-      request.onupgradeneeded = () => upgradeSearchSchema(request.result);
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        let expired = false;
-        const timer = setTimeout(() => {
-          expired = true;
-          reject(new Error("Message search database opening timed out"));
-        }, 2_000);
-        request.onsuccess = () => {
-          clearTimeout(timer);
-          if (expired) request.result.close();
-          else resolve(request.result);
-        };
-        request.onerror = () => {
-          clearTimeout(timer);
-          reject(request.error);
-        };
-      });
+      this.channel = listenForLogout(this.name, this.revoke);
+      const db = await openSearchDatabase(this.name, this.revoke);
       if (this.disposed) {
         db.close();
         return { messages: [], backfill: [] };
       }
       this.db = db;
-      db.onversionchange = () => {
-        this.close();
-        this.onRevoked();
-      };
       const tx = db.transaction(STORES, "readonly");
       const done = transactionDone(tx);
       const [messages, backfill] = await Promise.all([
@@ -89,64 +66,54 @@ export class MessageSearchStorage {
     }
   }
 
-  async putMessages(docs: MessageSearchDocument[]): Promise<void> {
-    if (!this.db || this.disposed || docs.length === 0) return;
+  /** One write transaction; a failure leaves the index in memory only. */
+  private async write(
+    stores: Store | readonly Store[],
+    apply: (transaction: IDBTransaction) => void,
+  ): Promise<void> {
+    if (!this.db || this.disposed) return;
     try {
-      const tx = this.db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      for (const doc of docs) store.put(doc);
+      const tx = this.db.transaction(stores, "readwrite");
+      apply(tx);
       await transactionDone(tx);
     } catch {
       this.state = "memory";
       this.db?.close();
       this.db = undefined;
     }
+  }
+
+  async putMessages(docs: MessageSearchDocument[]): Promise<void> {
+    if (docs.length === 0) return;
+    await this.write("messages", (tx) => {
+      const store = tx.objectStore("messages");
+      for (const doc of docs) store.put(doc);
+    });
   }
 
   /** Drops a redacted message, whose text must not stay searchable. */
   async deleteMessage(roomId: string, eventId: string): Promise<void> {
-    if (!this.db || this.disposed) return;
-    try {
-      const tx = this.db.transaction("messages", "readwrite");
-      tx.objectStore("messages").delete([roomId, eventId]);
-      await transactionDone(tx);
-    } catch {
-      this.state = "memory";
-      this.db?.close();
-      this.db = undefined;
-    }
+    await this.write("messages", (tx) =>
+      tx.objectStore("messages").delete([roomId, eventId]),
+    );
   }
 
   /** Drops everything indexed for a room the account is no longer in. */
   async deleteRoom(roomId: string): Promise<void> {
-    if (!this.db || this.disposed) return;
-    try {
-      const tx = this.db.transaction(STORES, "readwrite");
+    await this.write(STORES, (tx) => {
       // Keys are [roomId, eventId]: an array sorts after every string, so
       // this range holds exactly the room's messages.
       tx.objectStore("messages").delete(
         IDBKeyRange.bound([roomId], [roomId, []]),
       );
       tx.objectStore("messageBackfill").delete(roomId);
-      await transactionDone(tx);
-    } catch {
-      this.state = "memory";
-      this.db?.close();
-      this.db = undefined;
-    }
+    });
   }
 
   async putBackfillState(state: MessageBackfillState): Promise<void> {
-    if (!this.db || this.disposed) return;
-    try {
-      const tx = this.db.transaction("messageBackfill", "readwrite");
-      tx.objectStore("messageBackfill").put(state);
-      await transactionDone(tx);
-    } catch {
-      this.state = "memory";
-      this.db?.close();
-      this.db = undefined;
-    }
+    await this.write("messageBackfill", (tx) =>
+      tx.objectStore("messageBackfill").put(state),
+    );
   }
 
   /**

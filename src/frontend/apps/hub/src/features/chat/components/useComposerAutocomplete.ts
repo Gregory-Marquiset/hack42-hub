@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import type { ChatMember } from "@/features/drivers/types";
 
-import type { Assistant } from "../hooks/useAssistant";
+import { type Assistant, mentionsAssistant } from "../hooks/useAssistant";
 
 /**
  * One row of the suggestion list, whatever triggered it.
@@ -68,19 +68,6 @@ const asSuggestions = (members: ChatMember[]): Suggestion[] =>
  * Headless on purpose: it decides what to show and what the draft becomes, and
  * touches no DOM. The composer owns the textarea and the markup.
  */
-/**
- * Does this draft already address the assistant?
- *
- * A command is a modifier, not a trigger: `/juriste` on its own does nothing,
- * because the bot only ever answers when pinged. So the command list stays shut
- * until her name is in the draft, which teaches the right order — `@` then `/` —
- * instead of letting someone write a command that will be ignored in silence.
- */
-const addressesAssistant = (text: string, names: string[]): boolean => {
-  const haystack = text.toLowerCase();
-  return names.some((name) => haystack.includes(name));
-};
-
 export const useComposerAutocomplete = (
   members: ChatMember[],
   assistant: Assistant,
@@ -121,10 +108,12 @@ export const useComposerAutocomplete = (
         if (!found) {
           continue;
         }
-        // `/` only suggests once the assistant has been addressed. Without her
-        // name the command would be dropped in silence, and a list that offers
-        // something inert is worse than no list.
-        if (trigger === "/" && !addressesAssistant(before, assistant.names)) {
+        // A command is a modifier, not a trigger: `/juriste` on its own does
+        // nothing, because the bot only ever answers when pinged. So `/` only
+        // suggests once the draft addresses her by the bot's own rule, which
+        // teaches the right order - `@` then `/` - instead of offering a
+        // command that would be dropped in silence ("Mariane /" does not).
+        if (trigger === "/" && !mentionsAssistant(before, assistant.names)) {
           break;
         }
         setToken({ trigger, query: found[1], synthetic: false });

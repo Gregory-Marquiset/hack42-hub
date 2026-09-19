@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Offer the assistant's commands only once she is mentioned
+  the way she answers to (`@Ariane`, not a name containing hers), and name
+  her as configured in the messages about inviting her.
 - 🐛(frontend) Keep the composer from crashing on Enter when the mention
   list shrinks under the highlighted row (someone left the room).
 - 🐛(frontend) Open a conversation right after accepting its invitation,

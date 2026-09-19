@@ -105,7 +105,9 @@ export const useAssistantMention = (
         // to invite, a rate limit, or she joined in the meantime - so say it
         // once and let the message through.
         notify.error(
-          t("Ariane could not be invited. Your message was sent anyway."),
+          t("{{name}} could not be invited. Your message was sent anyway.", {
+            name: assistant.displayName,
+          }),
         );
         return;
       }
@@ -116,6 +118,7 @@ export const useAssistantMention = (
       });
     },
     [
+      assistant.displayName,
       assistant.names,
       assistant.userId,
       canReach,
@@ -130,7 +133,9 @@ export const useAssistantMention = (
   // in. A conversation between two people is not a room she was ever offered.
   const unavailableReason =
     chat?.kind === "group" && chat.encrypted
-      ? t("Ariane cannot read an encrypted room")
+      ? t("{{name}} cannot read an encrypted room", {
+          name: assistant.displayName,
+        })
       : null;
 
   return { candidate, ensureInvited, unavailableReason };

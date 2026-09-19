@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Highlight the matched words of a message search result: the
+  highlight was computed on a trimmed copy of the message and not moved
+  with the excerpt cut around it, so it landed on other characters.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

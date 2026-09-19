@@ -234,6 +234,9 @@ and this project adheres to
 - 🐛(meetings) Refuse a meeting link typed without `http(s)://`: it was
   accepted, then hidden from the details and the archive, or listed in the
   history as a broken link.
+- 🐛(meetings) Hold the new meeting form to what the Hub accepts, an agenda
+  of 20,000 characters and 20 attached files, with a message, instead of
+  failing to create the meeting.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

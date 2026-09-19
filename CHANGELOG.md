@@ -208,6 +208,12 @@ and this project adheres to
 
 ### Changed
 
+- 🔧(meetings) Throttle meeting renames and extensions on their own
+  `meeting_update` scope, set by API_MEETING_UPDATE_THROTTLE_RATE.
+- 🔧(bots) Read MATRIX_AS_TOKEN, MATRIX_HS_TOKEN, MATRIX_ADMIN_TOKEN and
+  ALBERT_API_KEY as secrets, which also accept a `_FILE` variant.
+- ♻️(meetings) Tidy the meetings and assistant code: refusals raised once,
+  one room-name helper, shared command parsing and test fixtures.
 - ✨(frontend) Expand the message composer up to eight lines
 - ⚡(frontend) Speed up the emoji picker and align reaction artwork
 - 💄(frontend) Improve message dates and bubble readability
@@ -222,6 +228,34 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(bots) Fall back only to an Albert chat model when no preferred model is
+  served, rather than to whatever comes first, such as an embedding model.
+- 🐛(meetings) Give Ariane's `/aide` in a call its own text, about what she
+  reads of a call, and stop reading her help and failures back as answers.
+- 🔒️(profiles) Prove the chat account with a short-lived OpenID token when
+  saving a role, instead of sending the browser's Matrix access token.
+- 🐛(meetings) Keep Ariane's answer in a call until the scribe reports it
+  posted: an answer that failed to send was marked delivered and lost.
+- 🐛(bots) Have Ariane say she cannot answer whatever fails after a ping,
+  a homeserver error or a bug, instead of staying silent.
+- 🐛(bots) Check whether a room is encrypted once Ariane is in it: before,
+  the refusal to read its state passed for "not encrypted".
+- 🐛(bots) Keep the latest replies of a long thread in Ariane's context, not
+  the oldest ones.
+- 🐛(bots) Remember the pings Ariane handled in the shared cache, so a
+  replayed transaction reaching another worker is not answered twice.
+- 🐛(bots) Keep Ariane's reading horizon at the join when someone changes
+  their display name or avatar, which used to reset it to that change.
+- 🐛(meetings) Accept an empty `chat_id` when creating a meeting, as when it
+  is left out, instead of answering 400.
+- 🐛(meetings) Close a meeting planned without an end once its call is empty
+  an hour after it began: it used to stay open for good.
+- 🐛(meetings) Refuse a meeting whose planned end is not after its start,
+  which gave negative durations in Ariane's messages.
+- 🐛(meetings) Save a meeting transcript in Docs once when the automatic
+  closing and the organizer (or a double click) close it at the same time.
+- 🐛(meetings) Refuse a member or fall back to a generic room name when the
+  Matrix admin token is missing, instead of failing with a server error.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

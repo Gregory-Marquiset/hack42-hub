@@ -2,12 +2,10 @@
 
 import unicodedata
 
-from django.conf import settings
 from django.core.exceptions import ValidationError as ModelValidationError
 from django.db import IntegrityError, transaction
 from django.views.decorators.debug import sensitive_variables
 
-import requests
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
@@ -15,6 +13,7 @@ from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from bots import matrix
 from core import models
 from core.api.permissions import IsAuthenticated
 
@@ -27,8 +26,8 @@ class RoleSerializer(serializers.Serializer):
     """An empty role explicitly opts out of displaying a label."""
 
     role = serializers.CharField(max_length=40, allow_blank=True, trim_whitespace=False)
-    matrix_access_token = serializers.CharField(
-        max_length=16384, required=False, write_only=True, trim_whitespace=False
+    openid_token = serializers.CharField(
+        max_length=512, required=False, write_only=True, trim_whitespace=False
     )
 
     def validate_role(self, value):
@@ -65,33 +64,22 @@ class ChatUnavailable(APIException):
 
 @sensitive_variables("token")
 def verify_chat_identity(token):
-    """Check a current token on the configured homeserver without storing it.
+    """The Matrix account behind a short-lived OpenID token of its client.
 
-    The proof is a live credential, so it must not survive the request: it is
-    never stored, never returned, and the decorator keeps it out of the
-    technical 500 page, which prints every frame local verbatim under DEBUG.
+    The homeserver vouches for the token, as for the meeting archives: the
+    browser never hands over its access token. The token is never stored nor
+    returned, and the decorator keeps it out of the technical 500 page, which
+    prints every frame local verbatim under DEBUG.
     """
     if not token:
         raise serializers.ValidationError("Connect to chat before updating your role.")
     try:
-        response = requests.get(
-            f"{settings.MATRIX_HOMESERVER_URL.rstrip('/')}/_matrix/client/v3/account/whoami",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=4,
-            allow_redirects=False,
-        )
-        if response.status_code != 200:
-            raise serializers.ValidationError("Could not verify the chat account.")
-        identity = response.json()
-    except (requests.RequestException, ValueError) as error:
+        matrix_id = matrix.openid_user_id(token)
+    except matrix.MatrixError as error:
         raise ChatUnavailable from error
-    matrix_id = identity.get("user_id") if isinstance(identity, dict) else None
-    if (
-        not isinstance(matrix_id, str)
-        or not matrix_id.startswith("@")
-        or ":" not in matrix_id
-        or len(matrix_id) > 255
-    ):
+    if matrix_id is None:
+        raise serializers.ValidationError("Could not verify the chat account.")
+    if not matrix_id.startswith("@") or ":" not in matrix_id or len(matrix_id) > 255:
         raise serializers.ValidationError("Invalid chat identity.")
     return matrix_id
 
@@ -112,9 +100,7 @@ class RoleProfileView(APIView):
         serializer = RoleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         role = serializer.validated_data["role"]
-        matrix_id = verify_chat_identity(
-            serializer.validated_data.get("matrix_access_token")
-        )
+        matrix_id = verify_chat_identity(serializer.validated_data.get("openid_token"))
         try:
             with transaction.atomic():
                 user = models.User.objects.select_for_update().get(pk=request.user.pk)

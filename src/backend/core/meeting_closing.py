@@ -2,7 +2,9 @@
 Closing meetings: by their organizer, or by the server once they are over.
 
 A meeting closes on its own when its planned end has passed and nobody is in
-the call any more, as the scribe reports it. The server then saves the
+the call any more, as the scribe reports it. A meeting planned without an end
+is taken to last an hour: people still in the call keep it open, as they do
+past any planned end, and an empty one closes then. The server then saves the
 transcript in Docs and, since no member's client is there to do it, Ariane
 writes the closing into the conversation's meeting state: every member's Hub
 closes the call window and lists the meeting in the history.
@@ -14,7 +16,7 @@ import time
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import close_old_connections, transaction
+from django.db import close_old_connections
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import override
@@ -25,14 +27,17 @@ from core import boards, docs, meeting_notifications, models, transcripts
 logger = logging.getLogger(__name__)
 
 MEETING_EVENT_TYPE = "io.lasuite.hub.meeting"
+# The length of a meeting planned without an end. Well within the time the
+# scribe follows a meeting (`MEETING_SCRIBE_MAX_AGE_HOURS`), so that it is
+# still reporting when the meeting is due.
+DEFAULT_DURATION = timedelta(hours=1)
 
 
 def close(meeting, *, auto=False):
     """Mark the meeting closed; answers whether it was still open."""
-    with transaction.atomic():
-        updated = models.Meeting.objects.filter(
-            pk=meeting.pk, closed_at__isnull=True
-        ).update(closed_at=timezone.now(), auto_closed=auto)
+    updated = models.Meeting.objects.filter(
+        pk=meeting.pk, closed_at__isnull=True
+    ).update(closed_at=timezone.now(), auto_closed=auto)
     meeting.refresh_from_db(fields=["closed_at", "auto_closed"])
     if updated and boards.is_board_configured():
         run_in_background(save_board, meeting.pk)
@@ -65,13 +70,19 @@ def board_elements(meeting):
         return []
 
 
+def planned_end(meeting):
+    """
+    When the meeting should end: its planned end, or `DEFAULT_DURATION` after
+    it begins when none was given, so that it is not left open for good.
+    """
+    if meeting.planned_end_at is not None:
+        return meeting.planned_end_at
+    return (meeting.starts_at or meeting.created_at) + DEFAULT_DURATION
+
+
 def is_due(meeting, now):
     """Whether the planned end of an open meeting has passed."""
-    return (
-        meeting.closed_at is None
-        and meeting.planned_end_at is not None
-        and now >= meeting.planned_end_at
-    )
+    return meeting.closed_at is None and now >= planned_end(meeting)
 
 
 def record_presence(meeting, participants):
@@ -136,8 +147,7 @@ def finish_auto_close(meeting_pk):
         except docs.DocsError:
             logger.warning("meeting %s: transcript not saved", meeting.slug)
     publish_closed(meeting, document)
-    if meeting.chat_id and meeting_notifications.is_enabled():
-        meeting_notifications.notify_closed(meeting.pk, document)
+    meeting_notifications.notify_closed(meeting.pk, document)
 
 
 def publish_closed(meeting, document=None):
@@ -148,7 +158,13 @@ def publish_closed(meeting, document=None):
     if not meeting.chat_id or not matrix.can_write_rooms():
         return
     try:
-        matrix.ensure_in_room(meeting.chat_id)
+        if not matrix.ensure_in_room(meeting.chat_id):
+            logger.info(
+                "meeting %s: closing not written, Ariane is not in %s",
+                meeting.slug,
+                meeting.chat_id,
+            )
+            return
         content = matrix.get_room_state(
             meeting.chat_id, MEETING_EVENT_TYPE, meeting.slug
         )

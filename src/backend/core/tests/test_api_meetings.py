@@ -102,6 +102,25 @@ def test_api_meetings_create_success():
 
 @override_settings(**MEET_SETTINGS)
 @responses.activate
+def test_api_meetings_create_without_conversation():
+    """An empty conversation is the same as none, not an invalid request."""
+    responses.post(TOKEN_URL, json={"access_token": "meet-token", "expires_in": 3600})
+    responses.post(
+        ROOMS_URL,
+        status=201,
+        json={"id": "room-uuid", "slug": "abc-defg-hij", "url": "https://m/abc"},
+    )
+
+    response = _logged_in_client().post(
+        "/api/v1.0/meetings/", {"chat_id": ""}, format="json"
+    )
+
+    assert response.status_code == HTTP_201_CREATED
+    assert models.Meeting.objects.get().chat_id == ""
+
+
+@override_settings(**MEET_SETTINGS)
+@responses.activate
 def test_api_meetings_create_token_refused():
     """A refused application token should not leak Meet's answer to the client."""
     responses.post(TOKEN_URL, status=403, json={"detail": "Email domain not allowed"})

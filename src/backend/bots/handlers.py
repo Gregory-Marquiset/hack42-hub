@@ -16,47 +16,28 @@ and `MatrixDriver.ts` sends through `sendTextMessage`, which produces only
 from __future__ import annotations
 
 import logging
-import re
-import threading
-from collections import OrderedDict
 
 from django.conf import settings
+from django.core.cache import cache
 
-from bots import albert, matrix
+from bots import albert, commands, matrix
 
 logger = logging.getLogger(__name__)
 
-COMMAND_RE = re.compile(r"(?:^|\s)/(?P<command>[a-z]+)\b", re.IGNORECASE)
-QUOTE_RE = re.compile(r"^\s*>.*$", re.MULTILINE)
-
-FAILURE_MESSAGE = (
-    "Je ne peux pas répondre pour le moment : mon moteur ne répond pas. "
-    "Réessayez dans une minute."
-)
 ENCRYPTED_MESSAGE = (
     "Ce salon est chiffré, je ne peux pas lire les messages. "
     "Pinguez-moi dans un salon non chiffré."
 )
-UNKNOWN_COMMAND = (
-    "Je ne connais pas cette commande. Écrivez « @{name:s} /aide » pour voir la liste."
-)
-
-HELP_COMMAND = "aide"
-# `/help` is what people reach for first, English speakers and developers alike.
-# Refusing it to be consistently French makes the assistant look broken at the
-# exact moment someone is trying to find out how it works.
-HELP_ALIASES = {"aide", "help", "?"}
 
 
 def help_message() -> str:
     """What each command does, and what Ariane reads.
 
-    Built from the same catalogue the composer and the bot use, so a command
-    cannot exist without appearing here. The paragraph about what she reads is
-    not a legal footnote: she is in every room and answers from the backlog, and
-    people are entitled to know that before they ask her anything.
+    The commands come from the shared catalogue. The paragraph about what she
+    reads is not a legal footnote: she is in every room and answers from the
+    backlog, and people are entitled to know that before they ask her anything.
     """
-    name = settings.BOTS_PING_NAMES[0].capitalize()
+    name = commands.assistant_name()
     lines = [
         f"Je réponds uniquement quand on écrit @{name:s} dans un message.",
         "",
@@ -67,14 +48,7 @@ def help_message() -> str:
         "Une commande change ma façon de répondre, pas ce qui me déclenche. "
         f"Elle se place après la mention : « @{name:s} /juriste ma question ».",
         "",
-    ]
-    for entry in albert.catalogue():
-        if entry["command"] == HELP_COMMAND:
-            continue
-        lines.append(
-            f"— /{entry['command']:s} — {entry['label']:s} : {entry['description']:s}"
-        )
-    lines += [
+        *commands.command_lines(),
         "",
         "Sans commande, je réponds sur un ton normal.",
         "",
@@ -92,92 +66,20 @@ def help_message() -> str:
     return "\n".join(lines)
 
 
-class _Seen:
-    """Event ids already handled, bounded.
+# How long a handled event id is remembered: far longer than Synapse keeps
+# replaying a transaction whose 200 got lost.
+SEEN_SECONDS = 24 * 60 * 60
 
-    Synapse replays a transaction until it gets a 200, and a retry after a slow
-    Albert call would post the answer twice. An unbounded set in a long-lived
-    process is a leak, so this forgets the oldest.
+
+def first_time(event_id: str) -> bool:
+    """Record an event as handled, and say whether it was new.
+
+    Synapse replays a transaction until it gets a 200, so the same ping can
+    arrive twice. The record lives in the shared cache (Redis in production),
+    not in the process: gunicorn runs several workers, and a replay may reach
+    another one than the first delivery.
     """
-
-    def __init__(self, capacity: int = 500):
-        self._ids: OrderedDict[str, None] = OrderedDict()
-        self._capacity = capacity
-        self._lock = threading.Lock()
-
-    def add_if_new(self, event_id: str) -> bool:
-        """Record the id, and say whether it was new."""
-        with self._lock:
-            if event_id in self._ids:
-                return False
-            self._ids[event_id] = None
-            while len(self._ids) > self._capacity:
-                self._ids.popitem(last=False)
-            return True
-
-    def forget(self, event_id: str) -> None:
-        """Take the id back, so a ping lost to a passing failure can be retried.
-
-        Marking an event handled is a promise that it was answered. When the
-        homeserver is the one that failed - a timeout, a 5xx, a rate limit -
-        that promise is false, and keeping it would silence the ping for good.
-        """
-        with self._lock:
-            self._ids.pop(event_id, None)
-
-
-SEEN = _Seen()
-
-
-def strip_quotes(body: str) -> str:
-    """Drop quoted lines before looking for the ping.
-
-    Matrix replies carry the quoted original prefixed with `> `. Ariane's own
-    name is in there whenever someone replies to her, so without this she pings
-    herself forever.
-    """
-    return QUOTE_RE.sub("", body)
-
-
-def ping_pattern() -> re.Pattern[str]:
-    """Match an explicit `@name` addressed to the assistant.
-
-    The `@` is required, and that is the whole point: without it any sentence
-    that merely says her name out loud - "Ariane nous a repondu hier" - would
-    summon her. `\b` after the name keeps `@ariane` from matching `@arianette`,
-    and the leading boundary keeps it from matching an email address.
-    """
-    names = "|".join(re.escape(name) for name in settings.BOTS_PING_NAMES)
-    return re.compile(rf"(?:^|[^\w@])@({names:s})\b", re.IGNORECASE)
-
-
-def is_pinged(body: str) -> bool:
-    """Does this message explicitly address Ariane with an `@`?"""
-    return bool(ping_pattern().search(strip_quotes(body)))
-
-
-def parse_command(body: str) -> tuple[str | None, bool]:
-    """Return the persona asked for, and whether an unknown one was used."""
-    found = COMMAND_RE.search(strip_quotes(body))
-    if not found:
-        return None, False
-    command = found.group("command").lower()
-    if command in HELP_ALIASES:
-        return HELP_COMMAND, False
-    if command in albert.PERSONAS and command is not None:
-        return command, False
-    return None, True
-
-
-def clean_question(body: str) -> str:
-    """The message without the ping and the command, which are addressing, not content."""
-    text = strip_quotes(body)
-    # The command goes - it is addressing, not content. The mention stays:
-    # removing it produced a question that no longer pinged anyone, and the
-    # model, reading its own past "write @Ariane to reach me" in the history,
-    # refused to answer it.
-    text = COMMAND_RE.sub(" ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    return cache.add(f"bots:seen:{event_id:s}", True, SEEN_SECONDS)
 
 
 def _role(sender: str) -> str:
@@ -330,8 +232,8 @@ def _thread_root(room_id: str, root_id: str) -> list[dict]:
         return []
 
 
-def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str | None]:
-    """Everything Ariane should have read before answering, and where to answer.
+def build_context(room_id: str, event: dict) -> list[dict[str, str]]:
+    """Everything Ariane should have read before answering.
 
     A thread is never the whole story. It usually opens several messages into a
     conversation, so a thread-only context makes Ariane answer as if the room
@@ -339,8 +241,8 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
     the backlog sounds. The room's recent timeline therefore comes first, then
     the thread.
 
-    Outside a thread, the tail of the room is the context and the answer goes to
-    the room itself - see `thread_root_of`.
+    Outside a thread, the tail of the room is the whole context. Where the
+    answer goes is not decided here - see `aside_root`.
     """
     event_id = event["event_id"]
     root_id = thread_root_of(event)
@@ -362,13 +264,9 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
         # The room tail already holds the root and may hold thread replies.
         # `_dedupe` keeps the first copy, so the room's chronology wins and
         # nothing is said twice.
-        return (
-            _as_messages(_dedupe([*room_history, *thread]), skip_event_id=event_id),
-            root_id,
-        )
+        return _as_messages(_dedupe([*room_history, *thread]), skip_event_id=event_id)
 
-    # No thread: answer in the room, where the question was asked.
-    return _as_messages(_dedupe(room_history), skip_event_id=event_id), None
+    return _as_messages(_dedupe(room_history), skip_event_id=event_id)
 
 
 def is_invitation_for_me(event: dict) -> bool:
@@ -398,43 +296,29 @@ def accept_invitation(room_id: str) -> None:
 def access_refusal(room_id: str) -> str | None:
     """Why Ariane cannot answer in this room, if she cannot.
 
-    Encryption is checked before joining, not after: entering a room only to
-    announce that nothing can be read there is a wasted membership, and the
-    answer is known in advance. That one she can say, because she is able to
-    join and then speak.
-
-    Not being invited is different, and there is no message for it: she cannot
+    Not being invited comes first, and there is no message for it: she cannot
     post in a room she is not in, so any refusal would fail to send. Silence is
     the only possible outcome, and the composer is where this is prevented - it
     only ever suggests people who are in the room.
+
+    Encryption is checked once she is in: the room state is only readable by
+    its members, so asking before joining could not tell an encrypted room
+    from a room she may not read yet. An encrypted room is joined anyway when
+    she is invited (see `accept_invitation`), so this costs no membership.
     """
-    if matrix.is_encrypted(room_id):
-        return ENCRYPTED_MESSAGE
     if not matrix.ensure_in_room(room_id):
         logger.info(
             "Ariane was addressed in %s without being invited; staying out", room_id
         )
         return SILENT
+    if matrix.is_encrypted(room_id):
+        return ENCRYPTED_MESSAGE
     return None
 
 
 # Distinguishes "refuse with this message" from "say nothing at all". Returning
 # an empty string would be indistinguishable from no refusal.
 SILENT = "\0"
-
-
-def canned_reply(command: str | None, unknown: bool) -> str | None:
-    """The answer Ariane gives without asking Albert anything, if there is one.
-
-    A command that does not exist, and the help itself - a model asked to recite
-    a catalogue invents an entry sooner or later. The unreadable-room case is
-    handled earlier, before she even enters.
-    """
-    if unknown:
-        return UNKNOWN_COMMAND.format(name=settings.BOTS_PING_NAMES[0].capitalize())
-    if command == HELP_COMMAND:
-        return help_message()
-    return None
 
 
 def handle_message(room_id: str, event: dict) -> None:
@@ -444,57 +328,62 @@ def handle_message(room_id: str, event: dict) -> None:
 
     if sender == settings.MATRIX_BOT_USER_ID:
         return
-    if not is_pinged(body):
+    if not commands.is_pinged(body):
         return
-    if not SEEN.add_if_new(event["event_id"]):
+    if not first_time(event["event_id"]):
         logger.debug("event %s already handled", event["event_id"])
         return
 
     logger.info("Ariane pinged in %s by %s", room_id, sender)
-
+    # One destination, always: the thread hanging off the message that asked.
+    thread_root = aside_root(event)
     try:
-        refusal = access_refusal(room_id)
-        if refusal is not None:
-            if refusal is not SILENT:
-                matrix.send_message(
-                    room_id, refusal, thread_root=aside_root(event), aside=True
-                )
-            return
+        _answer(room_id, event, body, thread_root)
+    except albert.AlbertError as exc:
+        logger.warning("Albert failed: %s", exc)
+        _say_failure(room_id, thread_root)
     except matrix.MatrixError as exc:
-        logger.warning("could not enter %s: %s", room_id, exc)
-        SEEN.forget(event["event_id"])
+        logger.warning("Matrix failed while answering in %s: %s", room_id, exc)
+        _say_failure(room_id, thread_root)
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Silence after a ping reads as a broken product, whatever broke.
+        logger.exception("could not answer in %s", room_id)
+        _say_failure(room_id, thread_root)
+
+
+def _answer(room_id: str, event: dict, body: str, thread_root: str) -> None:
+    """Enter the room if invited, then answer the ping in its thread."""
+    refusal = access_refusal(room_id)
+    if refusal is not None:
+        if refusal is not SILENT:
+            matrix.send_message(room_id, refusal, thread_root=thread_root, aside=True)
         return
 
-    command, unknown = parse_command(body)
-    # One destination, always: the thread hanging off the message that asked.
-    answer_root = aside_root(event)
+    command, unknown = commands.parse_command(body)
+    canned = commands.canned_reply(command, unknown, help_message)
+    if canned:
+        matrix.send_message(room_id, canned, thread_root=thread_root, aside=True)
+        return
 
+    messages = build_context(room_id, event)
+    question = commands.clean_question(body)
+    if question:
+        messages.append({"role": "user", "content": question})
+
+    matrix.set_typing(room_id, True)
     try:
-        canned = canned_reply(command, unknown)
-        if canned:
-            matrix.send_message(
-                room_id, canned, thread_root=aside_root(event), aside=True
-            )
-            return
+        reply = albert.answer(messages, command)
+    finally:
+        matrix.set_typing(room_id, False)
 
-        messages, _ = build_context(room_id, event)
-        question = clean_question(body)
-        if question:
-            messages.append({"role": "user", "content": question})
+    matrix.send_message(room_id, reply, thread_root=thread_root)
 
-        matrix.set_typing(room_id, True)
-        try:
-            reply = albert.answer(messages, command)
-        finally:
-            matrix.set_typing(room_id, False)
 
-        matrix.send_message(room_id, reply, thread_root=answer_root)
-
-    except albert.AlbertError as exc:
-        # Silence after a ping reads as a broken product. Say something.
-        logger.warning("Albert failed: %s", exc)
+def _say_failure(room_id: str, thread_root: str) -> None:
+    """Say that no answer is coming. Best effort: Matrix may be what failed."""
+    try:
         matrix.send_message(
-            room_id, FAILURE_MESSAGE, thread_root=aside_root(event), aside=True
+            room_id, commands.FAILURE_MESSAGE, thread_root=thread_root, aside=True
         )
     except matrix.MatrixError as exc:
-        logger.warning("Matrix failed while answering: %s", exc)
+        logger.warning("could not say the failure in %s: %s", room_id, exc)

@@ -224,6 +224,7 @@ and this project adheres to
 
 - 🔥(meetings) Remove the meeting summary field nothing wrote, an unused
   icon and a redundant refresh of the meetings once a transcript is saved.
+- 🔥(frontend) Remove seven French translations no code uses any more.
 
 ### Fixed
 

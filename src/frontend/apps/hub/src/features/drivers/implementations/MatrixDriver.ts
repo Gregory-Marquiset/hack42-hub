@@ -997,6 +997,14 @@ export class MatrixDriver extends Driver {
     }
     const selfUserId = mx.getUserId() ?? undefined;
     const wanted = participantSetKey(userIds);
+    // The assistant is invited into every clear group on its creation (see
+    // `resolveOrCreateChatForUsers`): unless she is one of the people asked
+    // for, her presence must not hide the group they already share.
+    const assistant = options?.assistantUserId;
+    const ignored =
+      new Set(userIds).size > 1 && assistant && !userIds.includes(assistant)
+        ? assistant
+        : undefined;
     // Gate on the server-confirmed joined set (like getChats/getChat/
     // getChatMessages), not `getMyMembership()`: a stale room restored from
     // IndexedDB after a homeserver reset can still report membership "join"
@@ -1015,7 +1023,9 @@ export class MatrixDriver extends Driver {
       .filter(
         (room) =>
           participantSetKey(
-            roomOtherMembers(room, selfUserId).map((member) => member.userId),
+            roomOtherMembers(room, selfUserId)
+              .map((member) => member.userId)
+              .filter((userId) => userId !== ignored),
           ) === wanted,
       );
     // The same people can share a clear room and an encrypted one, and the
@@ -1205,6 +1215,7 @@ export class MatrixDriver extends Driver {
       // each other - and no third room is ever created.
       const existing = await this.getChatForUsers(participantIds, {
         encrypted: wantsEncryption,
+        assistantUserId: assistant,
       });
       if (existing) {
         return existing;

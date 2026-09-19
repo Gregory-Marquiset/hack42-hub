@@ -1628,6 +1628,38 @@ describe("createChatForUsers (encryption and the assistant)", () => {
     expect(createRoom).not.toHaveBeenCalled();
   });
 
+  it("reuses a clear group the assistant was invited into", async () => {
+    // Created by the Hub for Bob and Carol: she joined it on her own.
+    const group = makeJoinedRoom(
+      "!group:localhost",
+      [BOB, CAROL, ASSISTANT_ID],
+      false,
+    );
+    const { mx, createRoom } = clientFor([group]);
+
+    const chat = await driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+    });
+
+    expect(chat.id).toBe("!group:localhost");
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("does not take a group with the assistant for a direct message", async () => {
+    const group = makeJoinedRoom(
+      "!group:localhost",
+      [BOB, ASSISTANT_ID],
+      false,
+    );
+    const { mx } = clientFor([group]);
+
+    expect(
+      await driverWithClient(mx).getChatForUsers([BOB], {
+        assistantUserId: ASSISTANT_ID,
+      }),
+    ).toBeNull();
+  });
+
   it("never encrypts a one-to-one with the assistant", async () => {
     const opts = await create([ASSISTANT_ID], {
       assistantUserId: ASSISTANT_ID,

@@ -36,6 +36,8 @@ export class MeetingDocumentTooLargeError extends Error {
 export type UseMeetingDocumentsResult = {
   agenda: string;
   attachments: MeetingAttachmentInfo[];
+  /** The Hub closed the meeting: its documents can no longer change. */
+  isClosed: boolean;
   isInitialLoading: boolean;
   isError: boolean;
   retry: () => void;
@@ -174,6 +176,7 @@ export const useMeetingDocuments = (
   return {
     agenda: data.agenda,
     attachments: data.attachments,
+    isClosed: data.isClosed,
     isInitialLoading: query.isPending && query.fetchStatus !== "idle",
     isError: query.isError,
     retry: () => void query.refetch(),

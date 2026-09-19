@@ -47,7 +47,8 @@ const MEETING: ChatMeeting = {
   url: "https://meet.example.com/abc-defg-hij",
   organizerId: SELF_ID,
   title: "Point",
-  startedAt: "2026-09-18T08:00:00.000Z",
+  // A scheduled meeting: documents can still be added to it.
+  startedAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
   plannedDurationMinutes: 45,
   documents: [
     { id: "d1", title: "Support", url: "https://docs.example.com/d1" },
@@ -66,6 +67,7 @@ const documents = (
 ): UseMeetingDocumentsResult => ({
   agenda: "1. Tour de table",
   attachments: [ATTACHMENT],
+  isClosed: false,
   isInitialLoading: false,
   isError: false,
   retry: vi.fn(),
@@ -270,6 +272,16 @@ describe("MeetingDetails", () => {
       screen.queryByLabelText("Add documents from your device"),
     ).toBeNull();
     expect(screen.queryByLabelText("Add a Docs link")).toBeNull();
+  });
+
+  it("adds nothing once the Hub closed the meeting", () => {
+    mocks.useMeetingDocuments.mockReturnValue(documents({ isClosed: true }));
+    renderDetails();
+
+    expect(
+      screen.queryByLabelText("Add documents from your device"),
+    ).toBeNull();
+    expect(screen.queryByText("New Docs document")).toBeNull();
   });
 
   it("says when there is no document", () => {

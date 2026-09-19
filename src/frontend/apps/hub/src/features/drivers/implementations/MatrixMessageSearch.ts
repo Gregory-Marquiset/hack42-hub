@@ -39,6 +39,8 @@ const PERSIST_DEBOUNCE_MS = 250;
 const BACKFILL_MAX_MESSAGES = 200;
 const BACKFILL_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const BACKFILL_PAGE_SIZE = 50;
+/** The oldest messages of a room beyond this are dropped from the index. */
+const MAX_MESSAGES_PER_ROOM = 2_000;
 
 const EXTRACT_URL_REGEX = /https?:\/\/\S+/i;
 const LEGACY_PILL_REGEX =
@@ -114,6 +116,7 @@ export class MatrixMessageSearch {
     this.opened = true;
     if (this.disposed) return;
     for (const doc of restored.messages) this.indexMessage(doc.roomId, doc);
+    for (const roomId of this.messages.keys()) this.trimRoom(roomId);
     for (const state of restored.backfill) {
       // The in-memory pagination behind a "backfilling" state is lost on
       // reload: let the room be requested again instead of showing it stuck.
@@ -206,23 +209,51 @@ export class MatrixMessageSearch {
   private storeLive(doc: MessageSearchDocument): void {
     this.indexMessage(doc.roomId, doc);
     this.pendingMessages.push(doc);
+    this.trimRoom(doc.roomId);
     this.schedulePersist();
     this.emit();
   }
 
   private removeMessage(roomId: string, eventId: string): void {
-    const removed = this.messages.get(roomId)?.delete(eventId);
+    if (this.forget(roomId, eventId)) this.emit();
+  }
+
+  /** Drops one message from memory, from the write queue and from storage. */
+  private forget(roomId: string, eventId: string): boolean {
+    const removed = this.messages.get(roomId)?.delete(eventId) ?? false;
     // A queued write of it would bring it back after the deletion.
     const pending = this.pendingMessages.filter(
       (doc) => doc.roomId !== roomId || doc.eventId !== eventId,
     );
     this.pendingMessages.splice(0, this.pendingMessages.length, ...pending);
     void this.storage.deleteMessage(roomId, eventId);
-    if (removed) this.emit();
+    return removed;
+  }
+
+  /** Keeps a busy room from growing the index without bound. */
+  private trimRoom(roomId: string): void {
+    const messages = this.messages.get(roomId);
+    if (!messages || messages.size <= MAX_MESSAGES_PER_ROOM) return;
+    const oldest = [...messages.values()]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(0, messages.size - MAX_MESSAGES_PER_ROOM);
+    for (const doc of oldest) this.forget(roomId, doc.eventId);
   }
 
   setJoinedRooms(roomIds: Set<string>): void {
     this.joinedRoomIds = new Set(roomIds);
+    // A room left is no longer searchable: drop what was indexed for it.
+    const left = [...this.messages.keys(), ...this.backfillStates.keys()];
+    for (const roomId of new Set(left)) {
+      if (roomIds.has(roomId)) continue;
+      this.messages.delete(roomId);
+      this.backfillStates.delete(roomId);
+      const pending = this.pendingMessages.filter(
+        (doc) => doc.roomId !== roomId,
+      );
+      this.pendingMessages.splice(0, this.pendingMessages.length, ...pending);
+      void this.storage.deleteRoom(roomId);
+    }
     this.recomputeStatus();
     this.emit();
   }
@@ -327,6 +358,7 @@ export class MatrixMessageSearch {
       });
       for (const doc of docs) this.indexMessage(roomId, doc);
       void this.storage.putMessages(docs);
+      this.trimRoom(roomId);
 
       this.setBackfillState({
         roomId,

@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Stop the message search index from growing without end: a
+  conversation left is dropped from it, and a conversation keeps its most
+  recent 2,000 messages.
 - 🔒️(search) Erase the message search index at logout, even when the
   Matrix driver never loaded in that tab: it keeps message text.
 - 🐛(search) Make "Retry indexing" fetch again the conversations whose

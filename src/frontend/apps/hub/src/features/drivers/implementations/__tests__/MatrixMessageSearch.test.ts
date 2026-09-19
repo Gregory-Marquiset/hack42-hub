@@ -28,6 +28,7 @@ type EventOptions = {
   relation?: { rel_type: string; event_id: string };
   status?: string | null;
   redacts?: string;
+  ts?: number;
 };
 
 const makeEvent = (options: EventOptions) => {
@@ -37,7 +38,7 @@ const makeEvent = (options: EventOptions) => {
     getId: () => event.id,
     getType: () => "m.room.message",
     getSender: () => options.sender ?? ALICE,
-    getTs: () => 1_000,
+    getTs: () => options.ts ?? 1_000,
     getContent: () =>
       options.content ?? { msgtype: "m.text", body: options.body ?? "" },
     getRelation: () => options.relation ?? null,
@@ -187,5 +188,26 @@ describe("MatrixMessageSearch live indexing", () => {
     ]);
     // The sender of the reply is not the one it mentions.
     expect(await find("", ["alice"])).toEqual([]);
+  });
+
+  it("drops the messages of a room left", async () => {
+    receive(makeEvent({ id: "$left", body: "gone" }));
+    search.setJoinedRooms(new Set(["!other:localhost"]));
+
+    expect(await find("gone")).toEqual([]);
+  });
+
+  it("keeps only the most recent messages of a room", async () => {
+    for (let index = 0; index <= 2_000; index++) {
+      receive(makeEvent({ id: `$m${index}`, body: "note", ts: index + 1 }));
+    }
+
+    const page = await search.search({
+      freeText: "note",
+      filters: emptySearchFilters(),
+      limit: 3_000,
+    });
+    expect(page.total).toBe(2_000);
+    expect(page.results.some((result) => result.eventId === "$m0")).toBe(false);
   });
 });

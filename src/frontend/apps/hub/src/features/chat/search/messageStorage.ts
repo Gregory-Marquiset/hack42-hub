@@ -117,6 +117,25 @@ export class MessageSearchStorage {
     }
   }
 
+  /** Drops everything indexed for a room the account is no longer in. */
+  async deleteRoom(roomId: string): Promise<void> {
+    if (!this.db || this.disposed) return;
+    try {
+      const tx = this.db.transaction(STORES, "readwrite");
+      // Keys are [roomId, eventId]: an array sorts after every string, so
+      // this range holds exactly the room's messages.
+      tx.objectStore("messages").delete(
+        IDBKeyRange.bound([roomId], [roomId, []]),
+      );
+      tx.objectStore("messageBackfill").delete(roomId);
+      await transactionDone(tx);
+    } catch {
+      this.state = "memory";
+      this.db?.close();
+      this.db = undefined;
+    }
+  }
+
   async putBackfillState(state: MessageBackfillState): Promise<void> {
     if (!this.db || this.disposed) return;
     try {

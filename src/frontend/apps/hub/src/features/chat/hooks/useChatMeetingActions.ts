@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { updateMeeting } from "@/features/chat/api/meetings";
 import { saveMeetingTranscript } from "@/features/chat/api/meetingTranscripts";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
+import { MeetingEndedError } from "@/features/drivers/meetingErrors";
 import type { ChatMeetingDocument, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
@@ -140,10 +141,14 @@ export const useChatMeetingActions = (
       }
     },
     onSuccess: invalidate,
-    onError: (_error, action) => {
+    onError: (error, action) => {
       // The whiteboard falls back on the local view; no need to alarm.
       if (action.kind !== "board") {
-        notify.error(t("The meeting could not be updated. Please try again."));
+        notify.error(
+          error instanceof MeetingEndedError
+            ? t("The meeting is already closed.")
+            : t("The meeting could not be updated. Please try again."),
+        );
       }
     },
     meta: { noGlobalError: true },

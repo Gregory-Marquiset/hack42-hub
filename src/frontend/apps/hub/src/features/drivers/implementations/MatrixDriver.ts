@@ -107,6 +107,7 @@ import {
   NotificationRules,
   SetNotificationRuleActionsParams,
   SetNotificationRuleEnabledParams,
+  StartedChatMeeting,
   StartMeetingOptions,
   User,
 } from "../types";
@@ -654,7 +655,7 @@ export class MatrixDriver extends Driver {
     chatId: string,
     createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     options: StartMeetingOptions = {},
-  ): Promise<ChatMeeting> {
+  ): Promise<StartedChatMeeting> {
     const { mx, room } = this.requireRoom("startChatMeeting", chatId);
     const joinedRoomIds = await this.getJoinedRoomIds(mx);
     if (!joinedRoomIds.has(chatId)) {
@@ -670,7 +671,7 @@ export class MatrixDriver extends Driver {
         isMeetingOngoing(meeting, now),
       );
       if (ongoing) {
-        return ongoing;
+        return { meeting: ongoing, isReused: true };
       }
     }
     const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
@@ -697,15 +698,18 @@ export class MatrixDriver extends Driver {
     };
     await mx.sendStateEvent(chatId, MEETING_EVENT_TYPE, content, meetingId);
     return {
-      id: meetingId,
-      url,
-      organizerId: selfUserId,
-      ...(title ? { title } : {}),
-      startedAt: new Date(content.startedAt).toISOString(),
-      ...(content.plannedDurationMinutes
-        ? { plannedDurationMinutes: content.plannedDurationMinutes }
-        : {}),
-      documents,
+      meeting: {
+        id: meetingId,
+        url,
+        organizerId: selfUserId,
+        ...(title ? { title } : {}),
+        startedAt: new Date(content.startedAt).toISOString(),
+        ...(content.plannedDurationMinutes
+          ? { plannedDurationMinutes: content.plannedDurationMinutes }
+          : {}),
+        documents,
+      },
+      isReused: false,
     };
   }
 

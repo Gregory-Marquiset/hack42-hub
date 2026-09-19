@@ -3,7 +3,10 @@ import { type ChangeEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatMeetingDuration } from "@/features/drivers/meetingTime";
-import type { StartMeetingOptions } from "@/features/drivers/types";
+import type {
+  ChatMeeting,
+  StartMeetingOptions,
+} from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { Download } from "./MeetingIcons";
@@ -30,6 +33,12 @@ type NewMeetingFormProps = {
   isOpen: boolean;
   /** Whether a call is already being created or scheduled. */
   isStarting: boolean;
+  /**
+   * The conversation's call in progress, if any: "Start now" would only
+   * rejoin it without this form, so the form offers to join it instead.
+   */
+  ongoingMeeting?: ChatMeeting | null;
+  onJoinOngoing: (meeting: ChatMeeting) => void;
   onClose: () => void;
   onBack: () => void;
   /** Starts the conversation's call right away ("Appel immédiat"). */
@@ -106,6 +115,8 @@ const DocumentRow = ({ document, tabIndex, onRemove }: DocumentRowProps) => {
 export const NewMeetingForm = ({
   isOpen,
   isStarting,
+  ongoingMeeting,
+  onJoinOngoing,
   onClose,
   onBack,
   onStartNow,
@@ -471,6 +482,11 @@ export const NewMeetingForm = ({
           )}
         </section>
 
+        {ongoingMeeting && (
+          <p className="hub__chat-meetings__details-text" role="status">
+            {t("A meeting is already in progress: join it, or plan yours.")}
+          </p>
+        )}
         <div className="hub__chat-meetings__start-actions">
           <button
             type="button"
@@ -484,17 +500,29 @@ export const NewMeetingForm = ({
           >
             {t("Schedule")}
           </button>
-          <button
-            type="button"
-            className="hub__chat-meetings__action hub__chat-meetings__start-now"
-            data-primary="true"
-            disabled={isStarting}
-            aria-busy={isStarting || undefined}
-            tabIndex={tabIndex}
-            onClick={() => onStartNow(meetingOptions)}
-          >
-            {t("Start now")}
-          </button>
+          {ongoingMeeting ? (
+            <button
+              type="button"
+              className="hub__chat-meetings__action hub__chat-meetings__start-now"
+              data-primary="true"
+              tabIndex={tabIndex}
+              onClick={() => onJoinOngoing(ongoingMeeting)}
+            >
+              {t("Join the ongoing meeting")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="hub__chat-meetings__action hub__chat-meetings__start-now"
+              data-primary="true"
+              disabled={isStarting}
+              aria-busy={isStarting || undefined}
+              tabIndex={tabIndex}
+              onClick={() => onStartNow(meetingOptions)}
+            >
+              {t("Start now")}
+            </button>
+          )}
         </div>
       </div>
     </>

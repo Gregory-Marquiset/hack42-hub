@@ -39,6 +39,7 @@ import {
   NotificationRules,
   SetNotificationRuleActionsParams,
   SetNotificationRuleEnabledParams,
+  StartedChatMeeting,
   StartMeetingOptions,
   User,
 } from "./types";
@@ -522,15 +523,16 @@ export abstract class Driver {
    * Starts a meeting now, or schedules one when `options.startsAt` is in the
    * future. Starting now returns the meeting already ongoing, if any, so a
    * second click (from this user or another member) joins the same call
-   * instead of creating a duplicate room. `createRoom` is only called when a
-   * new call is needed. Unsupported by default so drivers opt in (see
+   * instead of creating a duplicate room; `isReused` then tells the caller
+   * that its options were not used. `createRoom` is only called when a new
+   * call is needed. Unsupported by default so drivers opt in (see
    * `supportsMeetings`).
    */
   async startChatMeeting(
     _chatId: string,
     _createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     _options?: StartMeetingOptions,
-  ): Promise<ChatMeeting> {
+  ): Promise<StartedChatMeeting> {
     void _chatId;
     void _createRoom;
     void _options;

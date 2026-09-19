@@ -232,6 +232,16 @@ export type ChatFile = {
   isEncrypted: boolean;
 };
 
+/** What starting a meeting gave: a new one, or the call already ongoing. */
+export type StartedChatMeeting = {
+  meeting: ChatMeeting;
+  /**
+   * A call was already ongoing and is returned instead: the options given
+   * (title, agenda, documents…) were not used.
+   */
+  isReused: boolean;
+};
+
 /** How a meeting is created from the meetings panel. */
 export type StartMeetingOptions = {
   title?: string;

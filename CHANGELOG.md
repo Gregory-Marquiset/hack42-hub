@@ -225,6 +225,9 @@ and this project adheres to
 - 🐛(meetings) Keep a closed meeting closed: toggling its board or adding a
   document before the closing reached this device rewrote the meeting
   without it. Every change now starts from the homeserver's latest copy.
+- 🐛(meetings) Offer to join the call in progress from the new meeting form,
+  instead of silently dropping its name, agenda and documents when "Start
+  now" could only rejoin that call.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

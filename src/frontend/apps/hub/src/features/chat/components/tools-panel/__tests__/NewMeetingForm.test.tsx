@@ -30,6 +30,7 @@ const renderForm = () =>
     <NewMeetingForm
       isOpen
       isStarting={false}
+      onJoinOngoing={vi.fn()}
       onClose={vi.fn()}
       onBack={vi.fn()}
       onStartNow={vi.fn()}
@@ -171,6 +172,7 @@ describe("NewMeetingForm start and schedule", () => {
       <NewMeetingForm
         isOpen
         isStarting={false}
+        onJoinOngoing={vi.fn()}
         onClose={vi.fn()}
         onBack={vi.fn()}
         onStartNow={onStartNow}

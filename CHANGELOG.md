@@ -228,6 +228,9 @@ and this project adheres to
 - 🐛(meetings) Offer to join the call in progress from the new meeting form,
   instead of silently dropping its name, agenda and documents when "Start
   now" could only rejoin that call.
+- 🐛(meetings) Say "This meeting is over" when an old invitation opens a
+  closed meeting, instead of joining its call and closing the window at once
+  as if its organizer had just closed it.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

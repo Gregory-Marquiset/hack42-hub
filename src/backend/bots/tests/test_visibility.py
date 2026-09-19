@@ -10,6 +10,7 @@ So it gets tests of its own, and they are deliberately written from the outside:
 given a list of events and a horizon, what comes out.
 """
 
+from django.core.cache import cache
 from django.test import override_settings
 
 import pytest
@@ -155,21 +156,16 @@ def test_a_readable_thread_root_is_part_of_the_context(monkeypatch):
     assert "la question de depart" in messages[0]["content"]
 
 
-def test_a_forgotten_event_can_be_handled_again():
-    """A ping lost to a passing failure must not be silenced for good.
+def test_a_replayed_event_is_handled_once():
+    """Synapse replaying a transaction must not get a second answer.
 
-    `SEEN` promises "this event was answered". When the homeserver is the one
-    that failed, the promise is false and the id has to be given back.
+    The record is in the shared cache, so it holds across the workers.
     """
-    seen = handlers.SEEN
+    cache.delete("bots:seen:$replayed")
 
-    assert seen.add_if_new("$transient") is True
-    assert seen.add_if_new("$transient") is False
-
-    seen.forget("$transient")
-
-    assert seen.add_if_new("$transient") is True
-    seen.forget("$transient")
+    assert handlers.first_time("$replayed") is True
+    assert handlers.first_time("$replayed") is False
+    cache.delete("bots:seen:$replayed")
 
 
 def test_she_always_answers_in_a_thread():

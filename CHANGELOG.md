@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(bots) Remember the pings Ariane handled in the shared cache, so a
+  replayed transaction reaching another worker is not answered twice.
 - 🐛(bots) Keep Ariane's reading horizon at the join when someone changes
   their display name or avatar, which used to reset it to that change.
 - 🐛(meetings) Accept an empty `chat_id` when creating a meeting, as when it

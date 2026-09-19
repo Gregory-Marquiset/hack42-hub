@@ -20,6 +20,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { name?: string }) =>
       options?.name ? `${key}|${options.name}` : key,
+    i18n: { language: "fr", resolvedLanguage: "fr" },
   }),
 }));
 
@@ -139,7 +140,7 @@ describe("NewMeetingForm files", () => {
     await pick("document-file-input", text("gros.md", "x".repeat(100_001)));
 
     expect(notifyError).toHaveBeenCalledWith(
-      "A file is too large to be attached (100 KB at most).",
+      "A file is too large to be attached ({{size}} at most).",
     );
     expect(screen.queryByText("gros.md")).toBeNull();
   });

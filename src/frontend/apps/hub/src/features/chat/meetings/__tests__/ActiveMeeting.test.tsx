@@ -33,7 +33,12 @@ const setBoard = vi.hoisted(() => vi.fn(async () => undefined));
 const notifyBrand = vi.hoisted(() => vi.fn());
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(options?.[name] ?? ""),
+      ),
+  }),
 }));
 vi.mock("@/features/auth/Auth", () => ({
   useAuth: () => ({

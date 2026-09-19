@@ -250,6 +250,8 @@ and this project adheres to
   same document instead of leaving it orphaned in Docs.
 - 🐛(meetings) Stop offering to add documents to a meeting the Hub already
   closed, or one past its time, which the Hub then refused.
+- 🌐(meetings) Translate the duration units of the meetings ("min", "h",
+  "+15 min"), and state file size limits from the limits themselves.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

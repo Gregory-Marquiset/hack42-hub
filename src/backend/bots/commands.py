@@ -27,7 +27,7 @@ UNKNOWN_COMMAND = (
     "Je ne connais pas cette commande. Écrivez « @{name:s} /aide » pour voir la liste."
 )
 
-HELP_COMMAND = "aide"
+HELP_COMMAND = albert.HELP_ENTRY["command"]
 # `/help` is what people reach for first, English speakers and developers alike.
 # Refusing it to be consistently French makes the assistant look broken at the
 # exact moment someone is trying to find out how it works.

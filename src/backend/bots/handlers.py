@@ -232,8 +232,8 @@ def _thread_root(room_id: str, root_id: str) -> list[dict]:
         return []
 
 
-def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str | None]:
-    """Everything Ariane should have read before answering, and where to answer.
+def build_context(room_id: str, event: dict) -> list[dict[str, str]]:
+    """Everything Ariane should have read before answering.
 
     A thread is never the whole story. It usually opens several messages into a
     conversation, so a thread-only context makes Ariane answer as if the room
@@ -241,8 +241,8 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
     the backlog sounds. The room's recent timeline therefore comes first, then
     the thread.
 
-    Outside a thread, the tail of the room is the context and the answer goes to
-    the room itself - see `thread_root_of`.
+    Outside a thread, the tail of the room is the whole context. Where the
+    answer goes is not decided here - see `aside_root`.
     """
     event_id = event["event_id"]
     root_id = thread_root_of(event)
@@ -264,13 +264,9 @@ def build_context(room_id: str, event: dict) -> tuple[list[dict[str, str]], str 
         # The room tail already holds the root and may hold thread replies.
         # `_dedupe` keeps the first copy, so the room's chronology wins and
         # nothing is said twice.
-        return (
-            _as_messages(_dedupe([*room_history, *thread]), skip_event_id=event_id),
-            root_id,
-        )
+        return _as_messages(_dedupe([*room_history, *thread]), skip_event_id=event_id)
 
-    # No thread: answer in the room, where the question was asked.
-    return _as_messages(_dedupe(room_history), skip_event_id=event_id), None
+    return _as_messages(_dedupe(room_history), skip_event_id=event_id)
 
 
 def is_invitation_for_me(event: dict) -> bool:
@@ -369,7 +365,7 @@ def _answer(room_id: str, event: dict, body: str, thread_root: str) -> None:
         matrix.send_message(room_id, canned, thread_root=thread_root, aside=True)
         return
 
-    messages, _ = build_context(room_id, event)
+    messages = build_context(room_id, event)
     question = commands.clean_question(body)
     if question:
         messages.append({"role": "user", "content": question})

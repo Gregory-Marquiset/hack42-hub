@@ -142,7 +142,7 @@ PERSONAS = {
 # `/aide` is not a persona: it changes nothing about how Ariane answers, it
 # answers instead of her. It lives here so the composer lists it beside the
 # others - a help command nobody can discover is not help.
-HELP_COMMAND = {
+HELP_ENTRY = {
     "command": "aide",
     "label": "Aide",
     "description": "Ce que fait chaque commande, et ce qu'Ariane lit.",
@@ -159,7 +159,7 @@ def catalogue() -> list[dict[str, str]]:
         }
         for command, persona in PERSONAS.items()
         if command
-    ] + [HELP_COMMAND]
+    ] + [HELP_ENTRY]
 
 
 class AlbertError(Exception):

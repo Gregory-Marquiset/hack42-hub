@@ -24,7 +24,7 @@ import { Whiteboard } from "@/features/chat/components/tools-panel/MeetingIcons"
 import { useChatMeetingActions } from "@/features/chat/hooks/useChatMeetingActions";
 import { useChatMeetings } from "@/features/chat/hooks/useChatMeetings";
 import {
-  formatMeetingDuration,
+  formatMeetingProgress,
   getMeetingProgress,
   getMeetingStatus,
 } from "@/features/drivers/meetingTime";
@@ -263,9 +263,7 @@ const MeetingWindow = ({
                 data-overdue={progress.isOverdue || undefined}
                 data-testid="meeting-progress"
               >
-                {progress.plannedMs === undefined
-                  ? formatMeetingDuration(progress.elapsedMs)
-                  : `${formatMeetingDuration(progress.elapsedMs)} / ${formatMeetingDuration(progress.plannedMs)}`}
+                {formatMeetingProgress(progress)}
                 {progress.isOverdue && ` · ${t("Overtime")}`}
               </span>
             )}

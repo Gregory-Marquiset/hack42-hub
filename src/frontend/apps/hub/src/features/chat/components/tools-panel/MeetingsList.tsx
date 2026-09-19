@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { copyMeetingLink } from "@/features/chat/meetings/copyMeetingLink";
 import {
-  formatMeetingDuration,
+  formatMeetingProgress,
   getMeetingProgress,
 } from "@/features/drivers/meetingTime";
 import type { ChatMeeting } from "@/features/drivers/types";
@@ -57,11 +57,8 @@ export const MeetingsList = ({
     if (!isOngoing) {
       return `${formatMeetingDay(meeting.startedAt, locale)} ${formatMeetingTime(meeting.startedAt, locale)}`;
     }
-    const progress = getMeetingProgress(meeting, now);
-    const elapsed = formatMeetingDuration(progress.elapsedMs);
-    return progress.plannedMs === undefined
-      ? `${t("Ongoing")} · ${elapsed}`
-      : `${t("Ongoing")} · ${elapsed} / ${formatMeetingDuration(progress.plannedMs)}`;
+    const progress = formatMeetingProgress(getMeetingProgress(meeting, now));
+    return `${t("Ongoing")} · ${progress}`;
   };
 
   const rows = [

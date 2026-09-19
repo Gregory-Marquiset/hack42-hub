@@ -81,6 +81,12 @@ export const formatMeetingDuration = (ms: number): string => {
     : `${hours} h ${String(minutes).padStart(2, "0")}`;
 };
 
+/** `12 min`, or `12 min / 45 min` against the planned duration. */
+export const formatMeetingProgress = (progress: MeetingProgress): string =>
+  progress.plannedMs === undefined
+    ? formatMeetingDuration(progress.elapsedMs)
+    : `${formatMeetingDuration(progress.elapsedMs)} / ${formatMeetingDuration(progress.plannedMs)}`;
+
 /** A scheduled meeting counts as "soon" this long before its start. */
 export const MEETING_SOON_MS = 15 * MINUTE;
 

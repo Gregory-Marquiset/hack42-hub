@@ -125,6 +125,40 @@ export const getMeetingStateContent = (
   };
 };
 
+/**
+ * The content to update a meeting from: the homeserver's `latest` copy, read
+ * right before the write, since the local one may not have synced a closing
+ * yet. A closing known on either side is kept: a state rewritten without it
+ * would reopen the meeting. `latest` is ignored when it is not a meeting.
+ */
+export const mergeLatestMeetingContent = (
+  local: MeetingStateEventContent & { organizerId: string },
+  latest: unknown,
+): MeetingStateEventContent & { organizerId: string } => {
+  const fetched =
+    typeof latest === "object" && latest !== null
+      ? (latest as Partial<MeetingStateEventContent>)
+      : null;
+  const base =
+    fetched &&
+    typeof fetched.meetingUrl === "string" &&
+    typeof fetched.startedAt === "number"
+      ? (fetched as MeetingStateEventContent)
+      : local;
+  const closing = typeof base.endedAt === "number" ? base : local;
+  return {
+    ...base,
+    // The organizer never changes, and older states only name it as sender.
+    organizerId: local.organizerId,
+    ...(typeof closing.endedAt === "number"
+      ? {
+          endedAt: closing.endedAt,
+          endedBy: closing.endedBy === "auto" ? "auto" : "organizer",
+        }
+      : {}),
+  };
+};
+
 /** Every meeting held in a room's history, newest first. */
 export const getChatMeetingsFromRoom = (room: Room): ChatMeeting[] =>
   (room.currentState?.getStateEvents(MEETING_EVENT_TYPE) ?? [])

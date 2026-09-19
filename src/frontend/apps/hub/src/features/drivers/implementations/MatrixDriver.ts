@@ -110,7 +110,7 @@ import {
   StartMeetingOptions,
   User,
 } from "../types";
-import { MeetingNotAllowedError } from "../meetingErrors";
+import { MeetingEndedError, MeetingNotAllowedError } from "../meetingErrors";
 import { isMeetingOngoing } from "../meetingTime";
 import {
   authorForSender,
@@ -153,6 +153,7 @@ import { MatrixMessageSearch } from "./MatrixMessageSearch";
 import {
   getChatMeetingsFromRoom,
   getMeetingStateContent,
+  mergeLatestMeetingContent,
   MEETING_EVENT_TYPE,
   type MeetingStateEventContent,
 } from "./matrixMeetingMapping";
@@ -709,10 +710,18 @@ export class MatrixDriver extends Driver {
   }
 
   async endChatMeeting(chatId: string, meetingId: string): Promise<void> {
-    await this.updateOwnMeeting("endChatMeeting", chatId, meetingId, () => ({
-      endedAt: Date.now(),
-      endedBy: "organizer",
-    }));
+    // Already closed (on another device, or by the server): its closing,
+    // and who did it, stay as they are.
+    await this.updateOwnMeeting(
+      "endChatMeeting",
+      chatId,
+      meetingId,
+      (content) =>
+        content.endedAt === undefined
+          ? { endedAt: Date.now(), endedBy: "organizer" }
+          : {},
+      { closes: true },
+    );
   }
 
   async extendChatMeeting(
@@ -837,11 +846,20 @@ export class MatrixDriver extends Driver {
     change: (
       content: MeetingStateEventContent,
     ) => Partial<MeetingStateEventContent>,
+    { closes = false }: { closes?: boolean } = {},
   ): Promise<void> {
-    await this.updateMeeting(method, chatId, meetingId, change, true);
+    await this.updateMeeting(method, chatId, meetingId, change, {
+      organizerOnly: true,
+      closes,
+    });
   }
 
-  /** Rewrites one meeting's state, for anyone the room lets write it. */
+  /**
+   * Rewrites one meeting's state, for anyone the room lets write it. The
+   * whole state is written, so it starts from the homeserver's latest copy:
+   * the local one may not know yet that the meeting was closed, and must not
+   * reopen it. A closed meeting only accepts the flow that `closes` it.
+   */
   private async updateMeeting(
     method: string,
     chatId: string,
@@ -849,23 +867,40 @@ export class MatrixDriver extends Driver {
     change: (
       content: MeetingStateEventContent,
     ) => Partial<MeetingStateEventContent>,
-    organizerOnly = false,
+    {
+      organizerOnly = false,
+      closes = false,
+    }: { organizerOnly?: boolean; closes?: boolean } = {},
   ): Promise<void> {
     const { mx, room } = this.requireRoom(method, chatId);
-    const content = getMeetingStateContent(room, meetingId);
-    if (!content) {
+    const local = getMeetingStateContent(room, meetingId);
+    if (!local) {
       throw new Error(
         `MatrixDriver.${method}: meeting "${meetingId}" not found in "${chatId}".`,
       );
     }
     const selfUserId = this.requireMeetingOrganizerRights(mx, room, chatId);
-    if (organizerOnly && content.organizerId !== selfUserId) {
+    if (organizerOnly && local.organizerId !== selfUserId) {
       throw new MeetingNotAllowedError(chatId);
+    }
+    if (local.endedAt !== undefined && !closes) {
+      throw new MeetingEndedError(meetingId);
+    }
+    const content = mergeLatestMeetingContent(
+      local,
+      await mx.getStateEvent(chatId, MEETING_EVENT_TYPE, meetingId),
+    );
+    if (content.endedAt !== undefined && !closes) {
+      throw new MeetingEndedError(meetingId);
+    }
+    const next = change(content);
+    if (Object.keys(next).length === 0) {
+      return;
     }
     await mx.sendStateEvent(
       chatId,
       MEETING_EVENT_TYPE,
-      { ...content, ...change(content) },
+      { ...content, ...next },
       meetingId,
     );
   }

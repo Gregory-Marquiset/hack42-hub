@@ -19,7 +19,7 @@ import { LazyMatrixDriver } from "../LazyMatrixDriver";
 import { MatrixDriver } from "../MatrixDriver";
 import { readChatSelfPresencePreference } from "../../presencePreference";
 import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
-import { MeetingNotAllowedError } from "../../meetingErrors";
+import { MeetingEndedError, MeetingNotAllowedError } from "../../meetingErrors";
 import type { MeetRoom, MeetRoomSchedule } from "../../types";
 import {
   matrixJoinedRoomToLocalChat,
@@ -1072,10 +1072,25 @@ describe("MatrixDriver.startChatMeeting", () => {
       getStateKey: () => stateKey,
     }) as unknown as MatrixEvent;
 
-  const makeClient = (room: Room) => {
+  /** `serverState` stands for the homeserver's copy, ahead of the local one. */
+  const makeClient = (
+    room: Room,
+    serverState?: Record<string, Record<string, unknown>>,
+  ) => {
     const sendStateEvent = vi.fn(async () => ({
       event_id: "$state:localhost",
     }));
+    const getStateEvent = vi.fn(
+      async (_roomId: string, _type: string, stateKey: string) =>
+        serverState?.[stateKey] ??
+        (
+          room.currentState.getStateEvents(
+            MEETING_EVENT_TYPE,
+            stateKey,
+          ) as MatrixEvent | null
+        )?.getContent() ??
+        {},
+    );
     const mx = {
       getRoom: () => room,
       getUserId: () => SELF_ID,
@@ -1083,8 +1098,9 @@ describe("MatrixDriver.startChatMeeting", () => {
       // The espace of a conversation is looked for among the joined rooms.
       getRooms: () => [room],
       sendStateEvent,
+      getStateEvent,
     } as unknown as MatrixClient;
-    return { mx, sendStateEvent };
+    return { mx, sendStateEvent, getStateEvent };
   };
 
   it("creates a Meet room and records its link in the room state", async () => {
@@ -1431,6 +1447,82 @@ describe("MatrixDriver.startChatMeeting", () => {
       driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom),
     ).rejects.toThrow("Meet unavailable");
     expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+
+  describe("with a closing this device has not synced yet", () => {
+    const open = {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now() - 10 * 60 * 1000,
+      organizerId: OTHER_ID,
+    };
+    const closed = { ...open, endedAt: Date.now(), endedBy: "auto" };
+    const staleClient = () =>
+      makeClient(makeMeetingRoom([meetingEvent(MEET_ROOM.slug, open)]), {
+        [MEET_ROOM.slug]: closed,
+      });
+
+    it("does not reopen the meeting to toggle its board", async () => {
+      const { mx, sendStateEvent } = staleClient();
+
+      await expect(
+        driverWithClient(mx).setChatMeetingBoard(ROOM_ID, MEET_ROOM.slug, true),
+      ).rejects.toBeInstanceOf(MeetingEndedError);
+      expect(sendStateEvent).not.toHaveBeenCalled();
+    });
+
+    it("does not reopen the meeting to add a document", async () => {
+      const { mx, sendStateEvent } = staleClient();
+      const document = { id: "doc", title: "Doc", url: "https://x/doc" };
+
+      await expect(
+        driverWithClient(mx).addChatMeetingDocument(
+          ROOM_ID,
+          MEET_ROOM.slug,
+          document,
+        ),
+      ).rejects.toBeInstanceOf(MeetingEndedError);
+      expect(sendStateEvent).not.toHaveBeenCalled();
+    });
+
+    it("keeps who closed it when the organizer closes it again", async () => {
+      const { mx, sendStateEvent } = makeClient(
+        makeMeetingRoom([
+          meetingEvent(MEET_ROOM.slug, { ...open, organizerId: SELF_ID }),
+        ]),
+        { [MEET_ROOM.slug]: { ...closed, organizerId: SELF_ID } },
+      );
+
+      await driverWithClient(mx).endChatMeeting(ROOM_ID, MEET_ROOM.slug);
+
+      expect(sendStateEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  it("writes from the homeserver's latest copy of the meeting", async () => {
+    const content = {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now(),
+      organizerId: OTHER_ID,
+    };
+    const agenda = { id: "agenda", title: "Ordre du jour", url: "https://x/a" };
+    const { mx, sendStateEvent } = makeClient(
+      makeMeetingRoom([meetingEvent(MEET_ROOM.slug, content)]),
+      { [MEET_ROOM.slug]: { ...content, documents: [agenda] } },
+    );
+
+    await driverWithClient(mx).setChatMeetingBoard(
+      ROOM_ID,
+      MEET_ROOM.slug,
+      true,
+    );
+
+    // A document listed by someone else meanwhile is not dropped.
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      MEETING_EVENT_TYPE,
+      { ...content, documents: [agenda], boardOpen: true },
+      MEET_ROOM.slug,
+    );
   });
 });
 

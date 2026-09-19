@@ -222,6 +222,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) Open a conversation right after accepting its invitation,
+  instead of reporting it as not joined when a membership check sent just
+  before came back afterwards.
 - 🐛(frontend) Refuse to create a room in a space you may not add rooms
   to, instead of creating it outside the space and reporting a failure
   (so that every retry added one more room).

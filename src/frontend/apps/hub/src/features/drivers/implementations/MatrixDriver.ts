@@ -1428,7 +1428,7 @@ export class MatrixDriver extends Driver {
     // Drop the cached joined set so the conversation's first `getChatMessages`
     // re-reads `/joined_rooms` and sees the room as joined (it isn't in the
     // stale cache captured while the room was still an invite).
-    this.joinedRoomIds = null;
+    this.invalidateJoinedRooms();
     const room = mx.getRoom(chatId);
     if (!room) {
       throw new Error(
@@ -1443,7 +1443,7 @@ export class MatrixDriver extends Driver {
   async refuseChatInvitation(chatId: string): Promise<void> {
     const mx = this.requireClient("refuseChatInvitation");
     await mx.leave(chatId);
-    this.joinedRoomIds = null;
+    this.invalidateJoinedRooms();
     this.emit({ type: "chats:changed" });
   }
 
@@ -1459,7 +1459,7 @@ export class MatrixDriver extends Driver {
     const joinedRoomIds = await this.getJoinedRoomIds(mx);
     if (joinedRoomIds.has(chatId)) {
       await mx.leave(chatId);
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       this.emit({ type: "chats:changed" });
     }
 
@@ -3079,7 +3079,7 @@ export class MatrixDriver extends Driver {
       if (this.typingListeners.has(room.roomId)) {
         this.prepareTypingRoom(room);
       }
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       emitUnread(room);
       emitMainTimelineUnread(room);
       this.emit({ type: "chats:changed" });
@@ -3102,7 +3102,7 @@ export class MatrixDriver extends Driver {
       ) {
         return;
       }
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       if (!this.conversationSearch) this.retryConversationSearch();
       if (!this.messageSearch) this.retryMessageSearch();
       for (const room of mx.getVisibleRooms()) {
@@ -3119,7 +3119,7 @@ export class MatrixDriver extends Driver {
     // (steady-state `Syncing`). Drop the cached joined set and refresh the list
     // here so a left room does not linger. `onRoom` handles brand-new joins.
     const onMyMembership = (room: Room) => {
-      this.joinedRoomIds = null;
+      this.invalidateJoinedRooms();
       void this.conversationSearch?.reconcile();
       emitUnread(room);
       emitMainTimelineUnread(room);
@@ -3235,8 +3235,7 @@ export class MatrixDriver extends Driver {
    * afterwards, and only {@link destroy} ends the stream for good.
    */
   private teardownClient(): void {
-    this.joinedRoomRevision++;
-    this.joinedRoomRefresh = null;
+    this.invalidateJoinedRooms();
     this.clientGeneration++;
     this.conversationSearch?.close();
     this.conversationSearch = null;
@@ -3257,7 +3256,6 @@ export class MatrixDriver extends Driver {
     this.mx = null;
     this.syncPresence = undefined;
     this.presenceSyncDisabled = false;
-    this.joinedRoomIds = null;
     this.sentThreadReplyEventIds.clear();
     this.confirmedMainReadBoundaries.clear();
     this.exactMainTimelineUnreadRooms.clear();
@@ -3452,36 +3450,55 @@ export class MatrixDriver extends Driver {
     );
   }
 
+  /** Reuses the cached set, or the request already on its way for it. */
   private async getJoinedRoomIds(mx: MatrixClient): Promise<Set<string>> {
-    return this.joinedRoomIds ?? this.refreshJoinedRoomIds(mx);
+    return (
+      this.joinedRoomIds ??
+      this.joinedRoomRefresh ??
+      this.refreshJoinedRoomIds(mx)
+    );
+  }
+
+  /**
+   * Our membership changed (joined, left, invitation answered): the cached
+   * set is stale, and so is any answer to a request sent before now - it
+   * must not be written back over the change.
+   */
+  private invalidateJoinedRooms(): void {
+    this.joinedRoomIds = null;
+    this.joinedRoomRevision++;
+    this.joinedRoomRefresh = null;
   }
 
   private async refreshJoinedRoomIds(mx: MatrixClient): Promise<Set<string>> {
     const revision = ++this.joinedRoomRevision;
+    // A superseded caller awaits the latest roster, including its failure,
+    // or asks again when the set was invalidated since its request left.
+    const latest = () => this.getJoinedRoomIds(mx);
     const refresh = (async () => {
       try {
         const { joined_rooms: joinedRooms } = await mx.getJoinedRooms();
         if (this.mx !== mx) throw new Error("Matrix client has been replaced.");
-        if (revision !== this.joinedRoomRevision && this.joinedRoomRefresh)
-          return this.joinedRoomRefresh;
+        if (revision !== this.joinedRoomRevision) return latest();
         const ids = new Set(joinedRooms);
         this.joinedRoomIds = ids;
         this.conversationSearch?.setJoinedRooms(ids);
         this.messageSearch?.setJoinedRooms(ids);
         return ids;
       } catch (error) {
-        // A superseded caller awaits the latest roster, including its failure.
         // Never turn an unknown membership state into a successful empty list.
-        if (
-          this.mx === mx &&
-          revision !== this.joinedRoomRevision &&
-          this.joinedRoomRefresh
-        )
-          return this.joinedRoomRefresh;
+        if (this.mx === mx && revision !== this.joinedRoomRevision)
+          return latest();
         throw error;
       }
     })();
     this.joinedRoomRefresh = refresh;
+    // Settled: the next caller reads the cache, or asks again on failure.
+    void refresh
+      .catch(() => undefined)
+      .then(() => {
+        if (this.joinedRoomRefresh === refresh) this.joinedRoomRefresh = null;
+      });
     return refresh;
   }
 }

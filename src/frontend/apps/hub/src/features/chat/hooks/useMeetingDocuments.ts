@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import { APIError } from "@/features/api/APIError";
@@ -15,8 +15,7 @@ import type { ChatMeetingDocument, ChatRef } from "@/features/drivers/types";
 import { notify } from "@/features/ui/components/toast";
 
 import { chatKeys } from "../chatKeys";
-import { formatFileSize } from "../components/tools-panel/fileSize";
-import { saveFile } from "../saveFile";
+import { useFileTransfer } from "./useFileTransfer";
 
 /** The Hub keeps documents up to this size (see MEETING_ATTACHMENT_MAX_BYTES). */
 export const MAX_MEETING_DOCUMENT_BYTES = 20 * 1024 * 1024;
@@ -26,13 +25,6 @@ const EMPTY: MeetingDocuments = {
   attachments: [],
   isClosed: false,
 };
-
-export class MeetingDocumentTooLargeError extends Error {
-  constructor(name: string) {
-    super(`"${name}" is larger than ${MAX_MEETING_DOCUMENT_BYTES} bytes.`);
-    this.name = "MeetingDocumentTooLargeError";
-  }
-}
 
 export type UseMeetingDocumentsResult = {
   agenda: string;
@@ -69,8 +61,7 @@ export const useMeetingDocuments = (
   target: Target | null,
   enabled: boolean,
 ): UseMeetingDocumentsResult => {
-  const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   /** A member proves their Matrix account; the organizer needs nothing. */
   const proof = async ({ ref, isOrganizer }: Target) =>
@@ -90,49 +81,41 @@ export const useMeetingDocuments = (
     meta: { noGlobalError: true },
   });
 
-  const add = useMutation<void, Error, File[]>({
-    mutationFn: async (files) => {
-      if (!target) {
-        throw new Error("useMeetingDocuments requires a meeting.");
-      }
-      const tooLarge = files.find(
-        (file) => file.size > MAX_MEETING_DOCUMENT_BYTES,
-      );
-      if (tooLarge) {
-        throw new MeetingDocumentTooLargeError(tooLarge.name);
-      }
-      const token = await proof(target);
-      try {
-        for (const file of files) {
-          await uploadMeetingDocument(target.meetingId, file, token);
-        }
-      } finally {
-        void queryClient.invalidateQueries({ queryKey });
-      }
+  const requireTarget = (): Target => {
+    if (!target) {
+      throw new Error("useMeetingDocuments requires a meeting.");
+    }
+    return target;
+  };
+
+  const transfer = useFileTransfer<MeetingAttachmentInfo>({
+    queryKey,
+    maxBytes: MAX_MEETING_DOCUMENT_BYTES,
+    startUpload: async () => {
+      const current = requireTarget();
+      const token = await proof(current);
+      return (file) => uploadMeetingDocument(current.meetingId, file, token);
     },
-    onSuccess: (_data, files) => {
-      notify.brand(
-        files.length > 1
+    fetchBlob: async (attachment) => {
+      const current = requireTarget();
+      return fetchMeetingDocumentFile(
+        current.meetingId,
+        attachment.id,
+        await proof(current),
+      );
+    },
+    messages: {
+      uploaded: (count) =>
+        count > 1
           ? t("Documents added to the meeting")
           : t("Document added to the meeting"),
-      );
+      tooLarge: (size) =>
+        t("A meeting document cannot be larger than {{size}}.", { size }),
+      uploadFailed: (error) =>
+        error instanceof APIError && error.code === 409
+          ? t("The meeting is closed: its documents can no longer change.")
+          : t("The document could not be added. Please try again."),
     },
-    onError: (error) => {
-      notify.error(
-        error instanceof MeetingDocumentTooLargeError
-          ? t("A meeting document cannot be larger than {{size}}.", {
-              size: formatFileSize(
-                MAX_MEETING_DOCUMENT_BYTES,
-                i18n.resolvedLanguage ?? i18n.language,
-                1024,
-              ),
-            })
-          : error instanceof APIError && error.code === 409
-            ? t("The meeting is closed: its documents can no longer change.")
-            : t("The document could not be added. Please try again."),
-      );
-    },
-    meta: { noGlobalError: true },
   });
 
   const createDocument = useMutation<ChatMeetingDocument, Error, string>({
@@ -159,26 +142,6 @@ export const useMeetingDocuments = (
     meta: { noGlobalError: true },
   });
 
-  const fetchFile = useMutation<void, Error, MeetingAttachmentInfo>({
-    mutationFn: async (attachment) => {
-      if (!target) {
-        throw new Error("useMeetingDocuments requires a meeting.");
-      }
-      const blob = await fetchMeetingDocumentFile(
-        target.meetingId,
-        attachment.id,
-        await proof(target),
-      );
-      saveFile(blob, attachment.name);
-    },
-    onError: () => {
-      notify.error(
-        t("The document could not be downloaded. Please try again."),
-      );
-    },
-    meta: { noGlobalError: true },
-  });
-
   const data = query.data ?? EMPTY;
   return {
     agenda: data.agenda,
@@ -187,14 +150,8 @@ export const useMeetingDocuments = (
     isInitialLoading: query.isPending && query.fetchStatus !== "idle",
     isError: query.isError,
     retry: () => void query.refetch(),
-    addFiles: async (files) => {
-      try {
-        await add.mutateAsync(files);
-      } catch {
-        // The error is already shown.
-      }
-    },
-    isAdding: add.isPending,
+    addFiles: transfer.upload,
+    isAdding: transfer.isUploading,
     createDocsDocument: async (title) => {
       try {
         return await createDocument.mutateAsync(title);
@@ -204,15 +161,7 @@ export const useMeetingDocuments = (
       }
     },
     isCreatingDocument: createDocument.isPending,
-    download: async (attachment) => {
-      try {
-        await fetchFile.mutateAsync(attachment);
-      } catch {
-        // The error is already shown.
-      }
-    },
-    pendingAttachmentId: fetchFile.isPending
-      ? (fetchFile.variables?.id ?? null)
-      : null,
+    download: transfer.download,
+    pendingAttachmentId: transfer.pendingId,
   };
 };

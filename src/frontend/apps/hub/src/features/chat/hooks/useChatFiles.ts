@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -7,23 +7,14 @@ import {
   useDriverEntries,
 } from "@/features/drivers/DriverRegistry";
 import type { ChatFile, ChatRef } from "@/features/drivers/types";
-import { notify } from "@/features/ui/components/toast";
 
 import { chatKeys } from "../chatKeys";
-import { formatFileSize } from "../components/tools-panel/fileSize";
-import { saveFile } from "../saveFile";
+import { useFileTransfer } from "./useFileTransfer";
 
 const EMPTY_FILES: ChatFile[] = [];
 
 /** The largest document shared from the device, as most homeservers allow. */
 export const MAX_CHAT_FILE_BYTES = 50 * 1024 * 1024;
-
-export class ChatFileTooLargeError extends Error {
-  constructor(name: string) {
-    super(`"${name}" is larger than ${MAX_CHAT_FILE_BYTES} bytes.`);
-    this.name = "ChatFileTooLargeError";
-  }
-}
 
 export type UseChatFilesResult = {
   files: ChatFile[];
@@ -47,8 +38,7 @@ export const useChatFiles = (
   ref: ChatRef | null,
   enabled: boolean,
 ): UseChatFilesResult => {
-  const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const entries = useDriverEntries();
   const isSupported = useMemo(
     () =>
@@ -59,8 +49,9 @@ export const useChatFiles = (
     [entries, ref],
   );
 
+  const queryKey = ref ? chatKeys.files(ref) : chatKeys.noChat();
   const query = useQuery({
-    queryKey: ref ? chatKeys.files(ref) : chatKeys.noChat(),
+    queryKey,
     queryFn: () =>
       ref
         ? getRegistry().get(ref.accountId).getChatFiles(ref.chatId)
@@ -70,61 +61,33 @@ export const useChatFiles = (
     meta: { noGlobalError: true },
   });
 
-  const upload = useMutation<void, Error, File[]>({
-    mutationFn: async (files) => {
-      if (!ref) {
-        throw new Error("useChatFiles requires a conversation.");
-      }
-      const tooLarge = files.find((file) => file.size > MAX_CHAT_FILE_BYTES);
-      if (tooLarge) {
-        throw new ChatFileTooLargeError(tooLarge.name);
-      }
-      const driver = getRegistry().get(ref.accountId);
-      try {
-        for (const file of files) {
-          await driver.uploadChatFile(ref.chatId, file);
-        }
-      } finally {
-        void queryClient.invalidateQueries({ queryKey: chatKeys.files(ref) });
-      }
-    },
-    onSuccess: (_data, files) => {
-      notify.brand(
-        files.length > 1 ? t("Documents shared") : t("Document shared"),
-      );
-    },
-    onError: (error) => {
-      notify.error(
-        error instanceof ChatFileTooLargeError
-          ? t("A document cannot be larger than {{size}}.", {
-              size: formatFileSize(
-                MAX_CHAT_FILE_BYTES,
-                i18n.resolvedLanguage ?? i18n.language,
-                1024,
-              ),
-            })
-          : t("The document could not be shared. Please try again."),
-      );
-    },
-    meta: { noGlobalError: true },
-  });
+  const requireRef = (): ChatRef => {
+    if (!ref) {
+      throw new Error("useChatFiles requires a conversation.");
+    }
+    return ref;
+  };
 
-  const download = useMutation<void, Error, ChatFile>({
-    mutationFn: async (file) => {
-      if (!ref) {
-        throw new Error("useChatFiles requires a conversation.");
-      }
-      const blob = await getRegistry()
-        .get(ref.accountId)
-        .downloadChatFile(ref.chatId, file.id);
-      saveFile(blob, file.name);
+  const transfer = useFileTransfer<ChatFile>({
+    queryKey,
+    maxBytes: MAX_CHAT_FILE_BYTES,
+    startUpload: async () => {
+      const { accountId, chatId } = requireRef();
+      const driver = getRegistry().get(accountId);
+      return (file) => driver.uploadChatFile(chatId, file);
     },
-    onError: () => {
-      notify.error(
-        t("The document could not be downloaded. Please try again."),
-      );
+    fetchBlob: (file) => {
+      const { accountId, chatId } = requireRef();
+      return getRegistry().get(accountId).downloadChatFile(chatId, file.id);
     },
-    meta: { noGlobalError: true },
+    messages: {
+      uploaded: (count) =>
+        count > 1 ? t("Documents shared") : t("Document shared"),
+      tooLarge: (size) =>
+        t("A document cannot be larger than {{size}}.", { size }),
+      uploadFailed: () =>
+        t("The document could not be shared. Please try again."),
+    },
   });
 
   return {
@@ -133,21 +96,9 @@ export const useChatFiles = (
     isInitialLoading: query.isPending && query.fetchStatus !== "idle",
     isError: query.isError,
     retry: () => void query.refetch(),
-    uploadFiles: async (files) => {
-      try {
-        await upload.mutateAsync(files);
-      } catch {
-        // The error is already shown.
-      }
-    },
-    isUploading: upload.isPending,
-    downloadFile: async (file) => {
-      try {
-        await download.mutateAsync(file);
-      } catch {
-        // The error is already shown.
-      }
-    },
-    pendingFileId: download.isPending ? (download.variables?.id ?? null) : null,
+    uploadFiles: transfer.upload,
+    isUploading: transfer.isUploading,
+    downloadFile: transfer.download,
+    pendingFileId: transfer.pendingId,
   };
 };

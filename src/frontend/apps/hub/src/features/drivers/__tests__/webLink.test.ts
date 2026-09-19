@@ -17,6 +17,7 @@ describe("isWebLink", () => {
     expect(isWebLink("javascript:alert(1)")).toBe(false);
     expect(isWebLink("ftp://example.org")).toBe(false);
     expect(isWebLink("https://")).toBe(false);
+    expect(isWebLink("https://docs.example.org/a b")).toBe(false);
     expect(isWebLink("")).toBe(false);
   });
 });

@@ -1778,6 +1778,57 @@ describe("getChatForUsers (encryption-aware lookup)", () => {
   });
 });
 
+describe("joined rooms cache", () => {
+  const joinedRoomIdsOf = (driver: MatrixDriver, mx: MatrixClient) =>
+    (
+      driver as unknown as {
+        getJoinedRoomIds: (mx: MatrixClient) => Promise<Set<string>>;
+      }
+    ).getJoinedRoomIds(mx);
+
+  it("shares the request already in flight", async () => {
+    const getJoinedRooms = vi.fn(async () => ({ joined_rooms: [ROOM_ID] }));
+    const mx = { getJoinedRooms } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    await Promise.all([
+      joinedRoomIdsOf(driver, mx),
+      joinedRoomIdsOf(driver, mx),
+    ]);
+
+    expect(getJoinedRooms).toHaveBeenCalledTimes(1);
+  });
+
+  it("never writes back a list sent before accepting an invitation", async () => {
+    const room = makeJoinedRoom(ROOM_ID, [OTHER_ID], false);
+    let answerStale: (value: { joined_rooms: string[] }) => void = () => {};
+    const getJoinedRooms = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerStale = resolve;
+          }),
+      )
+      .mockResolvedValue({ joined_rooms: [ROOM_ID] });
+    const mx = {
+      getUserId: () => SELF_ID,
+      getJoinedRooms,
+      joinRoom: vi.fn(async () => room),
+      getRoom: () => room,
+    } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    const before = joinedRoomIdsOf(driver, mx);
+    await driver.acceptChatInvitation(ROOM_ID);
+    // The answer to the request sent while the room was still an invitation.
+    answerStale({ joined_rooms: [] });
+
+    expect((await before).has(ROOM_ID)).toBe(true);
+    expect((await joinedRoomIdsOf(driver, mx)).has(ROOM_ID)).toBe(true);
+  });
+});
+
 describe("inviteToChat", () => {
   it("sends a plain invitation as the current user", async () => {
     const invite = vi.fn(async () => ({}));

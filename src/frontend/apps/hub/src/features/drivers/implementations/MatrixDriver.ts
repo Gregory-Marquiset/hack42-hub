@@ -168,7 +168,7 @@ import {
   uploadRoomFile,
 } from "./matrixRoomFiles";
 import {
-  clearStoredConversationSearch,
+  clearStoredSearch,
   MATRIX_USER_STORAGE_KEY,
   matrixStorageKey,
   matrixStorageOwner,
@@ -312,7 +312,7 @@ export class MatrixDriver extends Driver {
     this.conversationSearch = null;
     this.conversationSearchDatabase = null;
     if (search) await search.remove();
-    else await clearStoredConversationSearch(this.accountId, this.storageOwner);
+    else await clearStoredSearch(this.accountId, this.storageOwner);
   }
 
   override searchMessages(request: MessageSearchRequest) {
@@ -335,7 +335,8 @@ export class MatrixDriver extends Driver {
     const search = this.messageSearch;
     this.messageSearch = null;
     this.messageSearchDatabase = null;
-    if (search) await search.remove?.();
+    if (search) await search.remove();
+    else await clearStoredSearch(this.accountId, this.storageOwner);
   }
 
   override backfillMessageSearchRoom(roomId: string): void {
@@ -3351,22 +3352,25 @@ export class MatrixDriver extends Driver {
   }
 
   private async clearStoredSession(user?: MatrixUserInterface): Promise<void> {
-    const search = this.conversationSearch;
+    const conversationSearch = this.conversationSearch;
+    const messageSearch = this.messageSearch;
     this.teardownClient();
 
     localStorage.removeItem(this.key(STORAGE.user));
     localStorage.removeItem(this.key(STORAGE.oidc));
     sessionStorage.removeItem(this.key(STORAGE.oidcState));
 
-    let searchCleanup: Promise<void> | undefined;
-    if (search) {
-      searchCleanup = search.remove();
-    } else if (user) {
-      searchCleanup = SearchStorage.remove(this.searchStoreDbName(user));
+    // Both indexes hold message text or room names: neither may outlive the
+    // session. They share one database, which either removal deletes.
+    const searchCleanup: Promise<unknown>[] = [];
+    if (conversationSearch) searchCleanup.push(conversationSearch.remove());
+    if (messageSearch) searchCleanup.push(messageSearch.remove());
+    if (searchCleanup.length === 0 && user) {
+      searchCleanup.push(SearchStorage.remove(this.searchStoreDbName(user)));
     }
 
     await Promise.all([
-      searchCleanup,
+      ...searchCleanup,
       this.deleteIndexedDb(this.key(SYNC_STORE_DB_NAME)),
       this.deleteIndexedDb(this.key(CRYPTO_STORE_DB_NAME)),
       ...(user ? [this.deleteIndexedDb(this.cryptoStoreDbName(user))] : []),

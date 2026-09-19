@@ -53,10 +53,7 @@ import type {
   User,
 } from "../types";
 
-import {
-  clearStoredConversationSearch,
-  matrixStorageOwner,
-} from "./matrixStorage";
+import { clearStoredSearch, matrixStorageOwner } from "./matrixStorage";
 import { readChatSelfPresencePreference } from "../presencePreference";
 
 /**
@@ -87,7 +84,7 @@ export class LazyMatrixDriver extends BaseDriver {
 
   override async clearConversationSearch(): Promise<void> {
     if (this.target) await this.target.clearConversationSearch();
-    else await clearStoredConversationSearch(this.accountId, this.storageOwner);
+    else await clearStoredSearch(this.accountId, this.storageOwner);
   }
 
   override readonly supportsMessageSearch = true;
@@ -110,6 +107,7 @@ export class LazyMatrixDriver extends BaseDriver {
 
   override async clearMessageSearch(): Promise<void> {
     if (this.target) await this.target.clearMessageSearch();
+    else await clearStoredSearch(this.accountId, this.storageOwner);
   }
 
   override backfillMessageSearchRoom(roomId: string): void {

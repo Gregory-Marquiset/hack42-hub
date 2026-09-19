@@ -222,6 +222,8 @@ and this project adheres to
 
 ### Fixed
 
+- 🔒️(search) Erase the message search index at logout, even when the
+  Matrix driver never loaded in that tab: it keeps message text.
 - 🐛(search) Make "Retry indexing" fetch again the conversations whose
   history failed, report a missing message search storage, and recover
   message search after another tab logged out.

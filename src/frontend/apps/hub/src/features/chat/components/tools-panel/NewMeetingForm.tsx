@@ -1,5 +1,5 @@
 import { Plus, XMark } from "@gouvfr-lasuite/ui-components/icons";
-import { type ChangeEvent, useEffect, useId, useRef, useState } from "react";
+import { type ChangeEvent, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatMeetingDuration } from "@/features/drivers/meetingTime";
@@ -7,32 +7,20 @@ import type {
   ChatMeeting,
   StartMeetingOptions,
 } from "@/features/drivers/types";
-import { notify } from "@/features/ui/components/toast";
 
 import { DocsLinkDraft } from "./DocsLinkDraft";
-import { formatFileSize } from "./fileSize";
 import { Download } from "./MeetingIcons";
-import { TEXT_FILE_ACCEPT, isTextFile } from "./textFile";
+import { TEXT_FILE_ACCEPT } from "./textFile";
 import { ToolsPanelHeader } from "./ToolsPanelHeader";
+import { type DraftDocument, useDraftDocuments } from "./useDraftDocuments";
 
-type DraftDocument = {
-  id: string;
-  title: string;
-  url: string;
-  /** Picked on this device and served from a blob URL, to release on removal. */
-  isLocalFile?: boolean;
-  /** Text of a picked file, kept by the Hub for the meeting archive. */
-  content?: string;
-};
+export { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "./useDraftDocuments";
 
 /** Planned lengths offered in the form, in minutes. */
 export const MEETING_DURATIONS = [15, 30, 45, 60, 90, 120, 180] as const;
 export const DEFAULT_MEETING_DURATION = 60;
-/** Attached text files are kept by the Hub: small ones only. */
-export const MAX_ATTACHMENT_BYTES = 100_000;
 /** What the Hub accepts (see `MeetingCreateSerializer`). */
 export const MAX_AGENDA_LENGTH = 20_000;
-export const MAX_ATTACHMENTS = 20;
 
 type NewMeetingFormProps = {
   isOpen: boolean;
@@ -51,15 +39,6 @@ type NewMeetingFormProps = {
   /** Schedules the call at the chosen date and time. */
   onSchedule: (options: StartMeetingOptions) => void;
 };
-
-/** The text of a picked file. */
-const readText = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
-  });
 
 /** The local date and time of the form as a `Date`, when both are set. */
 const toStartDate = (date: string, time: string): Date | undefined => {
@@ -127,7 +106,7 @@ export const NewMeetingForm = ({
   onStartNow,
   onSchedule,
 }: NewMeetingFormProps) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const titleId = useId();
   const dateId = useId();
   const timeId = useId();
@@ -140,149 +119,39 @@ export const NewMeetingForm = ({
     DEFAULT_MEETING_DURATION,
   );
   const [agenda, setAgenda] = useState("");
-  const [agendaFile, setAgendaFile] = useState<DraftDocument | null>(null);
-  const [documents, setDocuments] = useState<DraftDocument[]>([]);
   const [isAddingDocument, setIsAddingDocument] = useState(false);
   const agendaFileInputRef = useRef<HTMLInputElement>(null);
   const documentFileInputRef = useRef<HTMLInputElement>(null);
-  const nextDocumentId = useRef(0);
-  const localFileUrls = useRef(new Set<string>());
+  const {
+    agendaFile,
+    documents,
+    attachments,
+    links,
+    attachAgendaFile,
+    removeAgendaFile,
+    attachDocumentFiles,
+    addLink,
+    removeDocument,
+  } = useDraftDocuments();
 
   const tabIndex = isOpen ? 0 : -1;
 
-  const pickedFiles = [agendaFile, ...documents].filter(
-    (doc): doc is DraftDocument => doc?.content !== undefined,
-  );
   const meetingOptions: StartMeetingOptions = {
     title: title.trim() || undefined,
     plannedDurationMinutes: durationMinutes,
     agenda: agenda.trim() || undefined,
-    attachments: pickedFiles.map((doc) => ({
-      name: doc.title,
-      content: doc.content ?? "",
-    })),
+    attachments,
     // Links are listed for every member; picked files only go to the archive.
-    documents: documents
-      .filter((doc) => !doc.isLocalFile)
-      .map(({ id, title: docTitle, url }) => ({ id, title: docTitle, url })),
+    documents: links,
   };
   const startsAt = toStartDate(date, time);
   const canSchedule = startsAt !== undefined && startsAt.getTime() > Date.now();
 
-  // Blob URLs of picked files live until their document is removed, or the
-  // form goes away.
-  useEffect(() => {
-    const urls = localFileUrls.current;
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-      urls.clear();
-    };
-  }, []);
-
-  const newDocumentId = () => `document-${nextDocumentId.current++}`;
-
-  const toLocalDocument = async (file: File): Promise<DraftDocument> => {
-    const content = await readText(file);
-    const url = URL.createObjectURL(file);
-    localFileUrls.current.add(url);
-    return {
-      id: newDocumentId(),
-      title: file.name,
-      url,
-      isLocalFile: true,
-      content,
-    };
-  };
-
-  /** The picked files, read; an unreadable or too large one is refused. */
-  const readFiles = async (files: File[]): Promise<DraftDocument[]> => {
-    const readable = files.filter((file) => file.size <= MAX_ATTACHMENT_BYTES);
-    if (readable.length !== files.length) {
-      notify.error(
-        t("A file is too large to be attached ({{size}} at most).", {
-          size: formatFileSize(
-            MAX_ATTACHMENT_BYTES,
-            i18n.resolvedLanguage ?? i18n.language,
-          ),
-        }),
-      );
-    }
-    try {
-      return await Promise.all(readable.map(toLocalDocument));
-    } catch {
-      notify.error(t("The file could not be read."));
-      return [];
-    }
-  };
-
-  const release = (document: DraftDocument | null | undefined) => {
-    if (document?.isLocalFile) {
-      URL.revokeObjectURL(document.url);
-      localFileUrls.current.delete(document.url);
-    }
-  };
-
-  /** The picked .txt/.md files; any other type is refused with a message. */
-  const pickTextFiles = (event: ChangeEvent<HTMLInputElement>): File[] => {
+  /** The files of a picker, which is reset to fire again on the same file. */
+  const picked = (event: ChangeEvent<HTMLInputElement>): File[] => {
     const files = Array.from(event.target.files ?? []);
-    // Reset so picking the same file again still fires `change`.
     event.target.value = "";
-    const accepted = files.filter((file) => isTextFile(file.name));
-    if (accepted.length !== files.length) {
-      notify.error(t("Only .txt or .md files can be attached."));
-    }
-    return accepted;
-  };
-
-  /** The files that still fit in the Hub's limit, with a message if any does not. */
-  const withinLimit = (files: File[], room: number): File[] => {
-    if (files.length <= room) {
-      return files;
-    }
-    notify.error(
-      t("A meeting can have {{max}} attached files at most.", {
-        max: MAX_ATTACHMENTS,
-      }),
-    );
-    return files.slice(0, Math.max(room, 0));
-  };
-
-  const attachAgendaFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    // The agenda file replaces the current one, if any.
-    const room = MAX_ATTACHMENTS - pickedFiles.length + (agendaFile ? 1 : 0);
-    const [file] = withinLimit(pickTextFiles(event), room);
-    if (!file) {
-      return;
-    }
-    const picked = await readFiles([file]);
-    if (picked.length === 0) {
-      return;
-    }
-    release(agendaFile);
-    setAgendaFile(picked[0]);
-  };
-
-  const removeAgendaFile = () => {
-    release(agendaFile);
-    setAgendaFile(null);
-  };
-
-  const attachDocumentFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    const added = await readFiles(
-      withinLimit(pickTextFiles(event), MAX_ATTACHMENTS - pickedFiles.length),
-    );
-    if (added.length > 0) {
-      setDocuments((current) => [...current, ...added]);
-    }
-  };
-
-  const addDocument = (link: { title: string; url: string }) => {
-    setDocuments((current) => [...current, { id: newDocumentId(), ...link }]);
-  };
-
-  const removeDocument = (document: DraftDocument) => {
-    release(document);
-    setDocuments((current) => current.filter((doc) => doc.id !== document.id));
+    return files;
   };
 
   return (
@@ -381,7 +250,7 @@ export const NewMeetingForm = ({
               accept={TEXT_FILE_ACCEPT}
               hidden
               data-testid="agenda-file-input"
-              onChange={attachAgendaFile}
+              onChange={(event) => void attachAgendaFile(picked(event))}
             />
           </div>
           <textarea
@@ -431,7 +300,7 @@ export const NewMeetingForm = ({
               multiple
               hidden
               data-testid="document-file-input"
-              onChange={attachDocumentFiles}
+              onChange={(event) => void attachDocumentFiles(picked(event))}
             />
           </div>
           {documents.length === 0 && !isAddingDocument && (
@@ -452,7 +321,7 @@ export const NewMeetingForm = ({
 
           <DocsLinkDraft
             tabIndex={tabIndex}
-            onAdd={addDocument}
+            onAdd={addLink}
             onOpenChange={setIsAddingDocument}
           />
         </section>

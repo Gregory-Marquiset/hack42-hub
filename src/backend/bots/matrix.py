@@ -252,17 +252,19 @@ def get_event(room_id: str, event_id: str) -> dict[str, Any]:
 
 
 def thread_replies(room_id: str, root_id: str) -> list[dict[str, Any]]:
-    """Every reply in a thread, oldest first.
+    """The replies in a thread, oldest first: the latest ones when it is long.
 
-    `limit` is not optional. Synapse silently defaults to 5 events and returns
-    them newest-first, so an omitted limit quietly truncates the context to the
-    tail of the conversation.
+    `limit` is not optional. Synapse silently defaults to 5 events, so an
+    omitted limit quietly truncates the context.
+
+    Pages are read newest first (`dir=b`) and stop at `BOTS_MAX_THREAD_EVENTS`:
+    a long thread is cut at its start, never at the end where the question is.
     """
     events: list[dict[str, Any]] = []
     token: str | None = None
 
     while True:
-        params: dict[str, Any] = {"dir": "f", "limit": 100}
+        params: dict[str, Any] = {"dir": "b", "limit": 100}
         if token:
             params["from"] = token
         page = _as(
@@ -276,7 +278,7 @@ def thread_replies(room_id: str, root_id: str) -> list[dict[str, Any]]:
         if not token or len(events) >= settings.BOTS_MAX_THREAD_EVENTS:
             break
 
-    return events
+    return list(reversed(events[: settings.BOTS_MAX_THREAD_EVENTS]))
 
 
 def recent_messages(room_id: str, limit: int = 20) -> list[dict[str, Any]]:

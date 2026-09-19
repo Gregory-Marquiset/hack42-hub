@@ -103,6 +103,30 @@ def test_membership_since_without_profile_change(monkeypatch):
     assert matrix.membership_since(ROOM, "@bob:localhost") == 2_000
 
 
+@override_settings(BOTS_MAX_THREAD_EVENTS=150)
+def test_thread_replies_keeps_the_latest_when_capped(monkeypatch):
+    """A long thread loses its oldest replies, never the latest ones."""
+    replies = [{"event_id": f"${n}"} for n in range(250)]
+    newest_first = list(reversed(replies))
+    calls = []
+
+    def relations(_method, _path, *, params, **_kwargs):
+        calls.append(dict(params))
+        start = int(params.get("from", 0))
+        end = start + params["limit"]
+        return {
+            "chunk": newest_first[start:end],
+            **({"next_batch": str(end)} if end < len(replies) else {}),
+        }
+
+    monkeypatch.setattr(matrix, "_as", relations)
+
+    events = matrix.thread_replies(ROOM, "$root")
+
+    assert events == replies[100:]
+    assert [call["dir"] for call in calls] == ["b", "b"]
+
+
 def test_membership_since_unreadable_history_is_stricter(monkeypatch):
     """When the join cannot be reached, the latest known event is the horizon."""
     _state(monkeypatch, [AVATAR], [RENAMED])

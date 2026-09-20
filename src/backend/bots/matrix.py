@@ -1,12 +1,17 @@
 """How Ariane touches Matrix.
 
-One token: the Application Service token. It lets her act as any account in her
-namespace through `?user_id=`, and that is all the authority she has. It cannot
-get her into a room nobody invited her to - the client API answers
-`M_FORBIDDEN` there, by design, and that refusal is now the feature rather than
-an obstacle to route around.
+She acts with one token: the Application Service token. It lets her act as any
+account in her namespace through `?user_id=`, and that is all the authority she
+has. It cannot get her into a room nobody invited her to - the client API
+answers `M_FORBIDDEN` there, by design, and that refusal is the feature rather
+than an obstacle to route around.
 
-Never hand the token to the frontend.
+The backend holds a second one, the Synapse admin token (`MATRIX_ADMIN_TOKEN`),
+used through `_admin` by two read-only calls and nothing else, for the Hub
+meetings: `joined_members` (who may read a meeting, whom to tell about it) and
+`room_name` (how to call the conversation). Neither acts in a room.
+
+Never hand either token to the frontend.
 """
 
 from __future__ import annotations
@@ -21,10 +26,6 @@ from django.conf import settings
 import requests
 
 logger = logging.getLogger(__name__)
-
-# `_call` mirrors an HTTP call: method, path, token and the three optional
-# request parts. Splitting it would only move the arguments elsewhere.
-# pylint: disable=too-many-arguments
 
 CLIENT_API = "/_matrix/client/v3"
 CLIENT_API_V1 = "/_matrix/client/v1"
@@ -99,14 +100,14 @@ def is_member(room_id: str) -> bool:
 def ensure_in_room(room_id: str) -> bool:
     """Accept an invitation to this room, and say whether Ariane is now in it.
 
-    She is never let in by force. The previous version fell back to the Synapse
-    admin API when the ordinary join was refused, which meant one member could
-    put an assistant into a room without asking anyone - including the people
-    already talking in it. An invitation is the whole consent mechanism Matrix
-    offers, and using it is the difference between a colleague and a wiretap.
+    She is never let in by force: no admin API, only an ordinary join, which
+    the homeserver refuses without an invitation. Letting one member put an
+    assistant into a room would skip everyone already talking in it; an
+    invitation is the whole consent mechanism Matrix offers, and using it is
+    the difference between a colleague and a wiretap.
 
-    Returns False when she has not been invited. The caller answers that in the
-    room, so a ping never produces silence.
+    Returns False when she has not been invited: she cannot speak in the room
+    then, and stays silent there.
     """
     if is_member(room_id):
         return True
@@ -167,6 +168,12 @@ def membership_since(room_id: str, user_id: str) -> int | None:
     window we fetched would simply be missing from `/messages`, and a missing
     horizon reads as "no restriction" - the wrong way to fail.
 
+    The state holds the latest membership event, and a new display name or
+    avatar is one too: it is followed back (`unsigned.replaces_state`) to the
+    event that made them join, or the horizon would move to the last profile
+    change. When that walk cannot finish, the latest event is used: later than
+    the real join, so stricter, never looser.
+
     Returns None when the membership event cannot be found, which callers must
     treat as "cut everything", not as "allow everything".
     """
@@ -178,19 +185,49 @@ def membership_since(room_id: str, user_id: str) -> int | None:
 
     for event in events:
         if event.get("type") == "m.room.member" and event.get("state_key") == user_id:
-            return event.get("origin_server_ts")
+            return _joined_by(room_id, event).get("origin_server_ts")
     return None
 
 
+# Profile changes followed back to a join, at most. A person who renamed
+# themselves more often than that gets a later, stricter horizon.
+MAX_PROFILE_CHANGES = 20
+
+
+def _joined_by(room_id: str, event: dict[str, Any]) -> dict[str, Any]:
+    """The membership event that started the membership `event` belongs to."""
+    for _ in range(MAX_PROFILE_CHANGES):
+        unsigned = event.get("unsigned") or {}
+        previous = unsigned.get("prev_content") or {}
+        replaces = unsigned.get("replaces_state")
+        if (
+            (event.get("content") or {}).get("membership") != "join"
+            or previous.get("membership") != "join"
+            or not replaces
+        ):
+            return event
+        try:
+            event = get_event(room_id, replaces)
+        except MatrixError as exc:
+            logger.info("membership history of %s unreadable: %s", room_id, exc)
+            return event
+    return event
+
+
 def is_encrypted(room_id: str) -> bool:
-    """A room Ariane cannot read. Better to say so than to post into the void."""
+    """A room Ariane cannot read. Better to say so than to post into the void.
+
+    Asked once she is in the room: before that, the homeserver answers
+    M_FORBIDDEN, which says nothing about encryption and raises like any other
+    failure rather than passing for "not encrypted".
+    """
     try:
         _as(
             "GET",
             f"{CLIENT_API:s}/rooms/{quote(room_id, safe=''):s}/state/m.room.encryption",
         )
     except MatrixError as exc:
-        if exc.errcode in ("M_NOT_FOUND", "M_FORBIDDEN"):
+        if exc.errcode == "M_NOT_FOUND":
             return False
         raise
     return True
@@ -221,17 +258,19 @@ def get_event(room_id: str, event_id: str) -> dict[str, Any]:
 
 
 def thread_replies(room_id: str, root_id: str) -> list[dict[str, Any]]:
-    """Every reply in a thread, oldest first.
+    """The replies in a thread, oldest first: the latest ones when it is long.
 
-    `limit` is not optional. Synapse silently defaults to 5 events and returns
-    them newest-first, so an omitted limit quietly truncates the context to the
-    tail of the conversation.
+    `limit` is not optional. Synapse silently defaults to 5 events, so an
+    omitted limit quietly truncates the context.
+
+    Pages are read newest first (`dir=b`) and stop at `BOTS_MAX_THREAD_EVENTS`:
+    a long thread is cut at its start, never at the end where the question is.
     """
     events: list[dict[str, Any]] = []
     token: str | None = None
 
     while True:
-        params: dict[str, Any] = {"dir": "f", "limit": 100}
+        params: dict[str, Any] = {"dir": "b", "limit": 100}
         if token:
             params["from"] = token
         page = _as(
@@ -245,7 +284,7 @@ def thread_replies(room_id: str, root_id: str) -> list[dict[str, Any]]:
         if not token or len(events) >= settings.BOTS_MAX_THREAD_EVENTS:
             break
 
-    return events
+    return list(reversed(events[: settings.BOTS_MAX_THREAD_EVENTS]))
 
 
 def recent_messages(room_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -313,20 +352,33 @@ def can_write_rooms() -> bool:
     return bool(settings.MATRIX_AS_TOKEN and settings.MATRIX_BOT_USER_ID)
 
 
+def can_read_members() -> bool:
+    """Whether the backend may ask who is in a room and what it is called."""
+    return bool(settings.MATRIX_ADMIN_TOKEN)
+
+
 def _admin(method: str, path: str) -> dict[str, Any]:
     """Call the Synapse admin API. Read-only by convention - see `joined_members`."""
+    if not can_read_members():
+        raise MatrixError(f"{method:s} {path:s}: no Matrix admin token")
     try:
         response = requests.request(
             method,
-            f"{settings.MATRIX_HOMESERVER_URL:s}{path:s}",
+            f"{settings.MATRIX_HOMESERVER_URL.rstrip('/'):s}{path:s}",
             headers={"Authorization": f"Bearer {settings.MATRIX_ADMIN_TOKEN:s}"},
             timeout=settings.MATRIX_REQUEST_TIMEOUT,
         )
     except requests.RequestException as exc:
         raise MatrixError(f"{method:s} {path:s} failed: {exc!s}") from exc
     if response.status_code >= 400:
-        raise MatrixError(f"{method:s} {path:s} -> {response.status_code:d}")
-    return response.json() or {}
+        raise MatrixError(
+            f"{method:s} {path:s} -> {response.status_code:d}",
+            status_code=response.status_code,
+        )
+    try:
+        return response.json() or {}
+    except ValueError as exc:
+        raise MatrixError(f"{method:s} {path:s}: unreadable answer") from exc
 
 
 def _state_path(room_id: str, event_type: str, state_key: str) -> str:
@@ -351,10 +403,9 @@ def set_room_state(
 def joined_members(room_id: str) -> set[str]:
     """Who is in a room now, so the backend can answer "may this person read it".
 
-    This is the one call that does not go through `_as`, and the only remaining
-    use of the Synapse admin token: it answers for rooms Ariane was never
-    invited to, which is the point - the question is about the person asking,
-    not about her. It reads; it never joins anything.
+    It goes through the Synapse admin API rather than `_as`: it answers for
+    rooms Ariane was never invited to, which is the point - the question is
+    about the person asking, not about her. It reads; it never joins anything.
     """
     members = _admin(
         "GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe=''):s}/members"

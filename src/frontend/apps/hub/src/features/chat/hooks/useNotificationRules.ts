@@ -1,7 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { Driver } from "@/features/drivers/Driver";
 import { getRegistry } from "@/features/drivers/DriverRegistry";
 import type {
   AccountId,
@@ -28,18 +34,28 @@ export type UseNotificationRulesResult = {
   refetch: () => void;
 };
 
+/**
+ * The one query for an account's notification rules, shared by the settings
+ * panel and the notification hook so both read the same cache.
+ */
+export const notificationRulesQuery = (
+  accountId: AccountId,
+  driver?: Pick<Driver, "getNotificationRules">,
+) =>
+  queryOptions({
+    queryKey: chatKeys.notificationRules(accountId),
+    queryFn: () =>
+      (driver ?? getRegistry().get(accountId)).getNotificationRules(),
+    staleTime: Infinity,
+    meta: { noGlobalError: true },
+  });
+
 /** Every notification rule for one account (see `Driver.getNotificationRules`). */
 export const useNotificationRules = (
   accountId: AccountId,
   enabled: boolean,
 ): UseNotificationRulesResult => {
-  const query = useQuery({
-    queryKey: chatKeys.notificationRules(accountId),
-    queryFn: () => getRegistry().get(accountId).getNotificationRules(),
-    enabled,
-    staleTime: Infinity,
-    meta: { noGlobalError: true },
-  });
+  const query = useQuery({ ...notificationRulesQuery(accountId), enabled });
 
   return {
     rules: query.data ?? EMPTY_RULES,

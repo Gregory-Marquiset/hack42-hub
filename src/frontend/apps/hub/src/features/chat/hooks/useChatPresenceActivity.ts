@@ -10,6 +10,8 @@ import type {
   ChatUserPresenceState,
 } from "@/features/drivers/types";
 
+import { selfPresencePreferenceQuery } from "./useChatSelfPresencePreference";
+
 export const CHAT_PRESENCE_IDLE_MS = 5 * 60 * 1000;
 
 type ActivitySession = {
@@ -48,11 +50,9 @@ export const useChatPresenceActivity = (isInCall = false): void => {
     [connectionSignature, driverEntries],
   );
   const preferences = useQueries({
-    queries: entries.map(({ accountId, driver }) => ({
-      queryKey: chatKeys.selfPresencePreference(accountId),
-      queryFn: () => driver.getSelfPresencePreference(),
-      staleTime: Infinity,
-    })),
+    queries: entries.map(({ accountId, driver }) =>
+      selfPresencePreferenceQuery(accountId, driver),
+    ),
     combine: (results) => results.map(({ data }) => data ?? null),
   });
 

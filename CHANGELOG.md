@@ -208,6 +208,21 @@ and this project adheres to
 
 ### Changed
 
+- 🔧(meetings) Throttle meeting renames and extensions on their own
+  `meeting_update` scope, set by API_MEETING_UPDATE_THROTTLE_RATE.
+- 🔧(bots) Read MATRIX_AS_TOKEN, MATRIX_HS_TOKEN, MATRIX_ADMIN_TOKEN and
+  ALBERT_API_KEY as secrets, which also accept a `_FILE` variant.
+- ♻️(meetings) Tidy the meetings and assistant code: refusals raised once,
+  one room-name helper, shared command parsing and test fixtures.
+- ♻️(search) Share the search database opening and the empty-results
+  message between conversations and messages, and drop unused state.
+- ♻️(frontend) Decide a new room's encryption and invitations in one
+  place, and share the account-driver lookup, the mention candidates, the
+  joined-room check, the presence preference query and availability menu.
+- ♻️(notifications) Unmute from the settings panel through the same hook
+  as the conversation header.
+- ♻️(search) Reduce the message history pool to a first-come queue of two
+  jobs, whose cancel also stops the jobs already running.
 - ✨(frontend) Expand the message composer up to eight lines
 - ⚡(frontend) Speed up the emoji picker and align reaction artwork
 - 💄(frontend) Improve message dates and bubble readability
@@ -219,9 +234,117 @@ and this project adheres to
 - ♻️(frontend) Simplify the conversation auto-scroll onto the Virtuoso API
 - 💄(frontend) Use the brand color for the current user's message bubbles
 - 🔥(frontend) Remove the meeting entry from the side panel quick actions
+- ♻️(meetings) Share the file transfer, rows, link draft and invitation link
+  of the meetings and documents panels instead of keeping copies of them.
+
+### Removed
+
+- 🔥(meetings) Remove the meeting summary field nothing wrote, an unused
+  icon and a redundant refresh of the meetings once a transcript is saved.
+- 🔥(frontend) Remove seven French translations no code uses any more.
 
 ### Fixed
 
+- 🐛(bots) Fall back only to an Albert chat model when no preferred model is
+  served, rather than to whatever comes first, such as an embedding model.
+- 🐛(meetings) Give Ariane's `/aide` in a call its own text, about what she
+  reads of a call, and stop reading her help and failures back as answers.
+- 🔒️(profiles) Prove the chat account with a short-lived OpenID token when
+  saving a role, instead of sending the browser's Matrix access token.
+- 🐛(meetings) Keep Ariane's answer in a call until the scribe reports it
+  posted: an answer that failed to send was marked delivered and lost.
+- 🐛(bots) Have Ariane say she cannot answer whatever fails after a ping,
+  a homeserver error or a bug, instead of staying silent.
+- 🐛(bots) Check whether a room is encrypted once Ariane is in it: before,
+  the refusal to read its state passed for "not encrypted".
+- 🐛(bots) Keep the latest replies of a long thread in Ariane's context, not
+  the oldest ones.
+- 🐛(bots) Remember the pings Ariane handled in the shared cache, so a
+  replayed transaction reaching another worker is not answered twice.
+- 🐛(bots) Keep Ariane's reading horizon at the join when someone changes
+  their display name or avatar, which used to reset it to that change.
+- 🐛(meetings) Accept an empty `chat_id` when creating a meeting, as when it
+  is left out, instead of answering 400.
+- 🐛(meetings) Close a meeting planned without an end once its call is empty
+  an hour after it began: it used to stay open for good.
+- 🐛(meetings) Refuse a meeting whose planned end is not after its start,
+  which gave negative durations in Ariane's messages.
+- 🐛(meetings) Save a meeting transcript in Docs once when the automatic
+  closing and the organizer (or a double click) close it at the same time.
+- 🐛(meetings) Refuse a member or fall back to a generic room name when the
+  Matrix admin token is missing, instead of failing with a server error.
+- 🐛(meetings) Keep a closed meeting closed: toggling its board or adding a
+  document before the closing reached this device rewrote the meeting
+  without it. Every change now starts from the homeserver's latest copy.
+- 🐛(meetings) Offer to join the call in progress from the new meeting form,
+  instead of silently dropping its name, agenda and documents when "Start
+  now" could only rejoin that call.
+- 🐛(meetings) Say "This meeting is over" when an old invitation opens a
+  closed meeting, instead of joining its call and closing the window at once
+  as if its organizer had just closed it.
+- 🐛(meetings) Refuse a meeting link typed without `http(s)://`: it was
+  accepted, then hidden from the details and the archive, or listed in the
+  history as a broken link.
+- 🐛(meetings) Hold the new meeting form to what the Hub accepts, an agenda
+  of 20,000 characters and 20 attached files, with a message, instead of
+  failing to create the meeting.
+- ⚡(frontend) Refresh the open Documents panel only when a new message
+  shares a document, not on every message: each refresh read up to 500
+  events of the conversation's history.
+- 🐛(meetings) Keep the new Docs document draft open when the document is
+  created but cannot be listed with the meeting, and retry listing that
+  same document instead of leaving it orphaned in Docs.
+- 🐛(meetings) Stop offering to add documents to a meeting the Hub already
+  closed, or one past its time, which the Hub then refused.
+- 🌐(meetings) Translate the duration units of the meetings ("min", "h",
+  "+15 min"), and state file size limits from the limits themselves.
+- 🐛(frontend) Remove the profile photo laid over a library avatar when
+  it changes or its screen closes, instead of leaving the old one behind,
+  and stop re-checking the page on every change of the document.
+- 🐛(search) Cancel the last step of a jump to a message when its
+  conversation view closes before it runs.
+- 🐛(frontend) Show your own presence right after choosing busy as others
+  see it, instead of a value no presence badge knows, and keep the
+  availability menu working when local storage is refused.
+- 🐛(notifications) Read the muted conversations through the shared cache
+  of notification rules, without an unhandled error before the chat
+  account is connected, and without an older answer overwriting a newer.
+- 🐛(notifications) Show a notification category as off when its rules are
+  set to stay silent (an empty action list since Matrix 1.7), and switch
+  it back on for real by restoring the rules' default actions.
+- 🐛(frontend) Stop leaking a copy of an avatar picture in memory each time
+  it is displayed again: one copy per picture, released at logout.
+- 🐛(frontend) Offer the assistant's commands only once she is mentioned
+  the way she answers to (`@Ariane`, not a name containing hers), and name
+  her as configured in the messages about inviting her.
+- 🐛(frontend) Keep the composer from crashing on Enter when the mention
+  list shrinks under the highlighted row (someone left the room).
+- 🐛(frontend) Open a conversation right after accepting its invitation,
+  instead of reporting it as not joined when a membership check sent just
+  before came back afterwards.
+- 🐛(frontend) Refuse to create a room in a space you may not add rooms
+  to, instead of creating it outside the space and reporting a failure
+  (so that every retry added one more room).
+- 🐛(frontend) Reopen the group already shared with the same people from
+  New Chat, instead of creating a new one each time: the assistant, who
+  joins every clear group, made it look like another set of people.
+- 🐛(search) Stop the message search index from growing without end: a
+  conversation left is dropped from it, and a conversation keeps its most
+  recent 2,000 messages.
+- 🔒️(search) Erase the message search index at logout, even when the
+  Matrix driver never loaded in that tab: it keeps message text.
+- 🐛(search) Make "Retry indexing" fetch again the conversations whose
+  history failed, report a missing message search storage, and recover
+  message search after another tab logged out.
+- 🐛(search) Keep message search in step with the conversation: an edited
+  message is found by its new text instead of appearing twice, a deleted
+  one is no longer found, and your own and encrypted messages are indexed
+  as they arrive instead of waiting for the history to be fetched.
+- 🐛(search) Make `mentions:` find the messages mentioning that person,
+  not the ones they sent, and the replies to their messages.
+- 🐛(search) Highlight the matched words of a message search result: the
+  highlight was computed on a trimmed copy of the message and not moved
+  with the excerpt cut around it, so it landed on other characters.
 - 🐛(search) Fix the jump to a message found via search: it could fail to
   scroll when also switching conversation, land without any visible
   motion, or break the conversation view entirely when the target message

@@ -9,3 +9,14 @@ export class MeetingNotAllowedError extends Error {
     this.name = "MeetingNotAllowedError";
   }
 }
+
+/**
+ * The meeting was closed, maybe on another device or by the server before
+ * this one heard of it: it can no longer change.
+ */
+export class MeetingEndedError extends Error {
+  constructor(meetingId: string) {
+    super(`The meeting "${meetingId}" is closed.`);
+    this.name = "MeetingEndedError";
+  }
+}

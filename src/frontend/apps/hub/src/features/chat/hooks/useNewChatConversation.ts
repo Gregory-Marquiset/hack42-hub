@@ -66,6 +66,7 @@ export const useNewChatConversation = ({
   // encrypted room.
   const { chat } = useChatForUsers(isNew ? selectedUserIds : [], {
     encrypted: willEncrypt,
+    assistantUserId: assistant.userId || undefined,
   });
   const isCreationSupported = useChatCreationSupport(accountId);
   const isCompositionSupported = useAccountChatCompositionSupport(accountId);

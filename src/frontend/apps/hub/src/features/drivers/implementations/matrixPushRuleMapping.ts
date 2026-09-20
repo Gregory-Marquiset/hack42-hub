@@ -46,7 +46,7 @@ export const toPushRuleActions = (
     return { set_tweak: TweakName.Highlight, value: action.value };
   });
 
-export const toNotificationRule = (
+const toNotificationRule = (
   rule: IPushRule,
   kind: NotificationRuleKind,
 ): NotificationRule => ({

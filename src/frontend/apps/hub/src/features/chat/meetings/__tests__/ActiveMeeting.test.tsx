@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   meetings: [] as ChatMeeting[],
   boardUrl: null as string | null,
   boardName: undefined as string | undefined,
+  isInitialLoading: false,
 }));
 const endMeeting = vi.hoisted(() => vi.fn(async () => undefined));
 const extendMeeting = vi.hoisted(() => vi.fn(async () => undefined));
@@ -32,7 +33,12 @@ const setBoard = vi.hoisted(() => vi.fn(async () => undefined));
 const notifyBrand = vi.hoisted(() => vi.fn());
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(options?.[name] ?? ""),
+      ),
+  }),
 }));
 vi.mock("@/features/auth/Auth", () => ({
   useAuth: () => ({
@@ -44,7 +50,7 @@ vi.mock("@/features/chat/hooks/useChatMeetings", () => ({
   useChatMeetings: () => ({
     meetings: state.meetings,
     isSupported: true,
-    isInitialLoading: false,
+    isInitialLoading: state.isInitialLoading,
   }),
 }));
 vi.mock("@/features/chat/hooks/useChatMeetingActions", () => ({
@@ -122,6 +128,7 @@ describe("ActiveMeetingProvider", () => {
   beforeEach(() => {
     state.meetings = [meetingA()];
     state.boardUrl = null;
+    state.isInitialLoading = false;
   });
 
   afterEach(() => {
@@ -438,5 +445,34 @@ describe("ActiveMeetingProvider", () => {
     expect(notifyBrand).toHaveBeenCalledWith(
       "The meeting was closed by its organizer.",
     );
+  });
+
+  it("says a meeting already closed is over instead of joining it", () => {
+    // An old invitation: the meeting was closed long before it is opened.
+    state.meetings = [
+      meetingA({ organizerId: OTHER_ID, endedAt: new Date().toISOString() }),
+    ];
+    render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    expect(dialog()).toBeTruthy();
+    expect(screen.getByText("This meeting is over.")).toBeTruthy();
+    expect(screen.queryByTitle("Meeting")).toBeNull();
+    expect(notifyBrand).not.toHaveBeenCalled();
+  });
+
+  it("joins the call only once the meeting is known not to be over", () => {
+    state.meetings = [];
+    state.isInitialLoading = true;
+    const { rerender } = render(app());
+    fireEvent.click(screen.getByText("open A"));
+
+    expect(screen.queryByTitle("Meeting")).toBeNull();
+
+    state.meetings = [meetingA()];
+    state.isInitialLoading = false;
+    act(() => rerender(app()));
+
+    expect(frame().src).toBe(URL_A);
   });
 });

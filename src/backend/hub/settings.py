@@ -303,6 +303,11 @@ class Base(Configuration):
                 environ_name="API_MEETING_CREATION_THROTTLE_RATE",
                 environ_prefix=None,
             ),
+            "meeting_update": values.Value(
+                default="30/minute",
+                environ_name="API_MEETING_UPDATE_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
             "meeting_transcript": values.Value(
                 default="30/minute",
                 environ_name="API_MEETING_TRANSCRIPT_THROTTLE_RATE",
@@ -371,18 +376,19 @@ class Base(Configuration):
         environ_prefix=None,
     )
     # 🔒️ Hub -> Synapse. Lets Ariane act as herself through `?user_id=`.
-    MATRIX_AS_TOKEN = values.Value(
+    MATRIX_AS_TOKEN = SecretFileValue(
         None, environ_name="MATRIX_AS_TOKEN", environ_prefix=None
     )
     # 🔒️ Synapse -> Hub. Proves an incoming transaction really comes from
     # Synapse. Opposite direction from the one above, not a second copy.
-    MATRIX_HS_TOKEN = values.Value(
+    MATRIX_HS_TOKEN = SecretFileValue(
         None, environ_name="MATRIX_HS_TOKEN", environ_prefix=None
     )
-    # 🔒️ Synapse admin rights, read-only and for one thing: listing a room's
-    # members so the backend can decide who may download a meeting archive.
-    # It is no longer a way into a room - Ariane enters on invitation only.
-    MATRIX_ADMIN_TOKEN = values.Value(
+    # 🔒️ Synapse admin rights, used read-only: a room's members, to decide who
+    # may read a meeting's documents and archive and whom Ariane tells about
+    # it, and a room's name, for those messages and the archive. It is no way
+    # into a room - Ariane enters on invitation only.
+    MATRIX_ADMIN_TOKEN = SecretFileValue(
         None, environ_name="MATRIX_ADMIN_TOKEN", environ_prefix=None
     )
 
@@ -396,6 +402,8 @@ class Base(Configuration):
     BOTS_ROOM_HISTORY = values.PositiveIntegerValue(
         30, environ_name="BOTS_ROOM_HISTORY", environ_prefix=None
     )
+    # How many replies of a thread she reads at most: the latest ones, a long
+    # thread losing its start. Bounded by the same quota as the room history.
     BOTS_MAX_THREAD_EVENTS = values.PositiveIntegerValue(
         200, environ_name="BOTS_MAX_THREAD_EVENTS", environ_prefix=None
     )
@@ -409,7 +417,7 @@ class Base(Configuration):
     )
     # 🔒️ Never expose: Albert sends no CORS header on purpose, and
     # /api/v1.0/config/ is AllowAny.
-    ALBERT_API_KEY = values.Value(
+    ALBERT_API_KEY = SecretFileValue(
         None, environ_name="ALBERT_API_KEY", environ_prefix=None
     )
     ALBERT_MODELS_LARGE = values.ListValue(
@@ -493,7 +501,7 @@ class Base(Configuration):
     )
     SESSION_COOKIE_NAME = "hub_sessionid"
 
-    # OIDC - Authorization Code Flow
+    # Meetings
     # Meet: rooms are created through its external API, with an application
     # registered in Meet. Without these settings, meeting creation is disabled.
     MEET_API_URL = values.Value(None, environ_name="MEET_API_URL", environ_prefix=None)
@@ -514,11 +522,13 @@ class Base(Configuration):
 
     # Meeting transcripts: the scribe service relays the live subtitles of Hub
     # meetings with this token, and the transcript is saved in Docs when the
-    # organizer closes the meeting. Without these settings, nothing is kept.
+    # meeting closes, by its organizer or automatically. Without these
+    # settings, nothing is kept.
     MEETING_SCRIBE_TOKEN = SecretFileValue(
         None, environ_name="MEETING_SCRIBE_TOKEN", environ_prefix=None
     )
-    # How long after its creation a meeting is still followed by the scribe.
+    # How long a meeting is still followed by the scribe, counted from its start
+    # (from its creation when it has none).
     MEETING_SCRIBE_MAX_AGE_HOURS = values.PositiveIntegerValue(
         24, environ_name="MEETING_SCRIBE_MAX_AGE_HOURS", environ_prefix=None
     )
@@ -538,14 +548,16 @@ class Base(Configuration):
         60, environ_name="DOCS_API_TIMEOUT", environ_prefix=None
     )
 
-    # Whiteboard shown next to the call, as a self-hosted Excalidraw. Without
-    # this setting the meeting window shows the call alone.
+    # Whiteboard shown next to the call, as a self-hosted Excalidraw app.
+    # Without this setting the meeting window shows the call alone.
     MEETING_BOARD_BASE_URL = values.Value(
         None, environ_name="MEETING_BOARD_BASE_URL", environ_prefix=None
     )
-    # Where that Excalidraw keeps the scenes of its rooms (a Firestore
-    # collection), to put the board in the archive. Without it, the archive
-    # has no whiteboard.
+    # Where that Excalidraw keeps the scenes of its rooms, to put the board in
+    # the archive: a Firestore collection. The image is built with Excalidraw's
+    # public persistence service, not a self-hosted one. Scenes are encrypted
+    # with a key derived from the meeting (see `core/boards.py`), so the store
+    # never sees a drawing in clear. Without it, the archive has no whiteboard.
     MEETING_BOARD_SCENES_URL = values.Value(
         None, environ_name="MEETING_BOARD_SCENES_URL", environ_prefix=None
     )
@@ -568,6 +580,7 @@ class Base(Configuration):
         30, environ_name="MEETING_ATTACHMENTS_MAX", environ_prefix=None
     )
 
+    # OIDC - Authorization Code Flow
     OIDC_AUTHENTICATE_CLASS = values.Value(
         "lasuite.oidc_login.views.OIDCAuthenticationRequestView",
         environ_name="OIDC_AUTHENTICATE_CLASS",

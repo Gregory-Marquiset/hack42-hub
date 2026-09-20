@@ -125,8 +125,11 @@ const applyChatEvent = (
         chatKeys.messages(ref),
         (data) => (data ? appendMessage(data, event) : data),
       );
-      // The message may be a document; only an open documents list refetches.
-      void queryClient.invalidateQueries({ queryKey: chatKeys.files(ref) });
+      // A shared document; only an open documents list refetches. Any other
+      // message leaves it alone: the list reads hundreds of events.
+      if (event.isFile) {
+        void queryClient.invalidateQueries({ queryKey: chatKeys.files(ref) });
+      }
       // Touches list ordering / last activity. Read state has its own slice.
       void queryClient.invalidateQueries({
         queryKey: chatKeys.chatsOf(accountId),

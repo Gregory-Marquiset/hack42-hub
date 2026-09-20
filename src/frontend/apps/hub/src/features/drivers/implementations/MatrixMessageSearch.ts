@@ -1,17 +1,22 @@
 import {
+  EventStatus,
   EventTimeline,
+  EventType,
   MatrixClient,
+  RelationType,
   RoomEvent,
 } from "matrix-js-sdk/lib/matrix";
 import type { MatrixEvent } from "matrix-js-sdk/lib/models/event";
 import type { Room } from "matrix-js-sdk/lib/models/room";
 
 import { messageBackfills } from "@/features/chat/search/messageBackfillCoordinator";
-import { normalizeSearch } from "@/features/chat/search/model";
 import {
+  buildExcerpt,
+  findMatchRange,
   type MessageSearchDocument,
   type MessageContentKind,
   matchesMessageFilters,
+  normalizeSearch,
 } from "@/features/chat/search/model";
 import { MessageSearchStorage } from "@/features/chat/search/messageStorage";
 import {
@@ -27,12 +32,15 @@ import {
   mainTimelineEvents,
   scopedTimelineWindow,
 } from "./matrixTimelineWindow";
+import { isMessageEvent } from "./matrixEventMapping";
 import { matrixJoinedRoomToLocalChat } from "./matrixRoomMapping";
 
 const PERSIST_DEBOUNCE_MS = 250;
 const BACKFILL_MAX_MESSAGES = 200;
 const BACKFILL_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const BACKFILL_PAGE_SIZE = 50;
+/** The oldest messages of a room beyond this are dropped from the index. */
+const MAX_MESSAGES_PER_ROOM = 2_000;
 
 const EXTRACT_URL_REGEX = /https?:\/\/\S+/i;
 const LEGACY_PILL_REGEX =
@@ -46,14 +54,38 @@ type MatrixMessageContent = {
   "m.relates_to"?: { "m.in_reply_to"?: { event_id?: string } };
 };
 
+/**
+ * Sent and acknowledged by the server. A local echo keeps a temporary `~` id
+ * until then: it is indexed on its `LocalEchoUpdated`, under its real id.
+ */
+const isSettledEvent = (event: MatrixEvent): boolean => {
+  const id = event.getId();
+  return (
+    !!id &&
+    !id.startsWith("~") &&
+    (!event.status || event.status === EventStatus.SENT)
+  );
+};
+
+/**
+ * Whether an event becomes a search document of its own, for the live and
+ * the backfill paths alike. An edit is not one: it rewrites its original.
+ */
+const isIndexableMessage = (event: MatrixEvent): boolean =>
+  isMessageEvent(event) &&
+  !event.isRedacted() &&
+  !event.isDecryptionFailure() &&
+  isSettledEvent(event);
+
 export class MatrixMessageSearch {
   private readonly messages = new Map<
     string,
     Map<string, MessageSearchDocument>
   >();
-  private revision = 0;
   private status: MessageSearchStatus = { ...EMPTY_MESSAGE_SEARCH_STATUS };
   private disposed = false;
+  /** Storage is only reported missing once opening it has settled. */
+  private opened = false;
   private detach = () => {};
   private readonly poolKey = crypto.randomUUID();
   private joinedRoomIds = new Set<string>();
@@ -64,19 +96,25 @@ export class MatrixMessageSearch {
 
   constructor(
     private readonly mx: MatrixClient,
-    private readonly accountId: string,
     databaseName: string,
     private readonly changed: () => void,
+    /** Another tab logged out or deleted the index: this instance is over. */
+    private readonly revoked: () => void = () => {},
   ) {
-    this.storage = new MessageSearchStorage(databaseName, () => this.close());
+    this.storage = new MessageSearchStorage(databaseName, () => {
+      this.close();
+      this.revoked();
+    });
   }
 
   async start(): Promise<void> {
     this.status = { ...EMPTY_MESSAGE_SEARCH_STATUS, freshness: "current" };
 
     const restored = await this.storage.open();
+    this.opened = true;
     if (this.disposed) return;
     for (const doc of restored.messages) this.indexMessage(doc.roomId, doc);
+    for (const roomId of this.messages.keys()) this.trimRoom(roomId);
     for (const state of restored.backfill) {
       // The in-memory pagination behind a "backfilling" state is lost on
       // reload: let the room be requested again instead of showing it stuck.
@@ -88,15 +126,40 @@ export class MatrixMessageSearch {
       );
     }
 
-    // Set up timeline observer for live messages
-    this.detach = () => this.mx.off(RoomEvent.Timeline, this.onTimeline);
+    // Live messages: new events, local echoes once the server has given them
+    // their id, and redactions.
+    this.detach = () => {
+      this.mx.off(RoomEvent.Timeline, this.onTimeline);
+      this.mx.off(RoomEvent.LocalEchoUpdated, this.onLocalEchoUpdated);
+      this.mx.off(RoomEvent.Redaction, this.onRedaction);
+    };
     this.mx.on(RoomEvent.Timeline, this.onTimeline);
+    this.mx.on(RoomEvent.LocalEchoUpdated, this.onLocalEchoUpdated);
+    this.mx.on(RoomEvent.Redaction, this.onRedaction);
 
     this.recomputeStatus();
-    this.emit();
+    this.changed();
   }
 
-  private onTimeline = (event: MatrixEvent, room?: Room) => {
+  private onTimeline = (
+    event: MatrixEvent,
+    room: Room | undefined,
+    _toStartOfTimeline: boolean | undefined,
+    removed: boolean,
+  ) => {
+    if (!removed) this.indexLive(event, room);
+  };
+
+  private onLocalEchoUpdated = (event: MatrixEvent, room: Room) =>
+    this.indexLive(event, room);
+
+  private onRedaction = (event: MatrixEvent, room: Room) => {
+    const redactedId = event.getAssociatedId();
+    if (this.disposed || !redactedId) return;
+    this.removeMessage(room.roomId, redactedId);
+  };
+
+  private indexLive(event: MatrixEvent, room?: Room, decrypted = false): void {
     if (this.disposed || !room) return;
     // Read membership synchronously off the room's own state, not the
     // asynchronously-populated joinedRoomIds set: that set is filled by
@@ -104,21 +167,93 @@ export class MatrixMessageSearch {
     // already fired, so gating on it here silently (and permanently) drops
     // every message received before that population completes.
     if (room.getMyMembership() !== "join") return;
-    if (event.isRedacted() || event.getType() !== "m.room.message") return;
+    // Live events are decrypted on demand, after they are announced.
+    if (event.isEncrypted() && !decrypted) {
+      void this.mx
+        .decryptEventIfNeeded(event)
+        .catch(() => {})
+        .then(() => this.indexLive(event, room, true));
+      return;
+    }
+
+    const relation = event.getRelation();
+    if (
+      relation?.rel_type === RelationType.Replace &&
+      relation.event_id &&
+      event.getType() === EventType.RoomMessage &&
+      isSettledEvent(event)
+    ) {
+      this.applyEdit(room.roomId, relation.event_id, event);
+      return;
+    }
+    if (!isIndexableMessage(event)) return;
 
     const doc = this.buildMessageDocument(room.roomId, event);
-    if (!doc) return;
+    if (doc) this.storeLive(doc);
+  }
 
-    this.indexMessage(room.roomId, doc);
+  /** An edit rewrites the text of the message it replaces, never a new one. */
+  private applyEdit(roomId: string, targetId: string, edit: MatrixEvent) {
+    const original = this.messages.get(roomId)?.get(targetId);
+    // Only the original sender can edit a message (spec, m.replace).
+    if (!original || original.senderId !== edit.getSender()) return;
+    const content = edit.getContent<{
+      "m.new_content"?: MatrixMessageContent;
+    }>()["m.new_content"];
+    const fields = content && this.contentFields(content);
+    if (fields) this.storeLive({ ...original, ...fields });
+  }
+
+  private storeLive(doc: MessageSearchDocument): void {
+    this.indexMessage(doc.roomId, doc);
     this.pendingMessages.push(doc);
+    this.trimRoom(doc.roomId);
     this.schedulePersist();
-    this.emit();
-  };
+    this.changed();
+  }
+
+  private removeMessage(roomId: string, eventId: string): void {
+    if (this.forget(roomId, eventId)) this.changed();
+  }
+
+  /** Drops one message from memory, from the write queue and from storage. */
+  private forget(roomId: string, eventId: string): boolean {
+    const removed = this.messages.get(roomId)?.delete(eventId) ?? false;
+    // A queued write of it would bring it back after the deletion.
+    const pending = this.pendingMessages.filter(
+      (doc) => doc.roomId !== roomId || doc.eventId !== eventId,
+    );
+    this.pendingMessages.splice(0, this.pendingMessages.length, ...pending);
+    void this.storage.deleteMessage(roomId, eventId);
+    return removed;
+  }
+
+  /** Keeps a busy room from growing the index without bound. */
+  private trimRoom(roomId: string): void {
+    const messages = this.messages.get(roomId);
+    if (!messages || messages.size <= MAX_MESSAGES_PER_ROOM) return;
+    const oldest = [...messages.values()]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(0, messages.size - MAX_MESSAGES_PER_ROOM);
+    for (const doc of oldest) this.forget(roomId, doc.eventId);
+  }
 
   setJoinedRooms(roomIds: Set<string>): void {
     this.joinedRoomIds = new Set(roomIds);
+    // A room left is no longer searchable: drop what was indexed for it.
+    const left = [...this.messages.keys(), ...this.backfillStates.keys()];
+    for (const roomId of new Set(left)) {
+      if (roomIds.has(roomId)) continue;
+      this.messages.delete(roomId);
+      this.backfillStates.delete(roomId);
+      const pending = this.pendingMessages.filter(
+        (doc) => doc.roomId !== roomId,
+      );
+      this.pendingMessages.splice(0, this.pendingMessages.length, ...pending);
+      void this.storage.deleteRoom(roomId);
+    }
     this.recomputeStatus();
-    this.emit();
+    this.changed();
   }
 
   private recomputeStatus(): void {
@@ -165,9 +300,6 @@ export class MatrixMessageSearch {
     messageBackfills.enqueue({
       key: `${this.poolKey}:${roomId}`,
       account: this.poolKey,
-      activity: Date.now(),
-      added: Date.now(),
-      due: 0,
       run: (cancelled) => this.runBackfill(roomId, room, cancelled),
     });
   }
@@ -208,9 +340,7 @@ export class MatrixMessageSearch {
       );
       if (this.disposed || cancelled()) return;
 
-      const events = mainTimelineEvents(window).filter(
-        (event) => !event.isRedacted(),
-      );
+      const events = mainTimelineEvents(window).filter(isIndexableMessage);
       const withinAge = events.filter((event) => event.getTs() > cutoff);
       const bounded =
         withinAge.length > BACKFILL_MAX_MESSAGES
@@ -223,6 +353,7 @@ export class MatrixMessageSearch {
       });
       for (const doc of docs) this.indexMessage(roomId, doc);
       void this.storage.putMessages(docs);
+      this.trimRoom(roomId);
 
       this.setBackfillState({
         roomId,
@@ -247,7 +378,7 @@ export class MatrixMessageSearch {
     this.backfillStates.set(state.roomId, state);
     void this.storage.putBackfillState(state);
     this.recomputeStatus();
-    this.emit();
+    this.changed();
   }
 
   async search(request: MessageSearchRequest): Promise<MessageSearchPage> {
@@ -257,61 +388,53 @@ export class MatrixMessageSearch {
 
     const { freeText, filters, limit = 100 } = request;
     const normalizedFreeText = normalizeSearch(freeText);
-    const allResults: Array<{
-      doc: MessageSearchDocument;
-      matchRanges: [number, number][];
-      excerpt: string;
-    }> = [];
+    const allResults: MessageSearchDocument[] = [];
 
     // Search across all messages in all rooms
     for (const roomMessages of this.messages.values()) {
       for (const doc of roomMessages.values()) {
         // Apply filters (AND semantics)
         if (!matchesMessageFilters(doc, filters)) continue;
-
-        // Apply free-text search (OR with any field)
-        let matchRanges: [number, number][] = [];
-        if (normalizedFreeText) {
-          const bodyMatch = doc.normalizedBody.indexOf(normalizedFreeText);
-          if (bodyMatch === -1) continue; // No match
-
-          // Map back to original body offset
-          matchRanges = [[bodyMatch, bodyMatch + normalizedFreeText.length]];
-        }
-
-        // Build excerpt (50 chars before and after match, or from start)
-        const excerpt = this.buildExcerpt(doc.body, matchRanges[0]);
-
-        allResults.push({ doc, matchRanges, excerpt });
+        if (
+          normalizedFreeText &&
+          !doc.normalizedBody.includes(normalizedFreeText)
+        )
+          continue;
+        allResults.push(doc);
       }
     }
 
     // Sort by timestamp descending (newest first)
-    allResults.sort((a, b) => b.doc.timestamp - a.doc.timestamp);
+    allResults.sort((a, b) => b.timestamp - a.timestamp);
 
     const currentUserId = this.mx.getUserId() ?? undefined;
 
     // Slice to limit, dropping any result whose room can no longer be resolved
     // (e.g. a room left between indexing and querying).
-    const results = allResults
-      .slice(0, limit)
-      .flatMap(({ doc, matchRanges, excerpt }) => {
-        const room = this.mx.getRoom(doc.roomId);
-        if (!room) return [];
-        const chat = matrixJoinedRoomToLocalChat(room, currentUserId);
-        return [
-          {
-            chat,
-            eventId: doc.eventId,
-            senderId: doc.senderId,
-            senderName: doc.senderName,
-            excerpt,
-            matchRanges,
-            timestamp: new Date(doc.timestamp).toISOString(),
-            threadRootId: doc.threadRootId,
-          },
-        ];
-      });
+    const results = allResults.slice(0, limit).flatMap((doc) => {
+      const room = this.mx.getRoom(doc.roomId);
+      if (!room) return [];
+      const chat = matrixJoinedRoomToLocalChat(room, currentUserId);
+      // Offsets are taken on the displayed text itself, then rebased onto
+      // the excerpt, so the highlight lands on the matched characters.
+      const text = doc.body.normalize("NFC");
+      const { excerpt, matchRanges } = buildExcerpt(
+        text,
+        findMatchRange(text, normalizedFreeText),
+      );
+      return [
+        {
+          chat,
+          eventId: doc.eventId,
+          senderId: doc.senderId,
+          senderName: doc.senderName,
+          excerpt,
+          matchRanges,
+          timestamp: new Date(doc.timestamp).toISOString(),
+          threadRootId: doc.threadRootId,
+        },
+      ];
+    });
 
     return {
       results,
@@ -320,7 +443,17 @@ export class MatrixMessageSearch {
   }
 
   getStatus(): MessageSearchStatus {
-    return { ...this.status };
+    return {
+      ...this.status,
+      storageAvailable: !this.opened || this.storage.state === "persistent",
+    };
+  }
+
+  /** Requests again every room whose history could not be fetched. */
+  retry(): void {
+    for (const state of this.backfillStates.values()) {
+      if (state.status === "error") this.backfillRoom(state.roomId);
+    }
   }
 
   close(): void {
@@ -331,8 +464,11 @@ export class MatrixMessageSearch {
     this.storage.close();
   }
 
+  /** Closes, then erases the index stored for this account. */
   async remove(): Promise<void> {
     this.close();
+    this.messages.clear();
+    await this.storage.remove();
   }
 
   private schedulePersist(): void {
@@ -349,7 +485,6 @@ export class MatrixMessageSearch {
       this.messages.set(roomId, new Map());
     }
     this.messages.get(roomId)!.set(doc.eventId, doc);
-    this.revision++;
   }
 
   private buildMessageDocument(
@@ -358,41 +493,30 @@ export class MatrixMessageSearch {
   ): MessageSearchDocument | null {
     try {
       const content = event.getContent<MatrixMessageContent>();
-      if (!content.body || typeof content.body !== "string") return null;
+      const fields = this.contentFields(content);
+      if (!fields) return null;
 
       const senderId = event.getSender();
       const timestamp = event.getTs();
       if (!senderId || !timestamp) return null;
-
-      // Determine content kind from msgtype
-      const msgtype = content.msgtype || "m.text";
-      const contentKind = this.msgtypeToContentKind(msgtype);
-
-      // Extract mentioned user IDs
-      const mentionedUserIds = this.extractMentionedUsers(content);
-
-      // Check for links
-      const hasLink = EXTRACT_URL_REGEX.test(content.body);
-
-      // Extract reply-to info
-      const { replyToEventId, replyToSenderId } =
-        this.extractReplyInfo(content);
 
       // Get sender display name
       const room = this.mx.getRoom(roomId);
       const member = room?.getMember(senderId);
       const senderName = member?.name || senderId;
 
+      // Extract reply-to info
+      const { replyToEventId, replyToSenderId } = this.extractReplyInfo(
+        content,
+        room,
+      );
+
       return {
         roomId,
         eventId: event.getId() || "",
         senderId,
         senderName,
-        body: content.body,
-        normalizedBody: normalizeSearch(content.body),
-        contentKind,
-        hasLink,
-        mentionedUserIds,
+        ...fields,
         replyToEventId,
         replyToSenderId,
         timestamp,
@@ -404,6 +528,23 @@ export class MatrixMessageSearch {
     } catch {
       return null;
     }
+  }
+
+  /** The part of a document read from the content, which an edit replaces. */
+  private contentFields(
+    content: MatrixMessageContent,
+  ): Pick<
+    MessageSearchDocument,
+    "body" | "normalizedBody" | "contentKind" | "hasLink" | "mentionedUserIds"
+  > | null {
+    if (!content.body || typeof content.body !== "string") return null;
+    return {
+      body: content.body,
+      normalizedBody: normalizeSearch(content.body),
+      contentKind: this.msgtypeToContentKind(content.msgtype || "m.text"),
+      hasLink: EXTRACT_URL_REGEX.test(content.body),
+      mentionedUserIds: this.extractMentionedUsers(content),
+    };
   }
 
   private msgtypeToContentKind(msgtype: string): MessageContentKind {
@@ -446,7 +587,14 @@ export class MatrixMessageSearch {
     return Array.from(mentioned);
   }
 
-  private extractReplyInfo(content: MatrixMessageContent): {
+  /**
+   * The replied-to sender is read off the loaded timeline, best effort: a
+   * reply to a message outside it only records the event id.
+   */
+  private extractReplyInfo(
+    content: MatrixMessageContent,
+    room: Room | null,
+  ): {
     replyToEventId?: string;
     replyToSenderId?: string;
   } {
@@ -455,34 +603,10 @@ export class MatrixMessageSearch {
       return {};
     }
 
-    return { replyToEventId: inReplyTo.event_id };
-    // Note: replyToSenderId will be resolved best-effort on indexing,
-    // or lazily when needed for matching
-  }
-
-  private buildExcerpt(body: string, matchRange?: [number, number]): string {
-    const MAX_EXCERPT_LEN = 150;
-    const CONTEXT = 50;
-
-    if (!matchRange) {
-      // No specific match, just first MAX_EXCERPT_LEN chars
-      return body.length > MAX_EXCERPT_LEN
-        ? body.substring(0, MAX_EXCERPT_LEN) + "..."
-        : body;
-    }
-
-    const [start, end] = matchRange;
-    const excerptStart = Math.max(0, start - CONTEXT);
-    const excerptEnd = Math.min(body.length, end + CONTEXT);
-
-    let excerpt = body.substring(excerptStart, excerptEnd);
-    if (excerptStart > 0) excerpt = "..." + excerpt;
-    if (excerptEnd < body.length) excerpt = excerpt + "...";
-
-    return excerpt;
-  }
-
-  private emit(): void {
-    this.changed();
+    return {
+      replyToEventId: inReplyTo.event_id,
+      replyToSenderId:
+        room?.findEventById(inReplyTo.event_id)?.getSender() ?? undefined,
+    };
   }
 }

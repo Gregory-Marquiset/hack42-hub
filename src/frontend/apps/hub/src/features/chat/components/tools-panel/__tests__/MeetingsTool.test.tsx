@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   startMeeting: vi.fn(),
   openMeeting: vi.fn(),
   notifyBrand: vi.fn(),
+  meetings: [] as ChatMeeting[],
 }));
 
 vi.mock("react-i18next", () => ({
@@ -38,7 +39,7 @@ vi.mock("react-i18next", () => ({
 }));
 vi.mock("@/features/chat/hooks/useChatMeetings", () => ({
   useChatMeetings: () => ({
-    meetings: [],
+    meetings: mocks.meetings,
     isSupported: true,
     isInitialLoading: false,
   }),
@@ -62,7 +63,8 @@ vi.mock("../MeetingDetails", () => ({
 
 describe("MeetingsTool", () => {
   beforeEach(() => {
-    mocks.startMeeting.mockResolvedValue(MEETING);
+    mocks.meetings = [];
+    mocks.startMeeting.mockResolvedValue({ meeting: MEETING, isReused: false });
   });
 
   afterEach(() => {
@@ -108,5 +110,43 @@ describe("MeetingsTool", () => {
     expect(screen.getByText("details")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
     expect(mocks.openMeeting).not.toHaveBeenCalled();
+  });
+
+  it("offers to join the call in progress instead of starting one", () => {
+    mocks.meetings = [MEETING];
+    render(<MeetingsTool chatRef={CHAT_REF} isOpen onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText("New meeting"));
+
+    expect(screen.queryByText("Start now")).toBeNull();
+    fireEvent.click(screen.getByText("Join the ongoing meeting"));
+
+    expect(mocks.startMeeting).not.toHaveBeenCalled();
+    expect(mocks.openMeeting).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingId: MEETING.id }),
+    );
+  });
+
+  it("keeps the form when a call started meanwhile is returned", async () => {
+    mocks.startMeeting.mockResolvedValue({ meeting: MEETING, isReused: true });
+    const onClose = vi.fn();
+    render(<MeetingsTool chatRef={CHAT_REF} isOpen onClose={onClose} />);
+    fireEvent.click(screen.getByText("New meeting"));
+    fireEvent.change(screen.getByLabelText("Meeting name"), {
+      target: { value: "Point hebdo" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Start now"));
+    });
+
+    expect(mocks.notifyBrand).toHaveBeenCalledWith(
+      "A meeting is already in progress: join it, or plan yours.",
+    );
+    expect(mocks.openMeeting).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      (screen.getByLabelText("Meeting name") as HTMLInputElement).value,
+    ).toBe("Point hebdo");
+    expect(screen.getByText("Join the ongoing meeting")).toBeTruthy();
   });
 });

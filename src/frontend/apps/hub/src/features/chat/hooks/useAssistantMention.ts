@@ -19,6 +19,8 @@ export type AssistantMention = {
    * `null` when she already is, cannot be (encrypted room) or is unknown.
    */
   candidate: ChatMember | null;
+  /** Everyone `@` can suggest in this room: its members, and `candidate`. */
+  mentionCandidates: ChatMember[];
   /**
    * Invites the assistant if `content` addresses her and she is not in the
    * room. Resolves at once otherwise, and never rejects: the message is what
@@ -105,7 +107,9 @@ export const useAssistantMention = (
         // to invite, a rate limit, or she joined in the meantime - so say it
         // once and let the message through.
         notify.error(
-          t("Ariane could not be invited. Your message was sent anyway."),
+          t("{{name}} could not be invited. Your message was sent anyway.", {
+            name: assistant.displayName,
+          }),
         );
         return;
       }
@@ -116,6 +120,7 @@ export const useAssistantMention = (
       });
     },
     [
+      assistant.displayName,
       assistant.names,
       assistant.userId,
       canReach,
@@ -130,8 +135,17 @@ export const useAssistantMention = (
   // in. A conversation between two people is not a room she was ever offered.
   const unavailableReason =
     chat?.kind === "group" && chat.encrypted
-      ? t("Ariane cannot read an encrypted room")
+      ? t("{{name}} cannot read an encrypted room", {
+          name: assistant.displayName,
+        })
       : null;
 
-  return { candidate, ensureInvited, unavailableReason };
+  // Who `@` can suggest: the members, already cached by react-query and
+  // shared with the members modal, and the assistant when she can be invited.
+  const mentionCandidates = useMemo(
+    () => (candidate ? [...present, candidate] : present),
+    [candidate, present],
+  );
+
+  return { candidate, mentionCandidates, ensureInvited, unavailableReason };
 };

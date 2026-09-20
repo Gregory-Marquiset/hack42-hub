@@ -39,6 +39,7 @@ import {
   NotificationRules,
   SetNotificationRuleActionsParams,
   SetNotificationRuleEnabledParams,
+  StartedChatMeeting,
   StartMeetingOptions,
   User,
 } from "./types";
@@ -192,6 +193,8 @@ export type ChatEvent =
       message: ChatMessage;
       /** Authors referenced by the message, to merge into the page cache. */
       authors?: ChatMessageAuthor[];
+      /** The message shares a document: the documents list is stale. */
+      isFile?: boolean;
     }
   | {
       type: "message:updated";
@@ -522,15 +525,16 @@ export abstract class Driver {
    * Starts a meeting now, or schedules one when `options.startsAt` is in the
    * future. Starting now returns the meeting already ongoing, if any, so a
    * second click (from this user or another member) joins the same call
-   * instead of creating a duplicate room. `createRoom` is only called when a
-   * new call is needed. Unsupported by default so drivers opt in (see
+   * instead of creating a duplicate room; `isReused` then tells the caller
+   * that its options were not used. `createRoom` is only called when a new
+   * call is needed. Unsupported by default so drivers opt in (see
    * `supportsMeetings`).
    */
   async startChatMeeting(
     _chatId: string,
     _createRoom: (schedule: MeetRoomSchedule) => Promise<MeetRoom>,
     _options?: StartMeetingOptions,
-  ): Promise<ChatMeeting> {
+  ): Promise<StartedChatMeeting> {
     void _chatId;
     void _createRoom;
     void _options;
@@ -539,7 +543,14 @@ export abstract class Driver {
     );
   }
 
-  /** Closes a meeting for every member. Only its organizer may do it. */
+  /**
+   * Closes a meeting for every member. Only its organizer may do it.
+   *
+   * The organizer-only rules (closing, renaming, extending) are enforced by
+   * the client alone: the conversations the Hub creates let any member write
+   * the meeting state event (power level 0, so that everyone can start a
+   * call), and another Matrix client could bypass them.
+   */
   async endChatMeeting(_chatId: string, _meetingId: string): Promise<void> {
     void _chatId;
     void _meetingId;
@@ -550,7 +561,7 @@ export abstract class Driver {
 
   /**
    * A short-lived OpenID token of the current account, for the Hub backend to
-   * check which user it is (meeting archives) without its access token.
+   * check which user it is (meeting archives, roles) without its access token.
    */
   async getOpenIdToken(): Promise<string> {
     throw new Error(
@@ -558,8 +569,10 @@ export abstract class Driver {
     );
   }
 
-  /** Adds a document to a meeting, for every member. Only its organizer may do it. */
-  /** Opens or closes the whiteboard of a meeting, for every participant. */
+  /**
+   * Opens or closes the whiteboard of a meeting, for every participant. Any
+   * member may do it.
+   */
   async setChatMeetingBoard(
     _chatId: string,
     _meetingId: string,
@@ -573,6 +586,7 @@ export abstract class Driver {
     );
   }
 
+  /** Adds a document to a meeting, for every member. Any member may do it. */
   async addChatMeetingDocument(
     _chatId: string,
     _meetingId: string,
@@ -727,11 +741,6 @@ export abstract class Driver {
    * link a label to an identity the driver is unable to vouch for.
    */
   readonly supportsProfileRoles: boolean = false;
-
-  /** Current proof of chat identity, sent to Hub only when saving a role. */
-  async getProfileIdentityToken(): Promise<string> {
-    throw new Error("Profile identity is not supported by this driver.");
-  }
 
   /**
    * Whether this driver can create end-to-end encrypted conversations.

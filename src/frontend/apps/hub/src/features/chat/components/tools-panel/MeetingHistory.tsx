@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useMeetingArchive } from "@/features/chat/hooks/useMeetingArchive";
 import type { ChatMeeting, ChatRef } from "@/features/drivers/types";
+import { isWebLink } from "@/features/drivers/webLink";
 
 import { Download } from "./MeetingIcons";
 import { formatMeetingLabel } from "./meetingLabels";
@@ -37,25 +38,18 @@ export const MeetingHistory = ({
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // A selection that no longer exists falls back to the first meeting.
   const selected =
     meetings.find((meeting) => meeting.id === selectedId) ??
     meetings[0] ??
     null;
-
-  // A meeting id belongs to one conversation — drop a selection that no longer
-  // exists so the view falls back to the first available meeting.
-  useEffect(() => {
-    if (selectedId && !meetings.some((meeting) => meeting.id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [meetings, selectedId]);
 
   const tabIndex = isOpen ? 0 : -1;
 
   const { downloadArchive, pendingMeetingId } = useMeetingArchive(chatRef);
 
   const documents = selected
-    ? [...(selected.summary ? [selected.summary] : []), ...selected.documents]
+    ? selected.documents.filter((doc) => isWebLink(doc.url))
     : [];
 
   return (
@@ -89,7 +83,7 @@ export const MeetingHistory = ({
         ) : (
           <>
             <section className="hub__chat-meetings__card">
-              <ul className="hub__chat-meetings__list">
+              <ul className="hub__tools-list">
                 {meetings.map((meeting) => {
                   const label = formatMeetingLabel(
                     meeting,
@@ -100,7 +94,7 @@ export const MeetingHistory = ({
                   return (
                     <li
                       key={meeting.id}
-                      className="hub__chat-meetings__row"
+                      className="hub__tools-list__row"
                       data-active={
                         meeting.id === selected?.id ? "true" : undefined
                       }
@@ -112,14 +106,12 @@ export const MeetingHistory = ({
                         tabIndex={tabIndex}
                         onClick={() => setSelectedId(meeting.id)}
                       >
-                        <span className="hub__chat-meetings__row-label">
-                          {label}
-                        </span>
+                        <span className="hub__tools-list__label">{label}</span>
                       </button>
-                      <span className="hub__chat-meetings__row-actions">
+                      <span className="hub__tools-list__actions">
                         <button
                           type="button"
-                          className="hub__chat-meetings__icon-button"
+                          className="hub__tools-list__icon-button"
                           aria-label={t("Download the archive of {{name}}", {
                             name: label,
                           })}
@@ -151,15 +143,15 @@ export const MeetingHistory = ({
                     {t("No document for this meeting")}
                   </p>
                 ) : (
-                  <ul className="hub__chat-meetings__list">
+                  <ul className="hub__tools-list">
                     {documents.map((doc) => (
-                      <li key={doc.id} className="hub__chat-meetings__row">
-                        <span className="hub__chat-meetings__row-label">
+                      <li key={doc.id} className="hub__tools-list__row">
+                        <span className="hub__tools-list__label">
                           {doc.title}
                         </span>
-                        <span className="hub__chat-meetings__row-actions">
+                        <span className="hub__tools-list__actions">
                           <a
-                            className="hub__chat-meetings__icon-button"
+                            className="hub__tools-list__icon-button"
                             href={doc.url}
                             download
                             target="_blank"

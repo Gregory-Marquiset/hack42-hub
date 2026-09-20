@@ -8,7 +8,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { NewMeetingForm } from "../NewMeetingForm";
+import {
+  MAX_AGENDA_LENGTH,
+  MAX_ATTACHMENTS,
+  NewMeetingForm,
+} from "../NewMeetingForm";
 
 const notifyError = vi.hoisted(() => vi.fn());
 
@@ -16,6 +20,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { name?: string }) =>
       options?.name ? `${key}|${options.name}` : key,
+    i18n: { language: "fr", resolvedLanguage: "fr" },
   }),
 }));
 
@@ -30,6 +35,7 @@ const renderForm = () =>
     <NewMeetingForm
       isOpen
       isStarting={false}
+      onJoinOngoing={vi.fn()}
       onClose={vi.fn()}
       onBack={vi.fn()}
       onStartNow={vi.fn()}
@@ -134,9 +140,40 @@ describe("NewMeetingForm files", () => {
     await pick("document-file-input", text("gros.md", "x".repeat(100_001)));
 
     expect(notifyError).toHaveBeenCalledWith(
-      "A file is too large to be attached (100 KB at most).",
+      "A file is too large to be attached ({{size}} at most).",
     );
     expect(screen.queryByText("gros.md")).toBeNull();
+  });
+
+  it("keeps to the number of files the Hub accepts", async () => {
+    renderForm();
+    await pick("agenda-file-input", text("odj.md"));
+
+    await pick(
+      "document-file-input",
+      ...Array.from({ length: MAX_ATTACHMENTS }, (_, index) =>
+        text(`note-${index}.txt`),
+      ),
+    );
+
+    expect(notifyError).toHaveBeenCalledWith(
+      "A meeting can have {{max}} attached files at most.",
+    );
+    expect(screen.getByText(`note-${MAX_ATTACHMENTS - 2}.txt`)).toBeTruthy();
+    expect(screen.queryByText(`note-${MAX_ATTACHMENTS - 1}.txt`)).toBeNull();
+  });
+
+  it("holds the agenda to the length the Hub accepts", () => {
+    renderForm();
+    const agenda = screen.getByLabelText("Agenda");
+
+    expect(agenda.getAttribute("maxlength")).toBe(String(MAX_AGENDA_LENGTH));
+    fireEvent.change(agenda, {
+      target: { value: "x".repeat(MAX_AGENDA_LENGTH) },
+    });
+    expect(
+      screen.getByText("The agenda is limited to {{max}} characters."),
+    ).toBeTruthy();
   });
 
   it("adds a document by link from the Docs button", () => {
@@ -171,6 +208,7 @@ describe("NewMeetingForm start and schedule", () => {
       <NewMeetingForm
         isOpen
         isStarting={false}
+        onJoinOngoing={vi.fn()}
         onClose={vi.fn()}
         onBack={vi.fn()}
         onStartNow={onStartNow}
@@ -282,5 +320,28 @@ describe("NewMeetingForm start and schedule", () => {
       documents: [],
       startsAt: start,
     });
+  });
+});
+
+describe("NewMeetingForm links", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("refuses a link typed without http(s)://", () => {
+    renderForm();
+    fireEvent.click(screen.getByRole("button", { name: "Add a Docs link" }));
+    const add = screen.getByRole("button", { name: "Add" });
+
+    fireEvent.change(screen.getByLabelText("Link"), {
+      target: { value: "docs.example.org/docs/1/" },
+    });
+    expect(add.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Link"), {
+      target: { value: "https://docs.example.org/docs/1/" },
+    });
+    expect(add.hasAttribute("disabled")).toBe(false);
   });
 });

@@ -124,10 +124,8 @@ def chat_markdown(meeting):
 
 def _attachment_bytes(attachment):
     """What a document holds, or `None` when its file cannot be read."""
-    if not attachment.file:
-        return attachment.content.encode()
     try:
-        with attachment.file.open("rb") as stored:
+        with attachment.open_content() as stored:
             return stored.read()
     except OSError:
         logger.warning("attachment %s could not be read", attachment.pk)

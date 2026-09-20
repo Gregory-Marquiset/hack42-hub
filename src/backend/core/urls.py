@@ -27,7 +27,7 @@ urlpatterns = [
     path("user-roles/", roles.UserRolesView.as_view(), name="user-roles"),
     # The assistant's identity and command catalogue, read by the composer.
     path("bots/assistant/", bots_api.AssistantView.as_view(), name="bots-assistant"),
-    path("meetings/", viewsets.MeetingView.as_view()),
+    path("meetings/", viewsets.MeetingView.as_view(), name="meetings"),
     path(
         "meetings/<str:slug>/",
         viewsets.MeetingDetailView.as_view(),

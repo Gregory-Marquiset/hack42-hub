@@ -19,7 +19,8 @@ import { LazyMatrixDriver } from "../LazyMatrixDriver";
 import { MatrixDriver } from "../MatrixDriver";
 import { readChatSelfPresencePreference } from "../../presencePreference";
 import { MEETING_EVENT_TYPE } from "../matrixMeetingMapping";
-import { MeetingNotAllowedError } from "../../meetingErrors";
+import { MeetingEndedError, MeetingNotAllowedError } from "../../meetingErrors";
+import { SpaceChildNotAllowedError } from "../../spaceErrors";
 import type { MeetRoom, MeetRoomSchedule } from "../../types";
 import {
   matrixJoinedRoomToLocalChat,
@@ -285,6 +286,23 @@ describe("MatrixDriver.resolveAvatarUrl", () => {
       driverWithClient(mx).resolveAvatarUrl("mxc://hs/a"),
     ).resolves.toBe("mxc://hs/a");
   });
+
+  it("shares one blob per picture, released when the driver ends", async () => {
+    const { mx, fetchMock } = clientFor(200, 200);
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { revokeObjectURL });
+    Object.assign(mx, { stopClient: vi.fn() });
+    const driver = driverWithClient(mx);
+
+    await driver.resolveAvatarUrl("mxc://hs/a");
+    await driver.resolveAvatarUrl("mxc://hs/a");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    driver.destroy();
+    await vi.waitFor(() =>
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:avatar"),
+    );
+  });
 });
 
 describe("MatrixDriver.getUserPresence", () => {
@@ -470,42 +488,9 @@ describe("MatrixDriver self-presence preference", () => {
 });
 
 describe("profile identity", () => {
-  it("uses the live client's token, including after a refresh", async () => {
-    const getAccessToken = vi.fn().mockReturnValue("initial-token");
-    const driver = driverWithClient({
-      getAccessToken,
-    } as unknown as MatrixClient);
-
-    expect(driver.supportsProfileRoles).toBe(true);
-    await expect(driver.getProfileIdentityToken()).resolves.toBe(
-      "initial-token",
-    );
-    getAccessToken.mockReturnValue("refreshed-token");
-    await expect(driver.getProfileIdentityToken()).resolves.toBe(
-      "refreshed-token",
-    );
-  });
-
-  it("rejects when no authenticated chat client is available", async () => {
-    await expect(
-      driverWithClient(null).getProfileIdentityToken(),
-    ).rejects.toThrow();
-    const driver = driverWithClient({
-      getAccessToken: () => null,
-    } as unknown as MatrixClient);
-    await expect(driver.getProfileIdentityToken()).rejects.toThrow();
-  });
-
-  it("exposes profile roles through the lazy driver used by the account registry", async () => {
-    const driver = new LazyMatrixDriver();
-    (driver as unknown as { target: MatrixDriver }).target = driverWithClient({
-      getAccessToken: () => "current-token",
-    } as unknown as MatrixClient);
-
-    expect(driver.supportsProfileRoles).toBe(true);
-    await expect(driver.getProfileIdentityToken()).resolves.toBe(
-      "current-token",
-    );
+  it("offers profile roles, proven with an OpenID token", () => {
+    expect(driverWithClient(null).supportsProfileRoles).toBe(true);
+    expect(new LazyMatrixDriver().supportsProfileRoles).toBe(true);
   });
 });
 
@@ -545,6 +530,28 @@ describe("timelineEventToChatEvent (real-time sync mapping)", () => {
     ).toMatchObject({
       type: "message:new",
       message: { id: "$elem:localhost", authorId: "me" },
+    });
+  });
+
+  it("flags a shared document, and only it, as a file", () => {
+    const text = makeMessageEvent({ sender: OTHER_ID, body: "hello" });
+    const file = {
+      ...makeMessageEvent({ sender: OTHER_ID, id: "$file:localhost" }),
+      getContent: () => ({
+        msgtype: "m.file",
+        body: "notes.txt",
+        url: "mxc://localhost/notes",
+      }),
+    } as unknown as MatrixEvent;
+
+    expect(
+      timelineEventToChatEvent(text, makeRoom(), SELF_ID)[0],
+    ).not.toHaveProperty("isFile");
+    expect(
+      timelineEventToChatEvent(file, makeRoom(), SELF_ID)[0],
+    ).toMatchObject({
+      type: "message:new",
+      isFile: true,
     });
   });
 
@@ -1072,10 +1079,25 @@ describe("MatrixDriver.startChatMeeting", () => {
       getStateKey: () => stateKey,
     }) as unknown as MatrixEvent;
 
-  const makeClient = (room: Room) => {
+  /** `serverState` stands for the homeserver's copy, ahead of the local one. */
+  const makeClient = (
+    room: Room,
+    serverState?: Record<string, Record<string, unknown>>,
+  ) => {
     const sendStateEvent = vi.fn(async () => ({
       event_id: "$state:localhost",
     }));
+    const getStateEvent = vi.fn(
+      async (_roomId: string, _type: string, stateKey: string) =>
+        serverState?.[stateKey] ??
+        (
+          room.currentState.getStateEvents(
+            MEETING_EVENT_TYPE,
+            stateKey,
+          ) as MatrixEvent | null
+        )?.getContent() ??
+        {},
+    );
     const mx = {
       getRoom: () => room,
       getUserId: () => SELF_ID,
@@ -1083,8 +1105,9 @@ describe("MatrixDriver.startChatMeeting", () => {
       // The espace of a conversation is looked for among the joined rooms.
       getRooms: () => [room],
       sendStateEvent,
+      getStateEvent,
     } as unknown as MatrixClient;
-    return { mx, sendStateEvent };
+    return { mx, sendStateEvent, getStateEvent };
   };
 
   it("creates a Meet room and records its link in the room state", async () => {
@@ -1093,7 +1116,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       async () => MEET_ROOM,
     );
 
-    const meeting = await driverWithClient(mx).startChatMeeting(
+    const { meeting, isReused } = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
     );
@@ -1111,10 +1134,15 @@ describe("MatrixDriver.startChatMeeting", () => {
       },
       MEET_ROOM.slug,
     );
-    expect(meeting).toMatchObject({
+    expect(isReused).toBe(false);
+    // The same meeting as the members will read it from the room state.
+    expect(meeting).toEqual({
       id: MEET_ROOM.slug,
       url: MEET_ROOM.url,
       organizerId: SELF_ID,
+      startedAt: expect.any(String),
+      documents: [],
+      isBoardOpen: false,
     });
   });
 
@@ -1168,7 +1196,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       url: "https://docs.example.com/docs/1/",
     };
 
-    const meeting = await driverWithClient(mx).startChatMeeting(
+    const { meeting, isReused } = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
       {
@@ -1201,6 +1229,7 @@ describe("MatrixDriver.startChatMeeting", () => {
       },
       MEET_ROOM.slug,
     );
+    expect(isReused).toBe(false);
     expect(meeting).toMatchObject({
       title: "Point hebdo",
       startedAt: startsAt.toISOString(),
@@ -1359,6 +1388,31 @@ describe("MatrixDriver.startChatMeeting", () => {
     );
   });
 
+  it("lets a member open the board of someone else's meeting", async () => {
+    const content = {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now(),
+      organizerId: OTHER_ID,
+    };
+    const { mx, sendStateEvent } = makeClient(
+      makeMeetingRoom([meetingEvent(MEET_ROOM.slug, content)]),
+    );
+
+    // The board is the shared surface of the call, like the call itself.
+    await driverWithClient(mx).setChatMeetingBoard(
+      ROOM_ID,
+      MEET_ROOM.slug,
+      true,
+    );
+
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      MEETING_EVENT_TYPE,
+      { ...content, boardOpen: true },
+      MEET_ROOM.slug,
+    );
+  });
+
   it("refuses to rename a meeting organized by someone else", async () => {
     const event = meetingEvent(MEET_ROOM.slug, {
       meetingUrl: MEET_ROOM.url,
@@ -1411,13 +1465,14 @@ describe("MatrixDriver.startChatMeeting", () => {
       async () => MEET_ROOM,
     );
 
-    const meeting = await driverWithClient(mx).startChatMeeting(
+    const { meeting, isReused } = await driverWithClient(mx).startChatMeeting(
       ROOM_ID,
       createRoom,
     );
 
     expect(createRoom).not.toHaveBeenCalled();
     expect(sendStateEvent).not.toHaveBeenCalled();
+    expect(isReused).toBe(true);
     expect(meeting.url).toBe("https://meet.example.com/xyz-abcd-efg");
   });
 
@@ -1431,6 +1486,82 @@ describe("MatrixDriver.startChatMeeting", () => {
       driverWithClient(mx).startChatMeeting(ROOM_ID, createRoom),
     ).rejects.toThrow("Meet unavailable");
     expect(sendStateEvent).not.toHaveBeenCalled();
+  });
+
+  describe("with a closing this device has not synced yet", () => {
+    const open = {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now() - 10 * 60 * 1000,
+      organizerId: OTHER_ID,
+    };
+    const closed = { ...open, endedAt: Date.now(), endedBy: "auto" };
+    const staleClient = () =>
+      makeClient(makeMeetingRoom([meetingEvent(MEET_ROOM.slug, open)]), {
+        [MEET_ROOM.slug]: closed,
+      });
+
+    it("does not reopen the meeting to toggle its board", async () => {
+      const { mx, sendStateEvent } = staleClient();
+
+      await expect(
+        driverWithClient(mx).setChatMeetingBoard(ROOM_ID, MEET_ROOM.slug, true),
+      ).rejects.toBeInstanceOf(MeetingEndedError);
+      expect(sendStateEvent).not.toHaveBeenCalled();
+    });
+
+    it("does not reopen the meeting to add a document", async () => {
+      const { mx, sendStateEvent } = staleClient();
+      const document = { id: "doc", title: "Doc", url: "https://x/doc" };
+
+      await expect(
+        driverWithClient(mx).addChatMeetingDocument(
+          ROOM_ID,
+          MEET_ROOM.slug,
+          document,
+        ),
+      ).rejects.toBeInstanceOf(MeetingEndedError);
+      expect(sendStateEvent).not.toHaveBeenCalled();
+    });
+
+    it("keeps who closed it when the organizer closes it again", async () => {
+      const { mx, sendStateEvent } = makeClient(
+        makeMeetingRoom([
+          meetingEvent(MEET_ROOM.slug, { ...open, organizerId: SELF_ID }),
+        ]),
+        { [MEET_ROOM.slug]: { ...closed, organizerId: SELF_ID } },
+      );
+
+      await driverWithClient(mx).endChatMeeting(ROOM_ID, MEET_ROOM.slug);
+
+      expect(sendStateEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  it("writes from the homeserver's latest copy of the meeting", async () => {
+    const content = {
+      meetingUrl: MEET_ROOM.url,
+      startedAt: Date.now(),
+      organizerId: OTHER_ID,
+    };
+    const agenda = { id: "agenda", title: "Ordre du jour", url: "https://x/a" };
+    const { mx, sendStateEvent } = makeClient(
+      makeMeetingRoom([meetingEvent(MEET_ROOM.slug, content)]),
+      { [MEET_ROOM.slug]: { ...content, documents: [agenda] } },
+    );
+
+    await driverWithClient(mx).setChatMeetingBoard(
+      ROOM_ID,
+      MEET_ROOM.slug,
+      true,
+    );
+
+    // A document listed by someone else meanwhile is not dropped.
+    expect(sendStateEvent).toHaveBeenCalledWith(
+      ROOM_ID,
+      MEETING_EVENT_TYPE,
+      { ...content, documents: [agenda], boardOpen: true },
+      MEET_ROOM.slug,
+    );
   });
 });
 
@@ -1628,6 +1759,86 @@ describe("createChatForUsers (encryption and the assistant)", () => {
     expect(createRoom).not.toHaveBeenCalled();
   });
 
+  it("reuses a clear group the assistant was invited into", async () => {
+    // Created by the Hub for Bob and Carol: she joined it on her own.
+    const group = makeJoinedRoom(
+      "!group:localhost",
+      [BOB, CAROL, ASSISTANT_ID],
+      false,
+    );
+    const { mx, createRoom } = clientFor([group]);
+
+    const chat = await driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+      assistantUserId: ASSISTANT_ID,
+    });
+
+    expect(chat.id).toBe("!group:localhost");
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  const salonClient = (maySendSpaceChild: boolean) => {
+    const space = {
+      roomId: "!space:localhost",
+      currentState: { maySendStateEvent: () => maySendSpaceChild },
+    } as unknown as Room;
+    const { mx, createRoom } = clientFor([]);
+    const sendStateEvent = vi.fn(async () => {
+      throw new Error("M_FORBIDDEN");
+    });
+    Object.assign(mx, {
+      getRoom: (roomId: string) => (roomId === space.roomId ? space : null),
+      getDomain: () => "localhost",
+      sendStateEvent,
+    });
+    return { mx, createRoom, sendStateEvent };
+  };
+
+  it("creates no room in an espace the user may not add rooms to", async () => {
+    const { mx, createRoom } = salonClient(false);
+
+    await expect(
+      driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+        spaceId: "!space:localhost",
+        forceNew: true,
+      }),
+    ).rejects.toBeInstanceOf(SpaceChildNotAllowedError);
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it("returns the room created even when listing it in its espace fails", async () => {
+    const { mx, createRoom, sendStateEvent } = salonClient(true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      const pending = driverWithClient(mx).createChatForUsers([BOB, CAROL], {
+        spaceId: "!space:localhost",
+        forceNew: true,
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect((await pending).id).toBe("!new:localhost");
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+    expect(createRoom).toHaveBeenCalledTimes(1);
+    expect(sendStateEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not take a group with the assistant for a direct message", async () => {
+    const group = makeJoinedRoom(
+      "!group:localhost",
+      [BOB, ASSISTANT_ID],
+      false,
+    );
+    const { mx } = clientFor([group]);
+
+    expect(
+      await driverWithClient(mx).getChatForUsers([BOB], {
+        assistantUserId: ASSISTANT_ID,
+      }),
+    ).toBeNull();
+  });
+
   it("never encrypts a one-to-one with the assistant", async () => {
     const opts = await create([ASSISTANT_ID], {
       assistantUserId: ASSISTANT_ID,
@@ -1694,6 +1905,72 @@ describe("getChatForUsers (encryption-aware lookup)", () => {
         encrypted: true,
       }),
     ).toBeNull();
+  });
+});
+
+describe("LazyMatrixDriver capabilities", () => {
+  it("advertises exactly the capabilities of the real driver", () => {
+    // The UI reads them before the SDK loads: a flag the proxy forgot hides a
+    // feature until then, one it claims wrongly offers a dead control.
+    const capabilities = (driver: object) =>
+      Object.fromEntries(
+        Object.entries(driver).filter(([key]) => key.startsWith("supports")),
+      );
+
+    expect(capabilities(new LazyMatrixDriver("matrix"))).toEqual(
+      capabilities(new MatrixDriver()),
+    );
+  });
+});
+
+describe("joined rooms cache", () => {
+  const joinedRoomIdsOf = (driver: MatrixDriver, mx: MatrixClient) =>
+    (
+      driver as unknown as {
+        getJoinedRoomIds: (mx: MatrixClient) => Promise<Set<string>>;
+      }
+    ).getJoinedRoomIds(mx);
+
+  it("shares the request already in flight", async () => {
+    const getJoinedRooms = vi.fn(async () => ({ joined_rooms: [ROOM_ID] }));
+    const mx = { getJoinedRooms } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    await Promise.all([
+      joinedRoomIdsOf(driver, mx),
+      joinedRoomIdsOf(driver, mx),
+    ]);
+
+    expect(getJoinedRooms).toHaveBeenCalledTimes(1);
+  });
+
+  it("never writes back a list sent before accepting an invitation", async () => {
+    const room = makeJoinedRoom(ROOM_ID, [OTHER_ID], false);
+    let answerStale: (value: { joined_rooms: string[] }) => void = () => {};
+    const getJoinedRooms = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerStale = resolve;
+          }),
+      )
+      .mockResolvedValue({ joined_rooms: [ROOM_ID] });
+    const mx = {
+      getUserId: () => SELF_ID,
+      getJoinedRooms,
+      joinRoom: vi.fn(async () => room),
+      getRoom: () => room,
+    } as unknown as MatrixClient;
+    const driver = driverWithClient(mx);
+
+    const before = joinedRoomIdsOf(driver, mx);
+    await driver.acceptChatInvitation(ROOM_ID);
+    // The answer to the request sent while the room was still an invitation.
+    answerStale({ joined_rooms: [] });
+
+    expect((await before).has(ROOM_ID)).toBe(true);
+    expect((await joinedRoomIdsOf(driver, mx)).has(ROOM_ID)).toBe(true);
   });
 });
 

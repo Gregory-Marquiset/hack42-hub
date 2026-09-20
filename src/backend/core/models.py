@@ -2,6 +2,7 @@
 Declare and configure the models for the hub core application
 """
 
+import io
 import uuid
 from logging import getLogger
 
@@ -194,7 +195,7 @@ class Meeting(BaseModel):
     )
     # The espace the conversation belongs to, as the browser saw it when the
     # meeting was created: the room state does not carry its parent.
-    space_name = models.CharField(_("espace"), max_length=255, blank=True)
+    space_name = models.CharField(_("space"), max_length=255, blank=True)
     chat_id = models.CharField(
         _("conversation"),
         max_length=255,
@@ -271,6 +272,15 @@ class MeetingAttachment(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def open_content(self):
+        """
+        What the document holds, as a binary file to read. Raises `OSError` when
+        its stored file cannot be opened.
+        """
+        if self.file:
+            return self.file.open("rb")
+        return io.BytesIO(self.content.encode())
 
 
 class MeetingParticipant(BaseModel):
@@ -351,6 +361,14 @@ class MeetingChatMessage(BaseModel):
         default=False,
         help_text=_("Written by Ariane, for the scribe to post in the call."),
     )
+    aside = models.BooleanField(
+        _("aside"),
+        default=False,
+        help_text=_(
+            "An assistant message that is no answer (help, failure): it is not "
+            "read back to her as part of the conversation."
+        ),
+    )
     reply_to = models.ForeignKey(
         "self",
         on_delete=models.SET_NULL,
@@ -362,7 +380,7 @@ class MeetingChatMessage(BaseModel):
         _("delivered on"),
         null=True,
         blank=True,
-        help_text=_("When the scribe took an assistant message to post it."),
+        help_text=_("When the scribe said it posted an assistant message."),
     )
 
     class Meta:

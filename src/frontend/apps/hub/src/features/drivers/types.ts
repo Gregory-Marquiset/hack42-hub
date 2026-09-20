@@ -209,10 +209,8 @@ export type ChatMeeting = {
   endedAt?: string;
   /** Who closed it: its organizer, or the server once it was over and empty. */
   endedBy?: "organizer" | "auto";
-  /** Documents shared for this meeting (agenda, support…), newest first. */
+  /** Documents shared for this meeting (agenda, support…), oldest first. */
   documents: ChatMeetingDocument[];
-  /** Recap/summary document, once attached. */
-  summary?: ChatMeetingDocument;
   /** Whether the whiteboard is open: opening it opens it for everyone. */
   isBoardOpen?: boolean;
 };
@@ -230,6 +228,16 @@ export type ChatFile = {
   sentAt: string;
   /** Encrypted in the browser before it was uploaded. */
   isEncrypted: boolean;
+};
+
+/** What starting a meeting gave: a new one, or the call already ongoing. */
+export type StartedChatMeeting = {
+  meeting: ChatMeeting;
+  /**
+   * A call was already ongoing and is returned instead: the options given
+   * (title, agenda, documents…) were not used.
+   */
+  isReused: boolean;
 };
 
 /** How a meeting is created from the meetings panel. */
@@ -443,6 +451,11 @@ export type CreateChatOptions = {
  */
 export type ChatLookupOptions = {
   encrypted?: boolean;
+  /**
+   * Matrix id of the assistant. She joins every clear group on its creation,
+   * so a group lookup that does not ask for her ignores her membership.
+   */
+  assistantUserId?: string;
 };
 
 /** Read-only membership snapshot used by the conversation members modal. */

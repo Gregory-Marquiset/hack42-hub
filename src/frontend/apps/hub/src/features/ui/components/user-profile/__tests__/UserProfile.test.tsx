@@ -40,6 +40,10 @@ vi.mock("../UserPresenceAction", () => ({
   UserPresenceActions: () => <span>Presence action</span>,
   UserPresenceQuickControl: () => <button>Quick presence</button>,
 }));
+// The discovery tour draws a UI kit modal; it has its own test.
+vi.mock("@/features/discovery/DiscoveryModal", () => ({
+  DiscoveryModal: () => null,
+}));
 vi.mock("@gouvfr-lasuite/ui-components", () => ({
   UserMenu: ({ actions }: { actions: ReactNode }) => (
     <div aria-label="User menu">{actions}</div>
@@ -79,6 +83,9 @@ describe("UserProfile", () => {
     expect(screen.queryByText("Presence action")).not.toBeNull();
     expect(screen.queryByText("Change photo action")).not.toBeNull();
     expect(screen.queryByText("Logout action")).not.toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Discover the Hub" }),
+    ).not.toBeNull();
     expect(
       screen.queryByRole("button", { name: "Quick presence" }),
     ).not.toBeNull();

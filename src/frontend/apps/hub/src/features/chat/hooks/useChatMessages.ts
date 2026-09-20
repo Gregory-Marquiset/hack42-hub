@@ -113,6 +113,11 @@ export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
   );
   const [isOpeningLive, setIsOpeningLive] = useState(
     () =>
+      // A visit asked to open on a message (`?event=`, carried by
+      // `ChatRef.eventId`) wants the window the search modal primed for it,
+      // not the live end: resetting here would throw that window away, flash
+      // the latest messages and make the view fetch the target a second time.
+      !ref.eventId &&
       queryClient.getQueryData<InfiniteData<ChatMessagesPage>>(queryKey)
         ?.pages[0]?.isAtLiveEnd === false,
   );

@@ -248,6 +248,9 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(search) Keep a jump from search landing straight on its message: the
+  reopening at the latest message now spares the window the search loaded
+  for it, instead of flashing the live end and fetching the target twice.
 - 🐛(bots) Fall back only to an Albert chat model when no preferred model is
   served, rather than to whatever comes first, such as an embedding model.
 - 🐛(meetings) Give Ariane's `/aide` in a call its own text, about what she

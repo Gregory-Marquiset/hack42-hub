@@ -1,13 +1,15 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useRequireAuth } from "@/features/auth/hooks/useRequireAuth";
+import { ActiveChatProvider } from "@/features/chat/ActiveChatContext";
 import { useChatEvents } from "@/features/chat/hooks/useChatEvents";
 import { useChatPresenceActivity } from "@/features/chat/hooks/useChatPresenceActivity";
 import { useActiveMeeting } from "@/features/chat/meetings/ActiveMeeting";
 import { useChatNotifications } from "@/features/chat/notifications/useChatNotifications";
 import { ConversationSearchModal } from "@/features/chat/search/ConversationSearchModal";
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
+import type { ChatRef } from "@/features/drivers/types";
 
 import { LeftPanel } from "./LeftPanel/LeftPanel";
 
@@ -25,6 +27,7 @@ export const HubLayout = ({ children, requireAuth = true }: HubLayoutProps) => {
   const { t } = useTranslation();
   const user = useRequireAuth(requireAuth);
   const entries = useDriverEntries();
+  const activeChatRef = useRef<ChatRef | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const canSearch =
     !!user && entries.some(({ driver }) => driver.supportsConversationSearch);
@@ -59,7 +62,7 @@ export const HubLayout = ({ children, requireAuth = true }: HubLayoutProps) => {
   // the state the person chose. Leaving needs nothing undone.
   const isInCall = useActiveMeeting().url !== null;
   useChatPresenceActivity(isInCall);
-  useChatNotifications(user?.id, isInCall);
+  useChatNotifications(user?.id, activeChatRef, isInCall);
 
   if (requireAuth && !user) {
     return null;
@@ -76,7 +79,9 @@ export const HubLayout = ({ children, requireAuth = true }: HubLayoutProps) => {
       )}
 
       <main id="hub__layout__main" className="hub__layout__main" tabIndex={-1}>
-        {children}
+        <ActiveChatProvider value={activeChatRef}>
+          {children}
+        </ActiveChatProvider>
       </main>
     </div>
   );

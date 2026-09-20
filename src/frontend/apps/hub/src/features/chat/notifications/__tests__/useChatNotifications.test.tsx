@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatEventListener } from "@/features/drivers/Driver";
 import type {
+  ChatRef,
   ChatSelfPresencePreference,
   NotificationRules,
 } from "@/features/drivers/types";
@@ -65,6 +66,10 @@ vi.mock("@/features/drivers/DriverRegistry", () => ({
 
 const ACCOUNT_ID = "account-a";
 const ROOM_ID = "!room:localhost";
+
+// The conversation on screen, as HubLayout publishes it. `null` means none is
+// displayed, which is what every test below wants unless it says otherwise.
+let activeChatRef: { current: ChatRef | null };
 
 const emptyRules = (): NotificationRules => ({
   override: [],
@@ -133,6 +138,7 @@ describe("useChatNotifications", () => {
     subscribeToEvents.mockClear();
     getNotificationRules.mockReset().mockResolvedValue(emptyRules());
     capturedListener = null;
+    activeChatRef = { current: null };
 
     vi.stubGlobal("Notification", MockNotification);
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
@@ -149,7 +155,7 @@ describe("useChatNotifications", () => {
 
   it("plays sound and shows a notification for an unsupported driver (unchanged behavior)", async () => {
     setDriver(false);
-    renderHook(() => useChatNotifications("me"), { wrapper });
+    renderHook(() => useChatNotifications("me", activeChatRef), { wrapper });
     await act(async () => {
       await Promise.resolve();
     });
@@ -169,7 +175,7 @@ describe("useChatNotifications", () => {
   it("still notifies for a driver that supports rules when the room isn't muted", async () => {
     setDriver(true);
     getNotificationRules.mockResolvedValue(emptyRules());
-    renderHook(() => useChatNotifications("me"), { wrapper });
+    renderHook(() => useChatNotifications("me", activeChatRef), { wrapper });
     await act(async () => {
       await Promise.resolve();
     });
@@ -186,10 +192,38 @@ describe("useChatNotifications", () => {
     expect(soundPlay).toHaveBeenCalledOnce();
   });
 
+  it("stays quiet for the conversation displayed in a focused tab", async () => {
+    setDriver(true);
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    activeChatRef.current = { accountId: ACCOUNT_ID, chatId: ROOM_ID };
+    renderHook(() => useChatNotifications("me", activeChatRef), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      capturedListener?.({
+        type: "message:received",
+        chatId: ROOM_ID,
+        chatName: "Room",
+        content: "hello",
+      });
+      // Another conversation, read in the same focused tab, still rings.
+      capturedListener?.({
+        type: "message:received",
+        chatId: "!other:localhost",
+        chatName: "Other",
+        content: "hello",
+      });
+    });
+
+    expect(soundPlay).toHaveBeenCalledOnce();
+  });
+
   it("suppresses sound and notification for a muted room", async () => {
     setDriver(true);
     getNotificationRules.mockResolvedValue(mutedRules());
-    renderHook(() => useChatNotifications("me"), { wrapper });
+    renderHook(() => useChatNotifications("me", activeChatRef), { wrapper });
     // Let the initial rules fetch settle.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -213,7 +247,7 @@ describe("useChatNotifications", () => {
     process.on("unhandledRejection", unhandled);
     getNotificationRules.mockRejectedValue(new Error("not connected"));
     try {
-      renderHook(() => useChatNotifications("me"), { wrapper });
+      renderHook(() => useChatNotifications("me", activeChatRef), { wrapper });
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });

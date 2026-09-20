@@ -1,6 +1,6 @@
 import { Lock, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { UserRoleBadge } from "@/features/roles/RoleBadge";
-import { useCallback, useMemo } from "react";
+import { type PointerEvent, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -78,6 +78,17 @@ type ChatBubbleSentProps = {
 };
 
 export type ChatBubbleProps = ChatBubbleReceivedProps | ChatBubbleSentProps;
+
+const updateToolbarHoverWidth = (event: PointerEvent<HTMLDivElement>) => {
+  const body = event.currentTarget;
+  const toolbar = body.querySelector<HTMLElement>(".hub__message-toolbar");
+  if (toolbar) {
+    body.style.setProperty(
+      "--hub-message-toolbar-width",
+      `${toolbar.offsetWidth}px`,
+    );
+  }
+};
 
 /**
  * The thread button and the reactions bar share one wrapping row below the
@@ -221,6 +232,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
         <div
           className="hub__chat-bubble__body"
           data-deleted={props.isDeleted || props.isUndecryptable || undefined}
+          onPointerEnter={updateToolbarHoverWidth}
         >
           {props.isDeleted ? (
             <span className="hub__chat-bubble__tombstone">
@@ -307,6 +319,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
         <div
           className="hub__chat-bubble__body"
           data-deleted={props.isDeleted || props.isUndecryptable || undefined}
+          onPointerEnter={updateToolbarHoverWidth}
         >
           {props.isDeleted ? (
             <span className="hub__chat-bubble__tombstone">

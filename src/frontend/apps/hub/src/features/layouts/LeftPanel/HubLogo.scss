@@ -1,0 +1,48 @@
+.hub__logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 4px;
+
+  &__mark {
+    flex: none;
+    width: 32px;
+    height: 32px;
+  }
+
+  &__square {
+    fill: var(--c--theme--colors--primary-600, #000091);
+  }
+
+  &__dot {
+    fill: #fff;
+
+    &--soft {
+      opacity: 0.7;
+    }
+
+    &--accent {
+      fill: var(--c--theme--colors--danger-600, #e1000f);
+    }
+  }
+
+  &__wordmark {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    color: var(--c--theme--colors--greyscale-1000, #161616);
+  }
+}
+
+// Closed, the panel is 53px wide: the wordmark cannot fit and the mark can.
+.hub__logo--mark {
+  gap: 0;
+  height: 32px;
+  padding: 0;
+
+  .hub__logo__wordmark {
+    display: none;
+  }
+}

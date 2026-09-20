@@ -93,9 +93,13 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
           pauseOnFocusLoss={false}
           theme="light"
         />
-        {process.env.NODE_ENV === "development" && (
-          <ReactQueryDevtools initialIsOpen={false} />
-        )}
+        {/* Our servers run the development build, so `NODE_ENV` alone put the
+         * React Query badge over the interface of every deployment. It now
+         * takes an explicit `NEXT_PUBLIC_QUERY_DEVTOOLS=true`. */}
+        {process.env.NODE_ENV === "development" &&
+          process.env.NEXT_PUBLIC_QUERY_DEVTOOLS === "true" && (
+            <ReactQueryDevtools initialIsOpen={false} />
+          )}
       </QueryClientProvider>
     </>
   );

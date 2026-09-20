@@ -33,7 +33,7 @@ import { Avatar } from "@/features/ui/components/avatar/Avatar";
 import { LanguagePickerUserMenu } from "@/features/ui/components/user-profile/LanguagePickerUserMenu";
 
 import { LeftPanelSection } from "./LeftPanelSection";
-import { TchapLogo } from "./TchapLogo";
+import { HubLogo } from "./HubLogo";
 import {
   filterChatsBySpace,
   partitionChats,
@@ -204,7 +204,7 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
             aria-expanded={false}
             onClick={toggleCollapsed}
           >
-            <TchapLogo variant="mark" decorative />
+            <HubLogo variant="mark" decorative />
             <span
               className="hub__left-panel__brand-toggle__chevron"
               aria-hidden="true"
@@ -214,7 +214,7 @@ export const LeftPanel = ({ onSearch }: { onSearch: () => void }) => {
           </button>
         ) : (
           <>
-            <TchapLogo />
+            <HubLogo />
             <button
               type="button"
               className="hub__left-panel__collapse"

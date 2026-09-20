@@ -208,6 +208,11 @@ and this project adheres to
 
 ### Changed
 
+- 💄(frontend) Show the Hub own name and mark in the panel corner, in
+  place of Tchap borrowed logo.
+- 🔥(frontend) Hide the React Query badge unless `NEXT_PUBLIC_QUERY_DEVTOOLS`
+  asks for it: our servers run the development build, so it sat over the
+  interface of every deployment.
 - ✨(frontend) Expand the message composer up to eight lines
 - ⚡(frontend) Speed up the emoji picker and align reaction artwork
 - 💄(frontend) Improve message dates and bubble readability

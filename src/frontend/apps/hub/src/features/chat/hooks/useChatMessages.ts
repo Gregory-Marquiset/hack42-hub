@@ -4,7 +4,7 @@ import {
   useInfiniteQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getRegistry } from "@/features/drivers/DriverRegistry";
 import type {
@@ -60,20 +60,31 @@ export type UseChatMessagesResult = {
  * conversation: the view then mounts with its target already in memory and can
  * scroll to it, instead of opening, fetching, and re-anchoring underneath the
  * user. Rejects when the homeserver no longer resolves the event.
+ *
+ * `isStale` is asked again at each await: a caller that may be overtaken by a
+ * later visit says so there, and the outdated window is dropped rather than
+ * written over the cache the newer visit just filled.
  */
 export const loadMessagesAround = async (
   queryClient: QueryClient,
   ref: ChatRef,
   eventId: string,
+  isStale?: () => boolean,
 ): Promise<void> => {
   const queryKey = chatKeys.messages(ref);
   await queryClient.cancelQueries({ queryKey, exact: true });
+  if (isStale?.()) {
+    return;
+  }
   const page = await getRegistry().get(ref.accountId).getChatMessages({
     chatId: ref.chatId,
     anchorId: eventId,
     direction: "older",
     limit: CHAT_PAGE_SIZE,
   });
+  if (isStale?.()) {
+    return;
+  }
   queryClient.setQueryData<InfiniteData<ChatMessagesPage, MessagePageParam>>(
     queryKey,
     {
@@ -100,9 +111,40 @@ export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
     () => chatKeys.messages(ref),
     [ref.accountId, ref.chatId],
   );
+  const [isOpeningLive, setIsOpeningLive] = useState(
+    () =>
+      // A visit asked to open on a message (`?event=`, carried by
+      // `ChatRef.eventId`) wants the window the search modal primed for it,
+      // not the live end: resetting here would throw that window away, flash
+      // the latest messages and make the view fetch the target a second time.
+      !ref.eventId &&
+      queryClient.getQueryData<InfiniteData<ChatMessagesPage>>(queryKey)
+        ?.pages[0]?.isAtLiveEnd === false,
+  );
+  const contextRequestRef = useRef<symbol | null>(null);
+
+  // A previous visit may have left a window around an unread message in cache.
+  // Reset its pages and cursors before enabling the query so entry loads the
+  // latest page. A cache that already reaches the live end remains reusable.
+  useEffect(() => {
+    if (isOpeningLive) {
+      void queryClient.resetQueries({ queryKey, exact: true });
+      setIsOpeningLive(false);
+    }
+  }, [isOpeningLive, queryClient, queryKey]);
+
+  // A contextual load from a closed conversation must not overwrite its cache
+  // after a later visit has already reopened the latest messages.
+  useEffect(
+    () => () => {
+      contextRequestRef.current = null;
+    },
+    [],
+  );
 
   const query = useInfiniteQuery({
     queryKey,
+    enabled: !isOpeningLive,
     queryFn: ({ pageParam }) =>
       getRegistry().get(ref.accountId).getChatMessages({
         chatId: ref.chatId,
@@ -131,6 +173,9 @@ export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
   // it. Reverse that page order for display, then de-duplicate on Matrix event
   // identity because two adjacent contextual windows can overlap.
   const messages = useMemo(() => {
+    if (isOpeningLive) {
+      return [];
+    }
     const seen = new Set<string>();
     return [...(query.data?.pages ?? [])]
       .reverse()
@@ -142,7 +187,7 @@ export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
         seen.add(message.id);
         return true;
       });
-  }, [query.data]);
+  }, [isOpeningLive, query.data]);
 
   const authorsById = useMemo(() => {
     const map = new Map<string, ChatMessageAuthor>();
@@ -153,24 +198,31 @@ export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
   }, [query.data]);
 
   const fetchOlder = useCallback(() => {
-    if (query.hasNextPage && !query.isFetchingNextPage) {
+    if (query.hasNextPage && !query.isFetching) {
       void query.fetchNextPage();
     }
   }, [query]);
 
   const fetchNewer = useCallback(() => {
-    if (query.hasPreviousPage && !query.isFetchingPreviousPage) {
+    if (query.hasPreviousPage && !query.isFetching) {
       void query.fetchPreviousPage();
     }
   }, [query]);
 
   const openAround = useCallback(
     async (eventId: string) => {
+      const request = Symbol();
+      contextRequestRef.current = request;
       await loadMessagesAround(
         queryClient,
         { accountId: ref.accountId, chatId: ref.chatId },
         eventId,
+        () => contextRequestRef.current !== request,
       );
+      if (contextRequestRef.current !== request) {
+        return;
+      }
+      contextRequestRef.current = null;
       setWindowAnchor({
         chatKey: `${ref.accountId}:${ref.chatId}`,
         eventId,
@@ -244,7 +296,7 @@ export const useChatMessages = (ref: ChatRef): UseChatMessagesResult => {
     isAtLiveEnd: query.data?.pages[0]?.isAtLiveEnd === true,
     isFetchingOlder: query.isFetchingNextPage,
     isFetchingNewer: query.isFetchingPreviousPage,
-    isInitialLoading: query.isPending,
+    isInitialLoading: isOpeningLive || query.isPending,
     isError: query.isError,
     firstItemIndex,
     windowVersion,

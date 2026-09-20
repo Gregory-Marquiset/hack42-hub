@@ -1,12 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
-import { useEffect, useRef } from "react";
+import { type RefObject, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useDriverEntries } from "@/features/drivers/DriverRegistry";
 import type { AccountId, ChatRef } from "@/features/drivers/types";
 
-import { chatHref } from "../chatRefs";
+import { chatHref, sameChatRef } from "../chatRefs";
 import { notificationRulesQuery } from "../hooks/useNotificationRules";
 
 import { getMutedRoomRules } from "./describeNotificationRule";
@@ -27,9 +27,10 @@ const preview = (content: string): string => {
     : characters.join("");
 };
 
-/** Play incoming activity; show a browser notification only without focus. */
+/** Sound outside the focused chat; browser notifications only without focus. */
 export const useChatNotifications = (
-  userId?: string,
+  userId: string | undefined,
+  activeChatRef: RefObject<ChatRef | null>,
   isInCall = false,
 ): void => {
   const entries = useDriverEntries();
@@ -131,12 +132,15 @@ export const useChatNotifications = (
         // Capture focus before a permission prompt can change it.
         const focused =
           document.visibilityState === "visible" && document.hasFocus();
-        // Two reasons to stay quiet: busy was chosen, or a call is running -
-        // a sound over a conversation is the one place it helps least. Both
+        const ref: ChatRef = { accountId, chatId: event.chatId };
+        // Three reasons to stay quiet: the conversation is the one on screen
+        // in a focused tab, busy was chosen, or a call is running - a sound
+        // over a conversation is the one place it helps least. The last two
         // read from the chosen state rather than the effective one: going
         // idle for five minutes publishes `unavailable` too, and that is not
         // a request for quiet. The banner still appears either way.
         if (
+          (!focused || !sameChatRef(ref, activeChatRef.current)) &&
           !latest.current.isInCall &&
           driver.getSelfPresencePreference() !== "busy"
         ) {
@@ -161,10 +165,9 @@ export const useChatNotifications = (
               body = t("You have been invited to join this conversation.");
             }
 
-            const ref: ChatRef = { accountId, chatId: event.chatId };
             const notification = new Notification(event.chatName, {
               body,
-              icon: "/assets/favicon.png",
+              icon: "/assets/tchap-notification-icon.png",
               silent: true,
             });
             current.notifications.set(notification, ref);
@@ -192,5 +195,5 @@ export const useChatNotifications = (
       active = false;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [entries, queryClient, userId]);
+  }, [activeChatRef, entries, queryClient, userId]);
 };
